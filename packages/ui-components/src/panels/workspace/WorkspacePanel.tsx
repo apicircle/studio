@@ -69,6 +69,9 @@ import { formatGitError, type GitErrorView } from './gitErrorMessage';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 import { isGitHostLocked, useGitHostAccess } from '../../layout/gitHostAccess';
 import { GitHostLockedNotice } from '../../layout/GitHostLockedNotice';
+import { useRepoDisconnectNotice } from '../../layout/repoDisconnectNotice';
+import { ClearStudioDataOption } from '../../layout/ClearStudioDataOption';
+import { clearStudioData } from '../../layout/clearStudioData';
 import {
   useActiveBranchChanges,
   useBranchChangeSources,
@@ -1221,8 +1224,11 @@ function RepoCard({ locked }: { locked: boolean }) {
   const canEditTopics = supportsGitMethod(repoHost, 'setRepoTopics');
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const disconnectRepo = useWorkspaceStore((s) => s.disconnectRepo);
+  const disconnectNotice = useRepoDisconnectNotice();
   const [releaseAndTopicsOpen, setReleaseAndTopicsOpen] = useState(false);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  // Unticked every time the dialog opens: clearing is asked for, never remembered.
+  const [clearOnDisconnect, setClearOnDisconnect] = useState(false);
 
   return (
     <div
@@ -1356,18 +1362,28 @@ function RepoCard({ locked }: { locked: boolean }) {
         open={confirmDisconnectOpen}
         title={`Disconnect ${repo.fullName}?`}
         description={
-          <p>
-            Removes the repo connection from this workspace. The remote repo on {repoHostLabel} is
-            not touched. Any working branch state for this repo is also discarded — re-connecting
-            starts from the default branch again.
-          </p>
+          <div className="space-y-2">
+            <p>
+              Removes the repo connection from this workspace. The remote repo on {repoHostLabel} is
+              not touched. Any working branch state for this repo is also discarded — re-connecting
+              starts from the default branch again.
+            </p>
+            {/* What an edition resets with the repository, in its own words. */}
+            {disconnectNotice}
+            <ClearStudioDataOption checked={clearOnDisconnect} onChange={setClearOnDisconnect} />
+          </div>
         }
         confirmLabel="Disconnect"
         tone="danger"
-        onCancel={() => setConfirmDisconnectOpen(false)}
-        onConfirm={() => {
+        onCancel={() => {
           setConfirmDisconnectOpen(false);
+          setClearOnDisconnect(false);
+        }}
+        onConfirm={async () => {
           try {
+            // The data first: when it cannot be cleared the repo stays
+            // connected, and the toast says why nothing happened.
+            if (clearOnDisconnect) await clearStudioData();
             disconnectRepo();
           } catch (err) {
             useWorkspaceStore.getState().pushToast({
@@ -1375,6 +1391,9 @@ function RepoCard({ locked }: { locked: boolean }) {
               title: 'Disconnect failed',
               detail: err instanceof Error ? err.message : String(err),
             });
+          } finally {
+            setConfirmDisconnectOpen(false);
+            setClearOnDisconnect(false);
           }
         }}
       />

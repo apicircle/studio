@@ -15,6 +15,7 @@ import {
   NO_BRANCH_CHANGE_SOURCES,
   type BranchChangeSource,
 } from './layout/branchChanges';
+import { RepoDisconnectNoticeProvider } from './layout/repoDisconnectNotice';
 
 /**
  * Re-run `refreshWorkspace` when the user comes back to the app from
@@ -224,6 +225,7 @@ export function App({
   workspaceStatus,
   topBarEnd,
   branchChangeSources = NO_BRANCH_CHANGE_SOURCES,
+  repoDisconnectNotice = null,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
@@ -259,6 +261,13 @@ export function App({
    * pull request. Omitted in Studio → strict no-op. See `layout/branchChanges.ts`.
    */
   branchChangeSources?: readonly BranchChangeSource[];
+  /**
+   * Shown in the confirmation before the workspace's repository is disconnected
+   * — from the repository card, or from the session of the host it is on. An
+   * edition says what else of its own goes with the repository. Omitted in
+   * Studio → strict no-op. See `layout/repoDisconnectNotice.ts`.
+   */
+  repoDisconnectNotice?: ReactNode;
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
@@ -458,32 +467,34 @@ export function App({
     <WorkspaceAccessProvider value={workspaceAccess}>
       <GitHostAccessProvider value={gitHostAccess}>
         <BranchChangeSourcesProvider value={branchChangeSources}>
-          <ExtraPanelsProvider value={extraPanels}>
-            <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
-              <div className="flex h-full flex-col bg-surface text-text-primary">
-                <TopBar brand={brand} workspaceStatus={workspaceStatus} topBarEnd={topBarEnd} />
-                <PanelTabs />
-                <div className="flex flex-1 overflow-hidden">
-                  <BodyArea />
-                  <RightDockRail />
-                </div>
-                <UpdatePreviewModal />
-                <MissingScopeGate />
-                <AttachmentDownloadPromptModal />
-                <KeyboardShortcuts />
-                {/* Don't auto-start the Studio tour for an edition that has its own
+          <RepoDisconnectNoticeProvider value={repoDisconnectNotice}>
+            <ExtraPanelsProvider value={extraPanels}>
+              <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
+                <div className="flex h-full flex-col bg-surface text-text-primary">
+                  <TopBar brand={brand} workspaceStatus={workspaceStatus} topBarEnd={topBarEnd} />
+                  <PanelTabs />
+                  <div className="flex flex-1 overflow-hidden">
+                    <BodyArea />
+                    <RightDockRail />
+                  </div>
+                  <UpdatePreviewModal />
+                  <MissingScopeGate />
+                  <AttachmentDownloadPromptModal />
+                  <KeyboardShortcuts />
+                  {/* Don't auto-start the Studio tour for an edition that has its own
                 first-run mode landing (Lens) — it would stack over and disable it.
                 Studio-standalone (no sections) keeps auto-start. Replay is always
                 available via the Help Center. */}
-                <OnboardingTour autoStart={sections.length <= 1} />
-                <ToastSlot />
-                <UpdateAvailableBanner />
-                <PassphrasePromptModalGate />
-                <CloseConfirmModal />
-                {sections.length > 1 && <SectionLanding />}
-              </div>
-            </SectionsProvider>
-          </ExtraPanelsProvider>
+                  <OnboardingTour autoStart={sections.length <= 1} />
+                  <ToastSlot />
+                  <UpdateAvailableBanner />
+                  <PassphrasePromptModalGate />
+                  <CloseConfirmModal />
+                  {sections.length > 1 && <SectionLanding />}
+                </div>
+              </SectionsProvider>
+            </ExtraPanelsProvider>
+          </RepoDisconnectNoticeProvider>
         </BranchChangeSourcesProvider>
       </GitHostAccessProvider>
     </WorkspaceAccessProvider>

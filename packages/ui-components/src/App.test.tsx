@@ -177,6 +177,47 @@ describe('App', () => {
     expect(screen.getByText('ON BRANCH MAIN')).toBeInTheDocument();
   });
 
+  it("shows an edition's notice in the confirmation before the repository is disconnected", async () => {
+    render(<App repoDisconnectNotice={<p>EDITION FORGETS ITS FOLDER</p>} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    act(() => {
+      const state = useWorkspaceStore.getState();
+      state.setActivePanel('workspace');
+      useWorkspaceStore.setState({
+        local: {
+          ...state.local!,
+          sessions: {
+            github: {
+              workspace: {
+                accountLogin: 'me',
+                tokenSecretId: 's',
+                grantedScopes: ['repo'],
+                addedAt: '2026-09-01T00:00:00.000Z',
+                lastVerifiedAt: '2026-09-01T00:00:00.000Z',
+                canCreatePullRequests: true,
+              },
+              links: {},
+            },
+          },
+          connectedRepo: {
+            fullName: 'acme/api',
+            owner: 'acme',
+            name: 'api',
+            defaultBranch: 'main',
+            visibility: 'private',
+            isPrivate: true,
+            pushable: true,
+            connectedAt: '2026-09-01T00:00:00.000Z',
+          },
+        },
+      });
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Disconnect repo' }));
+    expect(screen.getByRole('dialog', { name: 'Disconnect acme/api?' })).toHaveTextContent(
+      'EDITION FORGETS ITS FOLDER',
+    );
+  });
+
   it("renders an edition's node at the far end of the top bar, after Help", async () => {
     render(<App topBarEnd={<button type="button">ACCOUNT MENU</button>} />);
     await waitFor(() => screen.getByText('API Circle Studio'));

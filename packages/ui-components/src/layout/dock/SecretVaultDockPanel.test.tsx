@@ -15,6 +15,7 @@ import {
 } from '@apicircle/git';
 import * as workspaceSharing from '../workspaceSharing';
 import { GitHostAccessProvider, type GitHostAccess } from '../gitHostAccess';
+import { RepoDisconnectNoticeProvider } from '../repoDisconnectNotice';
 
 // This suite covers the workspace-sharing cluster, which is switched OFF in
 // shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
@@ -89,6 +90,29 @@ describe('SecretVaultDockPanel', () => {
     async function openSessions(): Promise<void> {
       await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+    }
+
+    /** Connect `acme/api` on `hostKind` as the workspace's repository. */
+    function connectRepoOn(hostKind: 'github' | 'bitbucket'): void {
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            connectedRepo: {
+              fullName: 'acme/api',
+              owner: 'acme',
+              name: 'api',
+              defaultBranch: 'main',
+              visibility: 'private',
+              isPrivate: true,
+              pushable: true,
+              connectedAt: '2026-09-01T00:00:00.000Z',
+              hostKind,
+            },
+          },
+        });
+      });
     }
 
     afterEach(() => {
@@ -376,7 +400,7 @@ describe('SecretVaultDockPanel', () => {
         expect(screen.queryByText(/Connected as bb-user/)).not.toBeInTheDocument();
 
         await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-        await userEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect Bitbucket' }));
         await waitFor(() =>
           expect(
             useWorkspaceStore.getState().local!.sessions.hosts?.bitbucket?.workspace ?? null,
@@ -388,28 +412,211 @@ describe('SecretVaultDockPanel', () => {
         registerGitProvider('bitbucket', () => ({}) as never);
         await openLockedSessions({ lockedHosts: ['bitbucket'] });
         seedBitbucketSession();
-        act(() => {
-          const local = useWorkspaceStore.getState().local!;
-          useWorkspaceStore.setState({
-            local: {
-              ...local,
-              connectedRepo: {
-                fullName: 'acme/api',
-                owner: 'acme',
-                name: 'api',
-                defaultBranch: 'main',
-                visibility: 'private',
-                isPrivate: true,
-                pushable: true,
-                connectedAt: '2026-09-01T00:00:00.000Z',
-                hostKind: 'bitbucket',
-              },
-            },
-          });
-        });
+        connectRepoOn('bitbucket');
         expect(
           screen.getByText(/also clears this workspace.s Bitbucket repo and working branch/),
         ).toBeInTheDocument();
+        // The confirmation of a locked card names the repo as any other does.
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        expect(
+          within(screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' })).getByText(
+            /acme\/api is on Bitbucket, so it is disconnected from this workspace too/,
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    describe('the confirmation before a session is disconnected', () => {
+      // Disconnect used to be confirmed by pressing the same button again, which
+      // had room to say nothing: not that the workspace's repository goes with
+      // the session of the host it is on, nor what an edition resets with it.
+      const NOTICE = 'The edition also forgets its folder for this repository.';
+
+      async function openWithNotice(): Promise<void> {
+        registerGitProvider('bitbucket', () => ({}) as never);
+        await renderWithStore(
+          <RepoDisconnectNoticeProvider value={<p>{NOTICE}</p>}>
+            <SecretVaultDockPanel />
+          </RepoDisconnectNoticeProvider>,
+        );
+        await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+        seedBitbucketSession();
+      }
+
+      const bitbucketSession = () =>
+        useWorkspaceStore.getState().local!.sessions.hosts?.bitbucket?.workspace ?? null;
+
+      it('says what goes when the host holds no repository: the token, and nothing else', async () => {
+        await openWithNotice();
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        const dialog = within(screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' }));
+        expect(
+          dialog.getByText(/Removes the saved token for bb-user from this workspace/),
+        ).toBeInTheDocument();
+        expect(dialog.getByText(/Nothing changes on Bitbucket/)).toBeInTheDocument();
+        // No repository goes, so nothing of an edition's does either, and there
+        // is nothing for the workspace's document to start over from.
+        expect(dialog.queryByText(/disconnected from this workspace too/)).not.toBeInTheDocument();
+        expect(dialog.queryByText(NOTICE)).not.toBeInTheDocument();
+        expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+        // Nothing has happened yet: opening the dialog is not the disconnect.
+        expect(bitbucketSession()).not.toBeNull();
+      });
+
+      it('names the repository that goes with the session, and shows what the edition resets with it', async () => {
+        await openWithNotice();
+        connectRepoOn('bitbucket');
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        const dialog = within(screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' }));
+        expect(
+          dialog.getByText(
+            /acme\/api is on Bitbucket, so it is disconnected from this workspace too, and any working branch state for it is discarded/,
+          ),
+        ).toBeInTheDocument();
+        expect(dialog.getByText(NOTICE)).toBeInTheDocument();
+
+        await userEvent.click(dialog.getByRole('button', { name: 'Disconnect Bitbucket' }));
+        await waitFor(() => expect(bitbucketSession()).toBeNull());
+        expect(useWorkspaceStore.getState().local!.connectedRepo).toBeNull();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+
+      it('leaves a repository on another host out of it', async () => {
+        await openWithNotice();
+        // The workspace's repository is on GitHub: disconnecting Bitbucket keeps it.
+        connectRepoOn('github');
+        await userEvent.click(screen.getByRole('tab', { name: 'Bitbucket, connected' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        const dialog = within(screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' }));
+        expect(dialog.queryByText(/acme\/api/)).not.toBeInTheDocument();
+        expect(dialog.queryByText(NOTICE)).not.toBeInTheDocument();
+        await userEvent.click(dialog.getByRole('button', { name: 'Disconnect Bitbucket' }));
+        await waitFor(() => expect(bitbucketSession()).toBeNull());
+        expect(useWorkspaceStore.getState().local!.connectedRepo?.fullName).toBe('acme/api');
+      });
+
+      it('adds nothing of an edition when none is attached', async () => {
+        registerGitProvider('bitbucket', () => ({}) as never);
+        await openSessions();
+        seedBitbucketSession();
+        connectRepoOn('bitbucket');
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        const dialog = screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' });
+        // Studio's two sentences, and the two buttons.
+        expect(dialog.querySelectorAll('p')).toHaveLength(2);
+      });
+
+      describe("the option to clear the workspace's Studio data", () => {
+        const CLEAR = /Also clear this workspace's Studio data/;
+        const requests = () =>
+          Object.values(useWorkspaceStore.getState().synced!.collections.requests);
+        const snapshots = () => useWorkspaceStore.getState().local!.snapshots.entries;
+
+        /** A session and a repository on Bitbucket, and one request to lose. */
+        async function openWithARequest(): Promise<void> {
+          await openWithNotice();
+          connectRepoOn('bitbucket');
+          act(() => {
+            useWorkspaceStore.getState().addRequest(null, 'List orders');
+          });
+          await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        }
+
+        it('is offered unticked, and left so the disconnect keeps the document', async () => {
+          await openWithARequest();
+          const dialog = within(screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' }));
+          expect(dialog.getByRole('checkbox', { name: CLEAR })).not.toBeChecked();
+
+          await userEvent.click(dialog.getByRole('button', { name: 'Disconnect Bitbucket' }));
+          await waitFor(() => expect(bitbucketSession()).toBeNull());
+          expect(requests().map((r) => r.name)).toEqual(['List orders']);
+          expect(snapshots()).toHaveLength(0);
+        });
+
+        it('ticked, clears the document behind a snapshot, then disconnects', async () => {
+          await openWithARequest();
+          const dialog = within(screen.getByRole('dialog', { name: 'Disconnect Bitbucket?' }));
+          await userEvent.click(dialog.getByRole('checkbox', { name: CLEAR }));
+          await userEvent.click(dialog.getByRole('button', { name: 'Disconnect Bitbucket' }));
+
+          await waitFor(() => expect(bitbucketSession()).toBeNull());
+          expect(useWorkspaceStore.getState().local!.connectedRepo).toBeNull();
+          expect(requests()).toEqual([]);
+          // The way back, holding what was there.
+          expect(snapshots()).toHaveLength(1);
+          expect(snapshots()[0].triggeredBy).toBe('pre-clear');
+          expect(
+            Object.values(snapshots()[0].workspaceSyncedSnapshot.collections.requests).map(
+              (r) => r.name,
+            ),
+          ).toEqual(['List orders']);
+        });
+
+        it('is unticked again the next time the dialog opens', async () => {
+          await openWithARequest();
+          await userEvent.click(screen.getByRole('checkbox', { name: CLEAR }));
+          await userEvent.click(
+            within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+          );
+          // Cancelled: nothing went.
+          expect(requests()).toHaveLength(1);
+          expect(bitbucketSession()).not.toBeNull();
+
+          await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+          expect(screen.getByRole('checkbox', { name: CLEAR })).not.toBeChecked();
+        });
+
+        it('keeps the session and the repo when the data could not be cleared, and says why', async () => {
+          await openWithARequest();
+          // A cap the document does not fit under: no snapshot can be kept, so nothing is cleared.
+          act(() => useWorkspaceStore.getState().setSnapshotMaxBytes(1));
+          await userEvent.click(screen.getByRole('checkbox', { name: CLEAR }));
+          await userEvent.click(screen.getByRole('button', { name: 'Disconnect Bitbucket' }));
+
+          await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+          const toast = useWorkspaceStore.getState().toasts.at(-1)!;
+          expect(toast).toMatchObject({ tone: 'error', title: 'Disconnect failed' });
+          expect(toast.detail).toMatch(/^Nothing was cleared: the snapshot that would bring/);
+          expect(requests()).toHaveLength(1);
+          expect(bitbucketSession()).not.toBeNull();
+          expect(useWorkspaceStore.getState().local!.connectedRepo?.fullName).toBe('acme/api');
+        });
+      });
+
+      it('keeps the session when the dialog is cancelled', async () => {
+        await openWithNotice();
+        connectRepoOn('bitbucket');
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        await userEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+        );
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(bitbucketSession()).not.toBeNull();
+        expect(useWorkspaceStore.getState().local!.connectedRepo?.fullName).toBe('acme/api');
+      });
+
+      it('says so when the disconnect fails, and closes the dialog', async () => {
+        await openWithNotice();
+        // An Error, then a rejection that is not one: both are said as they are.
+        act(() =>
+          useWorkspaceStore.setState({
+            disconnectHostSession: vi
+              .fn()
+              .mockRejectedValueOnce(new Error('vault is locked'))
+              .mockRejectedValueOnce('no reason given'),
+          }),
+        );
+        for (const detail of ['vault is locked', 'no reason given']) {
+          await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+          await userEvent.click(screen.getByRole('button', { name: 'Disconnect Bitbucket' }));
+          await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+          expect(useWorkspaceStore.getState().toasts.at(-1)).toMatchObject({
+            tone: 'error',
+            title: 'Disconnect failed',
+            detail,
+          });
+        }
+        expect(bitbucketSession()).not.toBeNull();
       });
     });
 
@@ -1230,8 +1437,9 @@ describe('SecretVaultDockPanel', () => {
       await screen.findByText(/Connected as me/);
 
       await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-      // Now the button reads "Confirm disconnect"; second click clears it.
-      await userEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+      // A dialog asks first; the session is there until its button is pressed.
+      expect(useWorkspaceStore.getState().local!.sessions.github.workspace).not.toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Disconnect GitHub' }));
       await waitFor(() =>
         expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull(),
       );

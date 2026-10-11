@@ -17,6 +17,7 @@ import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import * as workspaceSharing from '../../layout/workspaceSharing';
 import { GitHostAccessProvider, type GitHostAccess } from '../../layout/gitHostAccess';
+import { RepoDisconnectNoticeProvider } from '../../layout/repoDisconnectNotice';
 
 // This suite covers the workspace-sharing cluster, which is switched OFF in
 // shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
@@ -2386,6 +2387,106 @@ describe('WorkspacePanel names the host the repo is on', () => {
       expect(await screen.findByRole('dialog', { name: 'Disconnect acme/api?' })).toHaveTextContent(
         `The remote repo on ${label} is not touched.`,
       );
+    });
+
+    it('shows what an edition resets with the repository, under what Studio says', async () => {
+      await renderWithStore(
+        <RepoDisconnectNoticeProvider value={<p>The edition forgets its folder.</p>}>
+          <WorkspacePanel />
+        </RepoDisconnectNoticeProvider>,
+      );
+      await act(async () => {
+        setupPushedBranchOn('gitlab', { gitlab: true });
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Disconnect repo' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'Disconnect acme/api?' });
+      const said = [...dialog.querySelectorAll('p')].map((p) => p.textContent);
+      expect(said).toHaveLength(2);
+      expect(said[0]).toContain('The remote repo on GitLab is not touched.');
+      expect(said[1]).toBe('The edition forgets its folder.');
+    });
+
+    it('says only what Studio does when no edition is attached', async () => {
+      await renderRepoOn('gitlab');
+      await userEvent.click(screen.getByRole('button', { name: 'Disconnect repo' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'Disconnect acme/api?' });
+      expect(dialog.querySelectorAll('p')).toHaveLength(1);
+    });
+
+    describe("the option to clear the workspace's Studio data", () => {
+      const CLEAR = /Also clear this workspace's Studio data/;
+      const requests = () =>
+        Object.values(useWorkspaceStore.getState().synced!.collections.requests);
+      const snapshots = () => useWorkspaceStore.getState().local!.snapshots.entries;
+      const connectedRepo = () => useWorkspaceStore.getState().local!.connectedRepo;
+
+      /** A repo on GitLab, one request to lose, and the dialog open. */
+      async function openDisconnect(): Promise<HTMLElement> {
+        await renderRepoOn('gitlab');
+        act(() => {
+          useWorkspaceStore.getState().addRequest(null, 'List orders');
+        });
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect repo' }));
+        return screen.findByRole('dialog', { name: 'Disconnect acme/api?' });
+      }
+
+      it('is offered unticked, and left so the disconnect keeps the document', async () => {
+        const dialog = within(await openDisconnect());
+        expect(dialog.getByRole('checkbox', { name: CLEAR })).not.toBeChecked();
+
+        await userEvent.click(dialog.getByRole('button', { name: 'Disconnect' }));
+        await waitFor(() => expect(connectedRepo()).toBeNull());
+        expect(requests().map((r) => r.name)).toEqual(['List orders']);
+        expect(snapshots()).toHaveLength(0);
+      });
+
+      it('ticked, clears the document behind a snapshot, then disconnects', async () => {
+        const dialog = within(await openDisconnect());
+        await userEvent.click(dialog.getByRole('checkbox', { name: CLEAR }));
+        await userEvent.click(dialog.getByRole('button', { name: 'Disconnect' }));
+
+        await waitFor(() => expect(connectedRepo()).toBeNull());
+        expect(requests()).toEqual([]);
+        expect(snapshots()).toHaveLength(1);
+        expect(snapshots()[0].triggeredBy).toBe('pre-clear');
+        expect(
+          Object.values(snapshots()[0].workspaceSyncedSnapshot.collections.requests).map(
+            (r) => r.name,
+          ),
+        ).toEqual(['List orders']);
+        // The session is the vault's to disconnect: this dialog leaves it.
+        expect(
+          useWorkspaceStore.getState().local!.sessions.hosts?.gitlab?.workspace ?? null,
+        ).not.toBeNull();
+      });
+
+      it('is unticked again the next time the dialog opens', async () => {
+        const dialog = within(await openDisconnect());
+        await userEvent.click(dialog.getByRole('checkbox', { name: CLEAR }));
+        await userEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+        expect(requests()).toHaveLength(1);
+        expect(connectedRepo()).not.toBeNull();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect repo' }));
+        expect(await screen.findByRole('checkbox', { name: CLEAR })).not.toBeChecked();
+      });
+
+      it('leaves the repo connected when the data could not be cleared, and says why', async () => {
+        const dialog = within(await openDisconnect());
+        // A cap the document does not fit under: no snapshot can be kept, so nothing is cleared.
+        act(() => useWorkspaceStore.getState().setSnapshotMaxBytes(1));
+        await userEvent.click(dialog.getByRole('checkbox', { name: CLEAR }));
+        await userEvent.click(dialog.getByRole('button', { name: 'Disconnect' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        const toast = useWorkspaceStore.getState().toasts.at(-1)!;
+        expect(toast).toMatchObject({ tone: 'error', title: 'Disconnect failed' });
+        expect(toast.detail).toMatch(/^Nothing was cleared: the snapshot that would bring/);
+        expect(requests()).toHaveLength(1);
+        expect(connectedRepo()?.fullName).toBe('acme/api');
+      });
     });
 
     it.each(HOSTS)(

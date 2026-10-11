@@ -27,6 +27,10 @@ import {
 } from '../../store/workspaceStore';
 import { useHostSelection } from '../../hooks/useHostSelection';
 import { GitHostLockedNotice } from '../GitHostLockedNotice';
+import { useRepoDisconnectNotice } from '../repoDisconnectNotice';
+import { ClearStudioDataOption } from '../ClearStudioDataOption';
+import { clearStudioData } from '../clearStudioData';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Radio } from '../../primitives/Radio';
 import { Tabs, tabPanelProps } from '../../primitives/Tabs';
 import { useShallow } from 'zustand/react/shallow';
@@ -1759,10 +1763,14 @@ function ActiveSessionCard({
   const updateHost = useWorkspaceStore((s) => s.updateHostToken);
   const disconnectHost = useWorkspaceStore((s) => s.disconnectHostSession);
   // Disconnecting also drops the workspace's repo + working branch when they
-  // live on this host (`disconnectHostSession`); the locked card says so.
-  const ownsRepo = useWorkspaceStore(
-    (s) => Boolean(s.local?.connectedRepo) && connectedHostKind(s.local) === host,
+  // live on this host (`disconnectHostSession`); the locked card says so, and
+  // the confirmation names the repo.
+  const ownedRepoName = useWorkspaceStore((s) =>
+    s.local?.connectedRepo && connectedHostKind(s.local) === host
+      ? s.local.connectedRepo.fullName
+      : null,
   );
+  const disconnectNotice = useRepoDisconnectNotice();
   const verify = () => preflightHost(host);
   const updateToken = (token: string) => updateHost(token, host);
   const disconnect = () => disconnectHost(host);
@@ -1775,6 +1783,8 @@ function ActiveSessionCard({
   const [newEmail, setNewEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  // Unticked every time the dialog opens: clearing is asked for, never remembered.
+  const [clearOnDisconnect, setClearOnDisconnect] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const needsEmail = host === 'bitbucket' && bitbucketKind === 'api-token';
   const canUpdate = newToken.trim().length > 0 && (!needsEmail || newEmail.trim().length > 0);
@@ -1873,26 +1883,71 @@ function ActiveSessionCard({
   // lives in another component — a card that renders nothing beats one that throws.
   if (!session) return null;
 
+  const hostLabel = GIT_HOST_LABELS[host];
   const disconnectButton = (
     <button
       type="button"
-      onClick={() => {
-        if (confirmDisconnect) {
-          void disconnect();
+      onClick={() => setConfirmDisconnect(true)}
+      className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:text-text-primary"
+    >
+      Disconnect
+    </button>
+  );
+  // Disconnect is confirmed in a dialog that says everything it takes. It was a
+  // second press of the same button, which had room to say none of it: that the
+  // workspace's repository goes with the session of the host it is on, and
+  // whatever an edition keeps for that repository with it.
+  const disconnectConfirm = (
+    <ConfirmDialog
+      open={confirmDisconnect}
+      title={`Disconnect ${hostLabel}?`}
+      description={
+        <div className="space-y-2">
+          <p>
+            Removes the saved token for {session.accountLogin} from this workspace. Nothing changes
+            on {hostLabel}: the token still works there until you revoke it.
+          </p>
+          {ownedRepoName !== null && (
+            <>
+              <p>
+                {ownedRepoName} is on {hostLabel}, so it is disconnected from this workspace too,
+                and any working branch state for it is discarded.
+              </p>
+              {/* What an edition resets with the repository, in its own words. */}
+              {disconnectNotice}
+              {/* Offered only where a repository goes: a session that takes none
+                  with it leaves the workspace's document nothing to start over from. */}
+              <ClearStudioDataOption checked={clearOnDisconnect} onChange={setClearOnDisconnect} />
+            </>
+          )}
+        </div>
+      }
+      // Named for the host: the button that opened the dialog is "Disconnect",
+      // and two buttons of one name are one too many to tell apart.
+      confirmLabel={`Disconnect ${hostLabel}`}
+      tone="danger"
+      onCancel={() => {
+        setConfirmDisconnect(false);
+        setClearOnDisconnect(false);
+      }}
+      onConfirm={async () => {
+        try {
+          // The data first: when it cannot be cleared the session stays
+          // connected, and the toast says why nothing happened.
+          if (clearOnDisconnect) await clearStudioData();
+          await disconnect();
+        } catch (err) {
+          useWorkspaceStore.getState().pushToast({
+            tone: 'error',
+            title: 'Disconnect failed',
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
           setConfirmDisconnect(false);
-        } else {
-          setConfirmDisconnect(true);
+          setClearOnDisconnect(false);
         }
       }}
-      className={cn(
-        'inline-flex h-7 items-center rounded-sm border px-3 text-xs',
-        confirmDisconnect
-          ? 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20'
-          : 'border-border bg-surface text-text-muted hover:text-text-primary',
-      )}
-    >
-      {confirmDisconnect ? 'Confirm disconnect' : 'Disconnect'}
-    </button>
+    />
   );
 
   if (locked) {
@@ -1906,10 +1961,11 @@ function ActiveSessionCard({
         </div>
         <p className="text-xs text-text-muted">
           Kept, but not used while {GIT_HOST_LABELS[host]} is locked.
-          {ownsRepo &&
+          {ownedRepoName !== null &&
             ` Disconnecting also clears this workspace's ${GIT_HOST_LABELS[host]} repo and working branch.`}
         </p>
         <div className="flex flex-wrap gap-2">{disconnectButton}</div>
+        {disconnectConfirm}
       </div>
     );
   }
@@ -2105,6 +2161,7 @@ function ActiveSessionCard({
           {disconnectButton}
         </div>
       )}
+      {disconnectConfirm}
     </div>
   );
 }

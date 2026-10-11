@@ -828,3 +828,100 @@ test.describe('GitHub integration', () => {
     () => {},
   );
 });
+
+// Disconnecting a repository, with and without "Also clear this workspace's
+// Studio data". Through the real dialog and the real History tab: the option
+// is a box a person ticks, and what brings the document back is a row they
+// press Restore on.
+test.describe('Disconnect repo: clearing the workspace with it', () => {
+  interface DocumentStore {
+    synced?: { collections: { requests: Record<string, { name: string }> } } | null;
+    local?: {
+      connectedRepo?: unknown;
+      snapshots: { entries: Array<{ triggeredBy: string }> };
+    } | null;
+  }
+
+  /** What the store holds: the document's requests, the connection, the snapshots. */
+  function read(page: import('@playwright/test').Page) {
+    return page.evaluate(() => {
+      const w = window as unknown as { __apicircleStore?: { getState: () => DocumentStore } };
+      const state = w.__apicircleStore!.getState();
+      return {
+        requests: Object.values(state.synced!.collections.requests).map((r) => r.name),
+        connected: state.local!.connectedRepo != null,
+        snapshots: state.local!.snapshots.entries.map((entry) => entry.triggeredBy),
+      };
+    });
+  }
+
+  /** Connect `mock-user/<name>` and open the repository card's confirmation. */
+  async function openDisconnect(page: import('@playwright/test').Page, name: string) {
+    await linkAndAuth(page, 'mock-user', name);
+    await page.getByRole('button', { name: 'Workspace', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Disconnect repo' }).click();
+    const dialog = page.getByRole('dialog', { name: `Disconnect mock-user/${name}?` });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+
+  const OPTION = /Also clear this workspace's Studio data/;
+
+  test('left unticked, the disconnect keeps the workspace document', async ({
+    appWithGithubMock,
+    mockGithub,
+  }) => {
+    const name = `int-keep-${test.info().workerIndex}`;
+    await mockGithub.seedRepo({ owner: 'mock-user', name, isPrivate: true, visibility: 'private' });
+    const before = await read(appWithGithubMock);
+    // The workspace holds something, so "still there" below means something.
+    expect(before.requests.length).toBeGreaterThan(0);
+
+    const dialog = await openDisconnect(appWithGithubMock, name);
+    await expect(dialog.getByRole('checkbox', { name: OPTION })).not.toBeChecked();
+    await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
+
+    await expect(appWithGithubMock.getByRole('button', { name: 'Disconnect repo' })).toHaveCount(0);
+    expect(await read(appWithGithubMock)).toEqual({
+      requests: before.requests,
+      connected: false,
+      snapshots: [],
+    });
+  });
+
+  test('ticked, it empties the document behind a snapshot that Restore brings back', async ({
+    appWithGithubMock,
+    mockGithub,
+  }) => {
+    const name = `int-clear-${test.info().workerIndex}`;
+    await mockGithub.seedRepo({ owner: 'mock-user', name, isPrivate: true, visibility: 'private' });
+    const before = await read(appWithGithubMock);
+    expect(before.requests.length).toBeGreaterThan(0);
+
+    const dialog = await openDisconnect(appWithGithubMock, name);
+    await expect(dialog).toContainText(
+      'A Before clearing snapshot is captured first, so History → Snapshots can put them back.',
+    );
+    await dialog.getByRole('checkbox', { name: OPTION }).check();
+    await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
+
+    await expect(appWithGithubMock.getByRole('button', { name: 'Disconnect repo' })).toHaveCount(0);
+    expect(await read(appWithGithubMock)).toEqual({
+      requests: [],
+      connected: false,
+      snapshots: ['pre-clear'],
+    });
+
+    // The way back is where the dialog said it would be.
+    await appWithGithubMock.getByRole('button', { name: /^History$/ }).click();
+    await appWithGithubMock.getByRole('tab', { name: /Snapshots/ }).click();
+    await expect(appWithGithubMock.getByText('Before clearing', { exact: true })).toBeVisible();
+    await appWithGithubMock.getByLabel(/^Restore snapshot from /).click();
+    const restore = appWithGithubMock.getByRole('dialog', { name: 'Restore workspace snapshot' });
+    await restore.getByLabel('Type to confirm').fill('RESTORE');
+    await restore.getByRole('button', { name: 'Restore' }).click();
+    await expect
+      .poll(async () => (await read(appWithGithubMock)).requests)
+      .toEqual(before.requests);
+  });
+});

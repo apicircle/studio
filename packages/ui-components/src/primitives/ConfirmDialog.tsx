@@ -52,6 +52,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -61,6 +62,13 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       // Focus the typed-confirm input on open so the user can start typing
       // immediately. Without this they'd have to click twice.
       requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      // Cancel otherwise, wherever it sits. The modal opens on its first
+      // control, and that is Cancel only while the description holds none of
+      // its own: with an option in it (the box that also clears a workspace's
+      // data on disconnect) the dialog opened on the option, a Space away from
+      // ticking it. This runs after the modal's own focus, so it wins.
+      requestAnimationFrame(() => cancelRef.current?.focus());
     }
   }, [open, typed]);
 
@@ -97,6 +105,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         )}
         <div className="flex justify-end gap-2 pt-1">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"

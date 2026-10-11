@@ -375,6 +375,46 @@
 
 ### Added
 
+- **An edition can say what it resets when the workspace's repository is
+  disconnected: the `repoDisconnectNotice` seam.** An optional `App` prop
+  (`ReactNode`, `layout/repoDisconnectNotice.ts`). An edition can keep records
+  of its own about the one repository a workspace is connected to, and reset
+  them when it goes; the shell cannot know what they are. What the edition
+  passes is shown in the confirmation before a repository is disconnected,
+  under Studio's own sentences: in "Disconnect repo" on the repository card,
+  and in the Disconnect of the session of the host the repository is on. The
+  confirmation of a session on any other host does not show it, since no
+  repository goes with that one. Omitted, nothing is added: Studio passes
+  nothing.
+
+- **Disconnecting a repository can clear the workspace's Studio data with it.**
+  Both confirmations of a repository disconnect ("Disconnect repo" on the
+  repository card, and the Disconnect of the session of the host the repository
+  is on) carry an option, unticked: "Also clear this workspace's Studio data".
+  Left alone, a disconnect keeps everything it always kept, which is what
+  moving a workspace to another host wants. Ticked, the workspace's requests,
+  folders, environments, mock servers, plans and global assets all go, for the
+  repository that follows to start from nothing.
+  - A **Before clearing** snapshot is captured first (`pre-clear`, a new
+    `WorkspaceSnapshotTrigger`), so History → Snapshots can put the document
+    back. Nothing is cleared unless the ledger kept that snapshot: a document
+    larger than the snapshot cap is left as it was, the repository stays
+    connected, and a toast says to raise the cap.
+  - The workspace's running mock servers are stopped first.
+  - Like a workspace import, it drops the pulled baseline. The next repository
+    is then met as a first connection, where one that already holds this
+    workspace offers to be pulled. Kept, the baseline would have the next push
+    report everything as deleted.
+  - Run history, snapshots, the Secret Vault, the Git session and linked
+    workspaces are kept, and whatever was pushed stays in the repository.
+  - New: `clearWorkspaceContent` in the store; `ClearStudioDataOption` and
+    `clearStudioData` in `layout/`.
+  - A confirmation (`ConfirmDialog`) now opens with focus on Cancel wherever
+    Cancel sits, or on the field when it asks for a typed confirmation. It
+    opened on its first control, which was Cancel only while the description
+    held none of its own; with this option in it, the dialog would have opened
+    on the option.
+
 - **A floating layer for popovers: `useAnchoredPosition`, `FloatingPortal`,
   `useDismissableLayer` and `FLOATING_Z`.** A popover positioned inside its
   trigger's box is clipped by any scrolling or `overflow-hidden` ancestor, and
@@ -473,6 +513,20 @@
   it is. Studio registers no sections, so its strip is unchanged.
 
 ### Changed
+
+- **Disconnecting a session asks in a dialog that says what goes.** Disconnect
+  on a session card (Secret Vault → Sessions) was confirmed by pressing the
+  same button a second time, once it read "Confirm disconnect". That had room
+  to say nothing, and the one thing worth knowing was missing: disconnecting
+  the session of the host the workspace's repository is on disconnects the
+  repository and discards its working branch state too. The button now opens a
+  dialog, "Disconnect {host}?", which says that the saved token for the account
+  is removed from this workspace and still works on the host until revoked
+  there, and, when the repository is on that host, names the repository that
+  goes with it. Its confirm button is "Disconnect {host}". A session on another
+  host than the repository's says nothing about the repository, because it
+  keeps it. A disconnect that fails is reported in a toast; it used to fail
+  silently. The locked session card opens the same dialog.
 
 - **Test connection checks whether the token can do the work, not only whose
   it is.** The button on the session card (Secret Vault → Sessions) made one

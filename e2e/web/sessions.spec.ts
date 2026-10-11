@@ -275,8 +275,14 @@ test.describe('Sessions (Secret Vault)', () => {
       await app.getByRole('button', { name: 'Connect', exact: true }).click();
       await expect(app.getByText(/Connected as me/)).toBeVisible();
 
-      await app.getByRole('button', { name: 'Disconnect' }).click();
-      await app.getByRole('button', { name: 'Confirm disconnect' }).click();
+      await app.getByRole('button', { name: 'Disconnect', exact: true }).click();
+      // A dialog says what goes before anything does: the saved token, and no
+      // repository, since none is connected.
+      const dialog = app.getByRole('dialog', { name: 'Disconnect GitHub?' });
+      await expect(dialog).toContainText('Removes the saved token for me from this workspace.');
+      await expect(dialog).not.toContainText('disconnected from this workspace too');
+      await expect(app.getByText(/Connected as me/)).toBeVisible();
+      await dialog.getByRole('button', { name: 'Disconnect GitHub' }).click();
       // The connect form returns once the session is gone.
       await expect(app.getByLabel('GitHub PAT')).toBeVisible();
     },

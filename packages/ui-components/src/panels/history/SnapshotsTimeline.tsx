@@ -65,8 +65,9 @@ function summarizeSnapshotDiff(
 }
 
 // History panel's "Snapshots" tab. Pre-destructive snapshots are auto-
-// captured before push / merge / workspace-import / linked-update / yank /
-// deprecate, plus manual saves via the "Take snapshot now" button.
+// captured before push / merge / workspace-import / clearing the workspace /
+// linked-update / yank / deprecate, plus manual saves via the "Take snapshot
+// now" button.
 // Restore replaces the synced doc with the captured copy and clears the
 // sync base so the next push re-forks against remote.
 
@@ -75,6 +76,7 @@ const TRIGGER_LABEL: Record<WorkspaceSnapshotTrigger, string> = {
   'pre-push': 'Before push',
   'pre-merge': 'Before merge',
   'pre-import': 'Before workspace import',
+  'pre-clear': 'Before clearing',
   'pre-linked-update': 'Before linked update',
   'pre-yank': 'Before yank',
   'pre-deprecate': 'Before deprecate',
@@ -85,6 +87,7 @@ const TRIGGER_TONE: Record<WorkspaceSnapshotTrigger, string> = {
   'pre-push': 'border-accent/40 bg-accent/10 text-accent',
   'pre-merge': 'border-warning/40 bg-warning/5 text-warning',
   'pre-import': 'border-warning/40 bg-warning/5 text-warning',
+  'pre-clear': 'border-danger/40 bg-danger/5 text-danger',
   'pre-linked-update': 'border-warning/40 bg-warning/5 text-warning',
   'pre-yank': 'border-danger/40 bg-danger/5 text-danger',
   'pre-deprecate': 'border-danger/40 bg-danger/5 text-danger',

@@ -47,6 +47,7 @@ describe('SnapshotsTimeline trigger badges', () => {
     ['pre-push', 'Before push'],
     ['pre-merge', 'Before merge'],
     ['pre-import', 'Before workspace import'],
+    ['pre-clear', 'Before clearing'],
     ['pre-linked-update', 'Before linked update'],
     ['pre-yank', 'Before yank'],
     ['pre-deprecate', 'Before deprecate'],

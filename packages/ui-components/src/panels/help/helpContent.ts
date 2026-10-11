@@ -872,13 +872,23 @@ Revoke or expire the token on GitHub and the next push/pull/refresh fails with a
 
 ## Disconnecting
 
-"Disconnect" on the Sessions tab does a clean teardown:
+"Disconnect" on the Sessions tab opens a confirmation that says what goes, and does nothing until you confirm it there:
 
     1. Deletes the encrypted token from this machine's vault store
     2. Removes the session metadata
-    3. Clears the repo connection and the working-branch pointer
+    3. Clears the repo connection and the working-branch pointer, when the repo is on the host you are disconnecting. The confirmation names the repo; a repo on another host stays connected.
 
-The GitHub repository, the branch, and your commits are untouched on GitHub — only this device's credentials are removed. Reconnect any time to pick the workspace back up.`,
+The GitHub repository, the branch, and your commits are untouched on GitHub — only this device's credentials are removed, and the token itself keeps working on GitHub until you revoke it there. Reconnect any time to pick the workspace back up.
+
+"Disconnect repo" on the Workspace page asks the same way, and clears only the repo connection and its working-branch pointer: the session stays.
+
+## Starting over on another repository
+
+A disconnect leaves the workspace's document alone, so you can connect another repository and push the same requests there. To start from nothing instead, tick **Also clear this workspace's Studio data** in either confirmation. It is offered wherever a repository is being disconnected, and is never ticked for you.
+
+Ticked, the workspace's requests, folders, environments, mock servers, plans and global assets all go, and its running mock servers are stopped. A **Before clearing** snapshot is captured first, so History → Snapshots can put the document back. If that snapshot does not fit under your snapshot cap, nothing is cleared and the repository stays connected: raise Settings → Workspace snapshot cap and try again.
+
+Run history, saved secrets and your Git session are untouched, and whatever you pushed is still in the repository. The next repository you connect is treated as a first connection: if it already holds this workspace, you are offered to pull it.`,
     keywords: [
       'session',
       'sessions',
@@ -994,7 +1004,7 @@ History is a circular buffer capped by a fixed maximum number of runs — once f
 
 ## When snapshots are taken
 
-- **Automatically** — before every push and merge.
+- **Automatically** — before every push and merge, before a workspace import, and before a disconnect clears the workspace.
 - **Manually** — "Take snapshot now" on History → Snapshots, with an optional note.
 
 Each row shows what triggered it, when, and its size:

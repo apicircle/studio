@@ -1865,6 +1865,20 @@ type WorkspaceStore = {
    */
   disconnectRepo: () => void;
   /**
+   * Empty this workspace's document: its requests, folders, environments, mock
+   * servers, plans and global assets. What a disconnect offers as an option,
+   * for the repository that follows to start from nothing.
+   *
+   * A `pre-clear` snapshot is captured first, and nothing is cleared unless the
+   * ledger kept it: History → Snapshots is the way back. Like an import, it
+   * drops the pulled baseline, so the next repository is met as a first
+   * connection. Run history, snapshots, the secret vault, the Git session and
+   * linked workspaces are left as they are. Running mock servers are the
+   * caller's to stop (`clearStudioData`): the store holds definitions, not
+   * runtime.
+   */
+  clearWorkspaceContent: () => Promise<void>;
+  /**
    * Auto-create a new branch from `connectedRepo.defaultBranch` (or
    * caller-supplied baseBranch). Generates `apicircle/<slug>-<id>` when
    * no name is supplied. Throws on validation failure or GitHub error.
@@ -5752,6 +5766,81 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     set({ local: next });
     queueSaveLocal(next);
+  },
+
+  clearWorkspaceContent: async () => {
+    const synced = get().synced;
+    if (!synced || !get().local) throw new Error('Workspace not ready');
+
+    // Undo path first, as a workspace import takes it: what follows removes
+    // everything the document holds, and History's "Before clearing" entry is
+    // the only way back. A snapshot the ledger could not keep is no way back at
+    // all (the document alone is over the snapshot cap, so capturing it evicted
+    // it), and nothing is cleared without one.
+    const snapshotId = get().captureSnapshot({
+      trigger: 'pre-clear',
+      note: 'Before clearing the workspace',
+    });
+    const captured = get().local!;
+    if (!captured.snapshots.entries.some((entry) => entry.id === snapshotId)) {
+      throw new Error(
+        'Nothing was cleared: the snapshot that would bring this workspace back does not fit ' +
+          'the snapshot storage. Raise Settings → Workspace snapshot cap, then try again.',
+      );
+    }
+
+    const cleared: WorkspaceSynced = {
+      ...synced,
+      collections: {
+        tree: { ...synced.collections.tree, children: [] },
+        requests: {},
+        folders: {},
+      },
+      environments: {
+        items: {},
+        activeName: null,
+        // Linked workspaces are left as they are, and so is their place in the order.
+        priorityOrder: synced.environments.priorityOrder.filter((ref) => ref.kind === 'linked'),
+      },
+      globalAssets: { schemas: {}, graphql: {}, files: {} },
+      mockServers: {},
+      executionPlans: {},
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+
+    // What an import does to the device's side, for the same reasons.
+    // `attachmentCache` describes the slots of the document just emptied and
+    // rebuilds on demand. The pulled baseline is dropped with it: kept, the next
+    // repository would be read as one this workspace had deleted everything
+    // from, and a push would say so. Null makes it a first connection, where a
+    // repository that already holds this workspace offers to be pulled.
+    const withoutCaches: WorkspaceLocal = {
+      ...captured,
+      attachmentCache: {},
+      sync: {
+        ...captured.sync,
+        lastPulledSnapshot: null,
+        lastPulledSha: null,
+        lastPulledAt: null,
+      },
+      ui: { ...captured.ui, activeRequestId: null },
+    };
+    // The two derived indices, as `commitSynced` keeps them: nothing uses a
+    // secret or a file any more.
+    const nextLocal = recomputeAssetUsage(cleared, recomputeUsedIn(cleared, withoutCaches));
+    set({
+      synced: cleared,
+      local: nextLocal,
+      // What was on screen is gone with what it showed.
+      activePlanId: null,
+      lastRun: {},
+      lastPlanResults: {},
+      isExecuting: {},
+      activeMockServerId: null,
+      activeMockEndpointId: null,
+    });
+    queueSaveBoth(cleared, nextLocal);
+    await flushPendingPersist();
   },
 
   createWorkingBranch: async (opts) => {

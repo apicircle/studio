@@ -94,6 +94,19 @@ unaffected:
   (unless left out) and what each source has included. Additive and a no-op
   when omitted: with no source the working-branch card is byte-identical
   (pinned by `BranchCardGolden.test.tsx`).
+- **Repo disconnect notice** — the optional `App` `repoDisconnectNotice` prop
+  (`ReactNode`, `layout/repoDisconnectNotice.ts`) is what an edition adds to
+  the confirmation shown before the workspace's repository is disconnected. An
+  edition can keep records of its own about that one repository and reset them
+  when it goes (Lens: the folder its Code graph reads, the branch in view, the
+  Spec it checks against); the shell cannot know what they are, so the edition
+  says it here. The shell shows it in both places a repository is disconnected
+  from: the repository card's "Disconnect repo", and the Disconnect of the
+  session of the host the repository is on, which takes the repository with it.
+  A session on any other host takes no repository, and its confirmation does
+  not show the notice. The edition does the resetting itself, from the store's
+  `connectedRepo`; the notice only says so. Additive and a no-op when omitted:
+  both confirmations then read as Studio's own.
 - **Workspace access** — the optional `App` `workspaceAccess` prop
   (`WorkspaceAccess`, `layout/workspaceAccess.ts`) caps how many workspaces stay
   open; those beyond the cap are locked, never deleted. The workspace that is

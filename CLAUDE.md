@@ -681,6 +681,11 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       source registered the preview is where the push is chosen and made (its
       own "Push N changes" and commit message), and `WorkspaceStatusChip` adds
       what each source has included to its unpushed count.
+    - `repoDisconnectNotice` (`ReactNode`, `layout/repoDisconnectNotice.ts`):
+      what an edition resets of its own when the workspace's repository goes
+      (Lens's Code graph folder and view). Shown in the confirmation before a
+      repository is disconnected: "Disconnect repo" on the repository card, and
+      the Disconnect of the session of the host the repository is on.
   - **Not a no-op:** `workspaceAccess` (`layout/workspaceAccess.ts`) defaults to a
     cap of one workspace, because a build with no edition is the free tier. The
     open workspace always keeps a slot, the remaining slots go oldest first, and
