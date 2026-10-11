@@ -1298,6 +1298,17 @@ export interface GitHubSession {
    * field existed.
    */
   scopesReported?: boolean;
+  /**
+   * The API base URL the token was verified against: a self-managed GitLab's,
+   * or an Azure DevOps organisation's. Absent ⇒ the host's public default. A
+   * token is sent only to the server it was verified against, so every call
+   * through this session reads its address from here, and a repo connected
+   * through it records the same one (`ConnectedRepo.apiBaseUrl`).
+   *
+   * Absent also on a session recorded before the address was kept: the connect
+   * form used it to verify the token and then dropped it.
+   */
+  apiBaseUrl?: string;
   addedAt: string;
   lastVerifiedAt: string | null;
   /**
@@ -1555,7 +1566,8 @@ export interface ConnectedRepo {
   /**
    * API base URL for a self-managed host (self-hosted GitLab, an Azure DevOps
    * organisation, GitHub Enterprise Server). Absent ⇒ the host's public default.
-   * Cannot be derived from `owner`/`name`, so it has to be persisted.
+   * Cannot be derived from `owner`/`name`, so it has to be persisted. Taken from
+   * the session the repo is connected through (`GitHubSession.apiBaseUrl`).
    */
   apiBaseUrl?: string;
 }

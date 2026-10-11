@@ -23,7 +23,7 @@ import type { GitHostKind } from '@apicircle/git';
  *     builds `/{owner}/_apis/git/repositories/{name}` against a base URL that
  *     carries the ORGANISATION (`https://dev.azure.com/{org}`), so an org typed
  *     into this field would be folded into `owner` and silently produce a URL
- *     that addresses nothing.
+ *     that addresses nothing. That URL is the session's (`hostBaseUrl.ts`).
  */
 
 /** How many `/`-separated segments a host's identifier may carry. */
@@ -47,12 +47,13 @@ export const REPO_PLACEHOLDER: Record<GitHostKind, string> = {
 
 /**
  * A one-line hint under the field. Only Azure gets one: it is the sole host
- * where part of the coordinate lives in a DIFFERENT field, and a user who does
- * not know that has no way to work it out from a rejection message.
+ * where part of the coordinate lives SOMEWHERE ELSE — in the Organisation URL
+ * its session was connected with — and a user who does not know that has no way
+ * to work it out from a rejection message.
  */
 export const REPO_HINT: Partial<Record<GitHostKind, string>> = {
   'azure-devops':
-    'Your organisation goes in the API base URL (https://dev.azure.com/your-org), not here.',
+    'Enter project/repo only. The organisation comes from the Organisation URL your session was connected with.',
 };
 
 export type ParsedRepo = { ok: true; owner: string; name: string } | { ok: false; error: string };

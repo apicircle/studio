@@ -860,7 +860,9 @@ A host your plan doesn't include shows a **lock** in place of the dot. Picking i
 
 Bitbucket Cloud offers two credential types. An **API token** is created on your Atlassian account and entered together with your account email; a workspace, project or repository **access token** is pasted on its own. The scope list changes with the type you pick. App passwords were retired by Atlassian and no longer work.
 
-The Workspace panel's repo browser lists repos only through hosts that hold a session — connect the host first, then pick the repo.
+A host that can live at an address of its own asks for it on the connect form, once. **GitLab** takes an optional **API base URL**, for a self-managed GitLab only (\`https://gitlab.example.com/api/v4\`); left blank it is gitlab.com. **Azure DevOps** needs its **Organisation URL** (\`https://dev.azure.com/your-org\`), because the organisation is not part of a repo's name, and Connect stays disabled without it. Bitbucket's is left blank for Bitbucket Cloud, and GitHub has none. The address is saved with the session, shown on its card as **Server**, and used for everything that session does.
+
+The Workspace panel's repo browser lists repos only through hosts that hold a session — connect the host first, then pick the repo. It asks for no address: it lists from the one the session was connected with.
 
 ## How the token is stored
 

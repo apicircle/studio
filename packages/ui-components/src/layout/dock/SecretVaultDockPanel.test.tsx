@@ -310,6 +310,227 @@ describe('SecretVaultDockPanel', () => {
       );
     });
 
+    describe('the server a session connects to', () => {
+      // One optional "API base URL" box stood on every host but GitHub. That was
+      // untrue for Azure DevOps, whose organisation is in that URL and nowhere
+      // else, and it never said what a value looks like.
+      function registerOtherHosts(): void {
+        registerGitProvider('gitlab', () => ({}) as never);
+        registerGitProvider('bitbucket', () => ({}) as never);
+        registerGitProvider('azure-devops', () => ({}) as never);
+      }
+
+      /** Open Sessions with every host registered and `connectHostSession` stubbed. */
+      async function openWithStubbedConnect() {
+        registerOtherHosts();
+        const connectHostSession = vi.fn(async () => BB_SESSION);
+        await openSessions();
+        useWorkspaceStore.setState({ connectHostSession });
+        return connectHostSession;
+      }
+
+      it('asks each host for the address it has, and GitHub for none', async () => {
+        registerOtherHosts();
+        await openSessions();
+
+        // GitHub: github.com is the only GitHub this connects to.
+        expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
+        expect(screen.queryByLabelText('API base URL')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Organisation URL')).not.toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+        const gitlab = screen.getByLabelText('API base URL');
+        expect(gitlab).toHaveAttribute('placeholder', 'https://gitlab.example.com/api/v4');
+        expect(gitlab).toHaveAttribute('aria-required', 'false');
+        expect(gitlab).toHaveAccessibleDescription(
+          'Only for a self-managed GitLab. Leave blank for gitlab.com.',
+        );
+
+        await userEvent.click(screen.getByRole('tab', { name: 'Bitbucket, not connected' }));
+        const bitbucket = screen.getByLabelText('API base URL');
+        expect(bitbucket).toHaveAttribute('placeholder', 'https://api.bitbucket.org/2.0');
+        expect(bitbucket).toHaveAttribute('aria-required', 'false');
+        expect(bitbucket).toHaveAccessibleDescription('Leave blank for Bitbucket Cloud.');
+
+        // Azure DevOps: named for what goes in it, and not optional.
+        await userEvent.click(screen.getByRole('tab', { name: 'Azure DevOps, not connected' }));
+        expect(screen.queryByLabelText('API base URL')).not.toBeInTheDocument();
+        const azure = screen.getByLabelText('Organisation URL');
+        expect(azure).toHaveAttribute('placeholder', 'https://dev.azure.com/your-org');
+        expect(azure).toHaveAttribute('aria-required', 'true');
+        expect(azure).toHaveAccessibleDescription(/address of your Azure DevOps organisation/);
+      });
+
+      it('does not connect Azure DevOps without its organisation URL', async () => {
+        const connectHostSession = await openWithStubbedConnect();
+        await userEvent.click(screen.getByRole('tab', { name: 'Azure DevOps, not connected' }));
+        const connect = screen.getByRole('button', { name: 'Connect' });
+        const url = screen.getByLabelText('Organisation URL');
+
+        // The token alone is not enough: every call would address nothing.
+        await userEvent.type(screen.getByLabelText('Azure DevOps PAT'), 'az-pat');
+        expect(connect).toBeDisabled();
+
+        // Not a URL: said before the token is sent anywhere.
+        await userEvent.type(url, 'dev.azure.com/acme');
+        expect(connect).toBeEnabled();
+        await userEvent.click(connect);
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Enter a full URL, like https://dev.azure.com/your-org',
+        );
+
+        // The address everyone starts from, with no organisation after it.
+        await userEvent.clear(url);
+        await userEvent.type(url, 'https://dev.azure.com/');
+        await userEvent.click(connect);
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Add your organisation to the URL, like https://dev.azure.com/your-org',
+        );
+        expect(connectHostSession).not.toHaveBeenCalled();
+
+        // Enter in the field submits, as it does in the token field.
+        await userEvent.clear(url);
+        await userEvent.type(url, 'https://dev.azure.com/acme/{Enter}');
+        await waitFor(() =>
+          expect(connectHostSession).toHaveBeenCalledWith('az-pat', 'azure-devops', {
+            baseUrl: 'https://dev.azure.com/acme',
+          }),
+        );
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      });
+
+      it('connects a self-managed GitLab at the URL typed, and gitlab.com when it is blank', async () => {
+        const connectHostSession = await openWithStubbedConnect();
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+
+        await userEvent.type(screen.getByLabelText('GitLab PAT'), 'glpat-1');
+        await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        await waitFor(() =>
+          expect(connectHostSession).toHaveBeenLastCalledWith('glpat-1', 'gitlab', {
+            baseUrl: undefined,
+          }),
+        );
+
+        await userEvent.type(screen.getByLabelText('GitLab PAT'), 'glpat-2');
+        await userEvent.type(screen.getByLabelText('API base URL'), 'https://gl.acme.dev/api/v4');
+        await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        await waitFor(() =>
+          expect(connectHostSession).toHaveBeenLastCalledWith('glpat-2', 'gitlab', {
+            baseUrl: 'https://gl.acme.dev/api/v4',
+          }),
+        );
+      });
+
+      it("keeps a URL typed for one host out of another host's connect", async () => {
+        // The form stays mounted while the host strip changes. With one shared
+        // value, a URL typed on GitLab's tab was still submitted after a switch
+        // to GitHub, whose form shows no field: the GitHub token went to the
+        // GitLab server.
+        const connectHostSession = await openWithStubbedConnect();
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+        await userEvent.type(screen.getByLabelText('API base URL'), 'https://gl.acme.dev/api/v4');
+
+        // Another host with a field starts empty.
+        await userEvent.click(screen.getByRole('tab', { name: 'Bitbucket, not connected' }));
+        expect(screen.getByLabelText('API base URL')).toHaveValue('');
+
+        await userEvent.click(screen.getByRole('tab', { name: 'GitHub, not connected' }));
+        await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp-1');
+        await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        await waitFor(() =>
+          expect(connectHostSession).toHaveBeenCalledWith('ghp-1', 'github', {
+            baseUrl: undefined,
+          }),
+        );
+
+        // And GitLab still holds what was typed for it.
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+        expect(screen.getByLabelText('API base URL')).toHaveValue('https://gl.acme.dev/api/v4');
+      });
+
+      it("keeps one host's refusal off another host's form", async () => {
+        // One shared message showed "Add your organisation to the URL" under
+        // GitLab's form after a switch from Azure DevOps'.
+        await openWithStubbedConnect();
+        await userEvent.click(screen.getByRole('tab', { name: 'Azure DevOps, not connected' }));
+        await userEvent.type(screen.getByLabelText('Azure DevOps PAT'), 'az-pat');
+        await userEvent.type(screen.getByLabelText('Organisation URL'), 'https://dev.azure.com');
+        await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        expect(screen.getByRole('alert')).toHaveTextContent(/Add your organisation to the URL/);
+
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+        // It is still Azure DevOps' to show, until that form is tried again.
+        await userEvent.click(screen.getByRole('tab', { name: 'Azure DevOps, not connected' }));
+        expect(screen.getByRole('alert')).toHaveTextContent(/Add your organisation to the URL/);
+      });
+
+      it('reports a connect that fails against the host it was sent to', async () => {
+        registerOtherHosts();
+        // Held open, so the host can be switched while the connect is in flight.
+        let fail: (reason: Error) => void = () => {};
+        const connectHostSession = vi.fn(
+          () =>
+            new Promise<never>((_resolve, reject) => {
+              fail = reject;
+            }),
+        );
+        await openSessions();
+        useWorkspaceStore.setState({ connectHostSession });
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+        await userEvent.type(screen.getByLabelText('GitLab PAT'), 'glpat-1');
+        await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        await waitFor(() => expect(connectHostSession).toHaveBeenCalled());
+
+        await userEvent.click(screen.getByRole('tab', { name: 'Bitbucket, not connected' }));
+        await act(async () => {
+          fail(new Error('GitLab rejected the token (401).'));
+        });
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+        expect(screen.getByRole('alert')).toHaveTextContent('GitLab rejected the token (401).');
+      });
+
+      it('names the server on the card of a session that has one', async () => {
+        registerOtherHosts();
+        await openSessions();
+        seedBitbucketSession();
+        // Connected to the public host: nothing to name.
+        expect(screen.getByText(/Connected as bb-user on Bitbucket/)).toBeInTheDocument();
+        expect(screen.queryByText('Server')).not.toBeInTheDocument();
+
+        act(() => {
+          const local = useWorkspaceStore.getState().local!;
+          useWorkspaceStore.setState({
+            local: {
+              ...local,
+              sessions: {
+                ...local.sessions,
+                hosts: {
+                  'azure-devops': {
+                    workspace: {
+                      ...BB_SESSION,
+                      accountLogin: 'az-user',
+                      tokenSecretId: 'sec_az',
+                      apiBaseUrl: 'https://dev.azure.com/acme',
+                    },
+                    links: {},
+                  },
+                },
+              },
+            },
+          });
+        });
+        await userEvent.click(screen.getByRole('tab', { name: 'Azure DevOps, connected' }));
+        expect(screen.getByText(/Connected as az-user on Azure DevOps/)).toBeInTheDocument();
+        expect(screen.getByText('Server').nextElementSibling).toHaveTextContent(
+          'https://dev.azure.com/acme',
+        );
+      });
+    });
+
     describe('with hosts the edition has locked (gitHostAccess)', () => {
       // What a plan without the extra hosts sees. The strip still names every
       // host — it is where the user learns a host exists and why it is not

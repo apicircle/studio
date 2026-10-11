@@ -1757,8 +1757,10 @@ type WorkspaceStore = {
    * `connectGitHubSession` is retained as the name it has always had and simply
    * delegates here with `'github'`, so nothing that already calls it changes.
    * `baseUrl` targets a self-managed instance (self-hosted GitLab, an Azure
-   * DevOps organisation, GitHub Enterprise Server) and is recorded so later
-   * calls reach the same server.
+   * DevOps organisation, GitHub Enterprise Server). The token is verified
+   * against it and it is recorded on the session (`apiBaseUrl`), so every later
+   * call through this session — the repo browser, connecting a repo, Test
+   * connection — reaches the same server.
    *
    * Which hosts are actually resolvable depends on the build: the open-core
    * Studio registers GitHub only, so callers should offer a host that
@@ -1848,8 +1850,9 @@ type WorkspaceStore = {
    *
    * `opts.host` names the Git host; omitted, it falls back to whichever host
    * already holds a session, so every existing two-argument call is unchanged.
-   * `opts.baseUrl` targets a self-managed instance and is persisted onto the
-   * connected repo so later calls reach the same server.
+   * The repo is reached at the address its host's session was connected to,
+   * and that address is persisted onto the connected repo so later calls reach
+   * the same server. `opts.baseUrl` names another one explicitly.
    *
    * When that host's session does not yet know whether it can create pull
    * requests, the repo's pull-request listing is read once to find out, and the
@@ -2706,19 +2709,33 @@ function hostWithSession(local: WorkspaceLocal): GitHostKind {
 }
 
 /**
- * Provider options for a lifecycle call on `host`.
+ * The base URL recorded on the connected repo, when that repo is on `host` —
+ * verifying a GitHub token against a self-hosted GitLab's base URL would send
+ * it to the wrong server entirely.
+ */
+function connectedRepoBaseUrl(
+  local: WorkspaceLocal | null | undefined,
+  host: GitHostKind,
+): string | undefined {
+  if (connectedHostKind(local) !== host) return undefined;
+  return local?.connectedRepo?.apiBaseUrl || undefined;
+}
+
+/**
+ * Provider options for a call made with `host`'s workspace session.
  *
- * The self-managed base URL is recorded on the CONNECTED REPO, so it only
- * applies when that repo is on the host being acted upon — verifying a GitHub
- * token against a self-hosted GitLab's base URL would send it to the wrong
- * server entirely.
+ * The session records the server its token was verified against, and that is
+ * where the token goes: before a repo is connected (the repo browser, Test
+ * connection) as much as after. It used to be read from the connected repo
+ * alone, so until one existed a self-managed session's token went to the
+ * public host. The connected repo is still read for a session recorded before
+ * the address was kept on it.
  */
 function hostProviderOptions(
   local: WorkspaceLocal | null | undefined,
   host: GitHostKind,
 ): GitProviderOptions | undefined {
-  if (connectedHostKind(local) !== host) return undefined;
-  const baseUrl = local?.connectedRepo?.apiBaseUrl;
+  const baseUrl = workspaceSessionFor(local, host)?.apiBaseUrl || connectedRepoBaseUrl(local, host);
   return baseUrl ? { baseUrl } : undefined;
 }
 
@@ -5415,7 +5432,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // scope vocabulary, the vault label and the session slot all follow `host`,
     // which is what makes a non-GitHub PAT connectable at all. Omitting `host`
     // resolves to `'github'`, so every existing caller is unchanged.
-    const client = getGitProvider(host, opts?.baseUrl ? { baseUrl: opts.baseUrl } : undefined);
+    const baseUrl = opts?.baseUrl?.trim() || undefined;
+    const client = getGitProvider(host, baseUrl ? { baseUrl } : undefined);
     const { viewer, scopes } = await client.getViewer(trimmed, {
       requiredScopes: [...REQUIRED_SCOPES_BY_HOST[host]],
     });
@@ -5445,6 +5463,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       accountLogin: viewer.login,
       tokenSecretId,
       ...recordedScopes(scopes),
+      // The server the token was just verified against. Kept, because it is
+      // typed nowhere else: the repo browser, the repo connect and every Test
+      // connection read it from here.
+      ...(baseUrl ? { apiBaseUrl: baseUrl } : {}),
       addedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString(),
       // Scope-only check at connect time. Since REQUIRED_BASE_SCOPES already
@@ -5691,7 +5713,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // so it is the best available evidence. The connected repo then records the
     // answer for every call that follows.
     const host = opts?.host ?? hostWithSession(local);
-    const baseUrl = opts?.baseUrl ?? local.connectedRepo?.apiBaseUrl;
+    // Where that host's session was connected. It was `connectedRepo.apiBaseUrl`
+    // whatever host that repo was on, so a repo connected on a second host
+    // inherited the first host's server.
+    const baseUrl = opts?.baseUrl ?? hostProviderOptions(local, host)?.baseUrl;
     const token = await decryptSessionToken(local, host);
     const client = getGitProvider(host, baseUrl ? { baseUrl } : undefined);
     const repo: GitHubRepo = await client.getRepo(token, owner.trim(), name.trim());
@@ -9600,12 +9625,15 @@ async function targetClientAndToken(
   opts?: { host?: GitHostKind; baseUrl?: string; tokenOverride?: string },
 ): Promise<{ client: GitProvider; token: string }> {
   const host = opts?.host ?? connectedHostKind(local);
-  // `hostProviderOptions` rather than `connectedRepo.apiBaseUrl` directly: the
-  // recorded base URL belongs to the connected repo's host, so it must not be
-  // aimed at a DIFFERENT host the caller named explicitly.
-  const baseUrl = opts?.baseUrl ?? hostProviderOptions(local, host)?.baseUrl;
-  const client = targetProvider({ host, baseUrl });
   const override = opts?.tokenOverride?.trim();
+  // A recorded base URL belongs to one host, so neither helper aims it at a
+  // DIFFERENT host the caller named explicitly. The session's own address goes
+  // with the session's own token: a caller's credential was not verified there,
+  // so it keeps the fallback it always had, the connected repo's.
+  const baseUrl =
+    opts?.baseUrl ??
+    (override ? connectedRepoBaseUrl(local, host) : hostProviderOptions(local, host)?.baseUrl);
+  const client = targetProvider({ host, baseUrl });
   const token = override || (await decryptSessionToken(local, host));
   return { client, token };
 }

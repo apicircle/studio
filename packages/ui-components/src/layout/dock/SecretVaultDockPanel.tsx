@@ -48,6 +48,11 @@ import {
   type HostPreflightReport,
   type PreflightStatus,
 } from '../../store/hostPreflight';
+import {
+  HOST_BASE_URL_FIELD,
+  isHostBaseUrlMissing,
+  parseHostBaseUrl,
+} from '../../store/hostBaseUrl';
 import { SecretsNotProtectedError } from '../../persistence/platformSecretGate';
 import { cn } from '../../primitives/cn';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
@@ -1313,13 +1318,29 @@ function ConnectForm({
   const [token, setToken] = useState('');
   // The Atlassian account email an API token is paired with. Bitbucket only.
   const [email, setEmail] = useState('');
-  // Self-managed instances only (self-hosted GitLab, an Azure DevOps org,
-  // GitHub Enterprise Server). Blank means the host's public API.
-  const [baseUrl, setBaseUrl] = useState('');
+  // The server this session connects to, where the host has one to ask for
+  // (`HOST_BASE_URL_FIELD`). Kept per host: this form stays mounted while the
+  // host strip above it changes, so one shared value was still submitted after
+  // a switch to a host that shows no field — its token went to the other
+  // host's server.
+  const [baseUrls, setBaseUrls] = useState<Partial<Record<GitHostKind, string>>>({});
+  const baseUrlField = HOST_BASE_URL_FIELD[host];
+  const baseUrl = baseUrls[host] ?? '';
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // What went wrong belongs to the host it went wrong on, for the same reason:
+  // one shared message showed "Add your organisation to the URL" under GitLab's
+  // form after a switch from Azure DevOps'. `setError` closes over the host of
+  // the render it was called from, so a connect that fails after the user has
+  // moved on still reports against the host it was sent to.
+  const [failure, setFailure] = useState<{ host: GitHostKind; message: string } | null>(null);
+  const error = failure?.host === host ? failure.message : null;
+  const setError = (message: string | null) =>
+    setFailure(message === null ? null : { host, message });
   const needsEmail = host === 'bitbucket' && bitbucketKind === 'api-token';
-  const canSubmit = token.trim().length > 0 && (!needsEmail || email.trim().length > 0);
+  const canSubmit =
+    token.trim().length > 0 &&
+    (!needsEmail || email.trim().length > 0) &&
+    !isHostBaseUrlMissing(host, baseUrl);
 
   // Device-flow state. While `code` is non-null, the polling loop is
   // running and the UI shows the user_code + verification URL with a
@@ -1335,12 +1356,18 @@ function ConnectForm({
 
   const submit = async () => {
     if (!canSubmit) return;
+    // Before the token is sent anywhere: what was typed is where it would go.
+    const server = parseHostBaseUrl(host, baseUrl);
+    if (!server.ok) {
+      setError(server.error);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const secret =
         host === 'bitbucket' ? composeBitbucketSecret(bitbucketKind, email, token) : token;
-      await connect(secret, host, { baseUrl: baseUrl.trim() || undefined });
+      await connect(secret, host, { baseUrl: server.baseUrl });
       setToken('');
       setEmail('');
     } catch (err) {
@@ -1492,14 +1519,33 @@ function ConnectForm({
             if (e.key === 'Enter' && !submitting) void submit();
           }}
         />
-        {host !== 'github' && (
-          <input
-            aria-label="API base URL"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="API base URL (self-managed — optional)"
-            className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
-          />
+        {baseUrlField && (
+          // Named, with an example and a line saying who fills it in. It was one
+          // unlabelled "optional" box on every host but GitHub, which was untrue
+          // for Azure DevOps: its organisation is in this URL and nowhere else.
+          <>
+            <label htmlFor="host-base-url-input" className="block text-xs text-text-muted">
+              {baseUrlField.label}
+            </label>
+            <input
+              id="host-base-url-input"
+              type="url"
+              autoComplete="off"
+              spellCheck={false}
+              value={baseUrl}
+              onChange={(e) => setBaseUrls((prev) => ({ ...prev, [host]: e.target.value }))}
+              placeholder={baseUrlField.placeholder}
+              aria-required={baseUrlField.required}
+              aria-describedby="host-base-url-hint"
+              className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !submitting) void submit();
+              }}
+            />
+            <p id="host-base-url-hint" className="text-[0.6875rem] text-text-dim">
+              {baseUrlField.hint}
+            </p>
+          </>
         )}
         {error && (
           <p className="text-xs text-danger" role="alert">
@@ -2003,6 +2049,15 @@ function ActiveSessionCard({
         </span>
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-y-1 text-xs">
+        {/* Only a session connected somewhere other than the host's public
+            address has one. It is the one place that says which server, or
+            which Azure DevOps organisation, this token is used against. */}
+        {session.apiBaseUrl && (
+          <>
+            <dt className="text-text-dim">Server</dt>
+            <dd className="break-all text-text-primary">{session.apiBaseUrl}</dd>
+          </>
+        )}
         {!scopesAreKnowable && (
           <>
             <dt className="text-text-dim">Scopes</dt>

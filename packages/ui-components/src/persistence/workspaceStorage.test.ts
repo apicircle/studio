@@ -816,6 +816,43 @@ describe('workspaceStorage — multi-host backfill on hydrate', () => {
     expect(local.sessions.github.links['link-1']).not.toHaveProperty('scopesReported');
   });
 
+  it('round-trips the server a session was connected to, and invents none where none was stored', async () => {
+    // The address is typed once, on the session form. A reload that dropped it
+    // would send an Azure DevOps token to dev.azure.com with no organisation.
+    const azure = {
+      accountLogin: 'dev',
+      tokenSecretId: 'sec-1',
+      grantedScopes: [],
+      apiBaseUrl: 'https://dev.azure.com/acme',
+      addedAt: 't',
+      lastVerifiedAt: 't',
+      canCreatePullRequests: null,
+    };
+    // Connected to the public host, or written before the address was kept.
+    const gitlab = {
+      accountLogin: 'dev',
+      tokenSecretId: 'sec-2',
+      grantedScopes: ['api'],
+      addedAt: 't',
+      lastVerifiedAt: 't',
+      canCreatePullRequests: true,
+    };
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: {
+        github: seed.sessions.github,
+        hosts: {
+          'azure-devops': { workspace: azure, links: {} },
+          gitlab: { workspace: gitlab, links: {} },
+        },
+      },
+    }));
+
+    expect(local.sessions.hosts?.['azure-devops']?.workspace).toEqual(azure);
+    expect(local.sessions.hosts?.gitlab?.workspace).toEqual(gitlab);
+    expect(local.sessions.hosts?.gitlab?.workspace).not.toHaveProperty('apiBaseUrl');
+  });
+
   it('skips a malformed hosts entry rather than guessing at its shape', async () => {
     const local = await hydrateLocal((seed) => ({
       ...seed,

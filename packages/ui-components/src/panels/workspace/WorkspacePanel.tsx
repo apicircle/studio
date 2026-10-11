@@ -56,6 +56,7 @@ import {
 } from '../../store/workspaceStore';
 import { importWorkspaceLabels } from './importWorkspaceLabels';
 import { parseRepoCoordinate, REPO_HINT, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
+import { HOST_BASE_URL_FIELD, isHostBaseUrlMissing } from '../../store/hostBaseUrl';
 import { useHostSelection } from '../../hooks/useHostSelection';
 import { useLazyListWindow } from '../../hooks/useLazyListWindow';
 import { Badge } from '../../primitives/Badge';
@@ -918,16 +919,28 @@ function ConnectRepoForm() {
   // Only the hosts holding a session are offered. The browser below lists repos
   // THROUGH that session, so a host without one could only fail at the token
   // step — and a picker offering it read as "choose any of four" when one could
-  // answer. `registeredHosts` still says whether this is a multi-host build: the
-  // self-managed base URL belongs to that, not to how many sessions exist. In
-  // open-core Studio both lists are `['github']` and nothing extra renders.
+  // answer. In open-core Studio both lists are `['github']` and nothing extra
+  // renders.
   const { hosts, registeredHosts, lockedHosts, host, setHost } = useHostSelection({
     connectedOnly: true,
   });
-  const multiHostBuild = registeredHosts.length > 1;
   // "Connect another host" is advice only while another host CAN be connected.
   const otherHostConnectable = registeredHosts.length - lockedHosts.length > 1;
-  const [apiBaseUrl, setApiBaseUrl] = useState('');
+  // Which server the repos are on is the session's to say: it is asked for when
+  // the session is connected, and the store reads it from there. This form had
+  // its own field for it, so a self-managed address was typed twice, and left
+  // blank here it listed the public host's repos with the self-managed token.
+  //
+  // A session can lack an address its host cannot work without (Azure DevOps'
+  // organisation): one connected before the address was kept. Its repos cannot
+  // be listed, and the host's own error would not say why.
+  const sessionServer = useWorkspaceStore(
+    (s) => workspaceSessionFor(s.local, host)?.apiBaseUrl ?? '',
+  );
+  const missingServer = isHostBaseUrlMissing(host, sessionServer)
+    ? HOST_BASE_URL_FIELD[host]
+    : null;
+  const serverMissing = missingServer !== null;
 
   const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
   const [reposError, setReposError] = useState<string | null>(null);
@@ -936,12 +949,12 @@ function ConnectRepoForm() {
   const [showRepoList, setShowRepoList] = useState(false);
 
   useEffect(() => {
-    if (manualMode) return;
+    if (manualMode || serverMissing) return;
     let cancelled = false;
     setLoadingRepos(true);
     setReposError(null);
     setRepos(null);
-    listAccessibleRepos({ host, baseUrl: apiBaseUrl.trim() || undefined })
+    listAccessibleRepos({ host })
       .then((list) => {
         if (cancelled) return;
         setRepos(list);
@@ -963,7 +976,7 @@ function ConnectRepoForm() {
     return () => {
       cancelled = true;
     };
-  }, [manualMode, host, apiBaseUrl, listAccessibleRepos, surfaceMissingScope]);
+  }, [manualMode, serverMissing, host, listAccessibleRepos, surfaceMissingScope]);
 
   // The whole filtered list: the filter must see every repo, and the listbox
   // renders a window over it that grows as the user scrolls (see the hook).
@@ -984,7 +997,7 @@ function ConnectRepoForm() {
     setSubmitting(true);
     setError(null);
     try {
-      await connectRepo(owner, name, { host, baseUrl: apiBaseUrl.trim() || undefined });
+      await connectRepo(owner, name, { host });
       setValue('');
       setFilter('');
       setShowRepoList(false);
@@ -1023,56 +1036,44 @@ function ConnectRepoForm() {
         >
           Connect a repo on {GIT_HOST_LABELS[host]}
         </label>
-        <button
-          type="button"
-          onClick={() => {
-            setManualMode((v) => !v);
-            setError(null);
-          }}
-          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
-          aria-label={manualMode ? 'Switch to repo browser' : 'Switch to manual entry'}
-        >
-          <Pencil size={10} />
-          {manualMode ? 'Browse repos' : 'Manual entry'}
-        </button>
+        {!serverMissing && (
+          <button
+            type="button"
+            onClick={() => {
+              setManualMode((v) => !v);
+              setError(null);
+            }}
+            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+            aria-label={manualMode ? 'Switch to repo browser' : 'Switch to manual entry'}
+          >
+            <Pencil size={10} />
+            {manualMode ? 'Browse repos' : 'Manual entry'}
+          </button>
+        )}
       </div>
 
-      {(hosts.length > 1 || multiHostBuild) && (
+      {hosts.length > 1 && (
         <div className="flex gap-2">
-          {hosts.length > 1 && (
-            <select
-              id="connect-repo-host"
-              aria-label="Git host"
-              value={host}
-              onChange={(e) => {
-                setHost(e.target.value as GitHostKind);
-                // The repo list belongs to the old host; keeping it on screen
-                // would offer repos the new host cannot connect.
-                setError(null);
-                setFilter('');
-                setShowRepoList(false);
-              }}
-              className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary"
-            >
-              {hosts.map((kind) => (
-                <option key={kind} value={kind}>
-                  {GIT_HOST_LABELS[kind]}
-                </option>
-              ))}
-            </select>
-          )}
-          {multiHostBuild && (
-            <input
-              aria-label="API base URL"
-              value={apiBaseUrl}
-              onChange={(e) => setApiBaseUrl(e.target.value)}
-              // Optional on purpose: blank means the host's public API. Only a
-              // self-managed instance needs this, and demanding it from everyone
-              // would make the common case harder to serve the rare one.
-              placeholder="API base URL (self-managed — optional)"
-              className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-dim"
-            />
-          )}
+          <select
+            id="connect-repo-host"
+            aria-label="Git host"
+            value={host}
+            onChange={(e) => {
+              setHost(e.target.value as GitHostKind);
+              // The repo list belongs to the old host; keeping it on screen
+              // would offer repos the new host cannot connect.
+              setError(null);
+              setFilter('');
+              setShowRepoList(false);
+            }}
+            className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary"
+          >
+            {hosts.map((kind) => (
+              <option key={kind} value={kind}>
+                {GIT_HOST_LABELS[kind]}
+              </option>
+            ))}
+          </select>
         </div>
       )}
       {otherHostConnectable && hosts.length === 1 && (
@@ -1084,7 +1085,19 @@ function ConnectRepoForm() {
         </p>
       )}
 
-      {manualMode ? (
+      {missingServer ? (
+        // Neither the browser nor manual entry: both would call the host at an
+        // address that reaches nothing. What is missing is on the session, and
+        // only connecting it again can supply it.
+        <p
+          role="status"
+          className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning"
+        >
+          Your {GIT_HOST_LABELS[host]} session has no {missingServer.label} saved, so its repos
+          cannot be reached. Disconnect it under Secret Vault → Sessions, then connect again and
+          enter it.
+        </p>
+      ) : manualMode ? (
         <div className="space-y-1">
           <div className="flex gap-2">
             <input

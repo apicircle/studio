@@ -226,11 +226,129 @@ describe('WorkspacePanel', () => {
       expect(
         screen.getByText(/Repos are listed through your Bitbucket session/),
       ).toBeInTheDocument();
-      // A multi-host build still offers the self-managed base URL.
-      expect(screen.getByLabelText('API base URL')).toBeInTheDocument();
-      await waitFor(() =>
-        expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'bitbucket', baseUrl: undefined }),
-      );
+      // Which server the repos are on is the session's to say, so this form asks
+      // for no address and passes none: the store reads the session's.
+      expect(screen.queryByLabelText('API base URL')).not.toBeInTheDocument();
+      await waitFor(() => expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'bitbucket' }));
+    });
+
+    describe('the server the repos are on', () => {
+      // This form had its own "API base URL" box. A self-managed address was
+      // typed on the session form and again here, and left blank here the
+      // public host's repos were listed with the self-managed token.
+      const ORG = 'https://dev.azure.com/acme';
+
+      /** An Azure DevOps session, connected with `apiBaseUrl` or without one. */
+      function seedAzureSession(apiBaseUrl?: string): void {
+        act(() => {
+          const local = useWorkspaceStore.getState().local!;
+          useWorkspaceStore.setState({
+            local: {
+              ...local,
+              sessions: {
+                github: { workspace: null, links: {} },
+                hosts: {
+                  'azure-devops': {
+                    workspace: {
+                      ...SESSION,
+                      accountLogin: 'az-user',
+                      ...(apiBaseUrl ? { apiBaseUrl } : {}),
+                    },
+                    links: {},
+                  },
+                },
+              },
+            },
+          });
+        });
+      }
+
+      it('lists and connects through the session, with no address of its own', async () => {
+        registerAllHosts();
+        const listAccessibleRepos = vi.fn(async () => [repo('proj/api')]);
+        const connectRepo = vi.fn(async () => ({}) as never);
+        await renderWithStore(<WorkspacePanel />);
+        useWorkspaceStore.setState({ listAccessibleRepos, connectRepo });
+        seedAzureSession(ORG);
+
+        expect(screen.getByText('Connect a repo on Azure DevOps')).toBeInTheDocument();
+        expect(screen.queryByLabelText('API base URL')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Organisation URL')).not.toBeInTheDocument();
+        await waitFor(() =>
+          expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'azure-devops' }),
+        );
+
+        await userEvent.click(screen.getByRole('combobox', { name: 'Filter accessible repos' }));
+        await userEvent.click(await screen.findByRole('option', { name: 'Connect proj/api' }));
+        await waitFor(() =>
+          expect(connectRepo).toHaveBeenCalledWith('proj', 'api', { host: 'azure-devops' }),
+        );
+      });
+
+      it('says where the Azure DevOps organisation comes from, under manual entry', async () => {
+        registerAllHosts();
+        await renderWithStore(<WorkspacePanel />);
+        useWorkspaceStore.setState({ listAccessibleRepos: vi.fn(async () => []) });
+        seedAzureSession(ORG);
+
+        await userEvent.click(screen.getByRole('button', { name: /Switch to manual entry/ }));
+        expect(screen.getByLabelText('Repo full name')).toHaveAttribute(
+          'placeholder',
+          'project/repo',
+        );
+        expect(
+          screen.getByText(
+            'Enter project/repo only. The organisation comes from the Organisation URL your session was connected with.',
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it('says what a session is missing when its host cannot be reached without it', async () => {
+        // A session connected before the address was kept on it. Listing would
+        // call dev.azure.com with no organisation, and the host's own error
+        // would not say why.
+        registerAllHosts();
+        const listAccessibleRepos = vi.fn(async () => [repo('proj/api')]);
+        await renderWithStore(<WorkspacePanel />);
+        useWorkspaceStore.setState({ listAccessibleRepos });
+        seedAzureSession();
+
+        expect(screen.getByRole('status')).toHaveTextContent(
+          'Your Azure DevOps session has no Organisation URL saved, so its repos cannot be reached. ' +
+            'Disconnect it under Secret Vault → Sessions, then connect again and enter it.',
+        );
+        // Neither way of naming a repo is offered, and the host is not called.
+        expect(
+          screen.queryByRole('combobox', { name: 'Filter accessible repos' }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: /Switch to manual entry/ }),
+        ).not.toBeInTheDocument();
+        expect(listAccessibleRepos).not.toHaveBeenCalled();
+
+        // Connected again with the URL, the form is back and lists through it.
+        seedAzureSession(ORG);
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        expect(
+          screen.getByRole('combobox', { name: 'Filter accessible repos' }),
+        ).toBeInTheDocument();
+        await waitFor(() =>
+          expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'azure-devops' }),
+        );
+      });
+
+      it('asks nothing of a host whose address is optional', async () => {
+        // GitLab with no address saved is gitlab.com, not a session with a gap.
+        registerAllHosts();
+        const listAccessibleRepos = vi.fn(async () => [repo('group/api')]);
+        await renderWithStore(<WorkspacePanel />);
+        useWorkspaceStore.setState({ listAccessibleRepos });
+        seedSessions(['gitlab']);
+
+        expect(screen.getByText('Connect a repo on GitLab')).toBeInTheDocument();
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        await waitFor(() => expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'gitlab' }));
+      });
     });
 
     it('offers only the hosts holding a session when more than one does', async () => {
@@ -253,10 +371,7 @@ describe('WorkspacePanel', () => {
       await userEvent.selectOptions(picker, 'bitbucket');
       expect(screen.getByText('Connect a repo on Bitbucket')).toBeInTheDocument();
       await waitFor(() =>
-        expect(listAccessibleRepos).toHaveBeenLastCalledWith({
-          host: 'bitbucket',
-          baseUrl: undefined,
-        }),
+        expect(listAccessibleRepos).toHaveBeenLastCalledWith({ host: 'bitbucket' }),
       );
       await userEvent.click(screen.getByRole('combobox', { name: 'Filter accessible repos' }));
       expect(
@@ -456,9 +571,7 @@ describe('WorkspacePanel', () => {
         // Every other host is locked: "connect another host" would be advice
         // nobody can follow.
         expect(screen.queryByText(/To connect a repo on another host/)).not.toBeInTheDocument();
-        await waitFor(() =>
-          expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'github', baseUrl: undefined }),
-        );
+        await waitFor(() => expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'github' }));
         expect(listAccessibleRepos).not.toHaveBeenCalledWith(
           expect.objectContaining({ host: 'bitbucket' }),
         );

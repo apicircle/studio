@@ -54,6 +54,42 @@
 
 ### Fixed
 
+- **A Git host's address is asked for once, and its token goes nowhere else.**
+  A build that registers more hosts than GitHub (an edition's; Studio alone
+  registers GitHub and shows none of this) offered an optional "API base URL" in
+  two places: the session form and the repo form. The session form used it to
+  verify the token and dropped it, and only the repo form's was saved. The
+  address is now typed on the session form alone, saved on the session
+  (`GitHubSession.apiBaseUrl`), and copied onto the repo connected through it
+  (`ConnectedRepo.apiBaseUrl`, as before).
+  - Until a repo was connected, the repo browser and Test connection called the
+    host's public address with a self-managed session's token. Left blank on the
+    repo form, so did the repo connect. All three now read the session's address
+    (`hostProviderOptions`).
+  - A URL typed on one host's tab was still submitted after a switch to another
+    host's tab, GitHub's included, which shows no field: that host's token went
+    to the first host's server. The form keeps what is typed per host.
+  - The form's error followed the same way: a refusal raised on one host's tab
+    stayed on screen under another host's form. It is kept with the host it was
+    raised on, and a connect that fails after a switch reports against the host
+    it was sent to.
+  - A repo connected on a second host inherited the first host's address
+    (`connectRepo` fell back to `connectedRepo.apiBaseUrl` whatever host that
+    repo was on).
+  - The field follows the host (`store/hostBaseUrl.ts`): none for GitHub;
+    optional for GitLab and Bitbucket, with an example and a line saying blank
+    is the public host; and a required **Organisation URL** for Azure DevOps,
+    whose organisation is in that URL and nowhere else. Connect stays disabled
+    without it, and a value that is not a full URL, or is `dev.azure.com` with
+    no organisation after it, is refused before the token is sent.
+  - The session card names the server of a session that has one. The repo form
+    has no address field. An Azure DevOps session saved without an organisation
+    URL (one connected before this) is told to connect again instead of being
+    shown the host's error.
+  - `connectHostSession`, `connectRepo` and `listAccessibleRepos` keep their
+    `baseUrl` option. A credential a caller supplies (`tokenOverride`) is not
+    sent to the session's address.
+
 - **An added or a removed line of a change shows on every theme.** The
   working-branch preview opens a change as a diff, and marked its lines with the
   status colour painted thin over the page (`bg-danger/10`). Over a page of the

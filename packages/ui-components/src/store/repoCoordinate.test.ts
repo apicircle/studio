@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HOST_BASE_URL_FIELD } from './hostBaseUrl';
 import {
   isRepoCoordinateComplete,
   parseRepoCoordinate,
@@ -57,7 +58,9 @@ describe('parseRepoCoordinate', () => {
     const result = parseRepoCoordinate('my-org/my-project/api', 'azure-devops');
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toContain('project/repo');
-    expect(REPO_HINT['azure-devops']).toContain('API base URL');
+    // The hint names the field the organisation IS in, by the label that field
+    // carries on the session form.
+    expect(REPO_HINT['azure-devops']).toContain(HOST_BASE_URL_FIELD['azure-devops']!.label);
   });
 
   it('accepts the two-part Azure coordinate', () => {

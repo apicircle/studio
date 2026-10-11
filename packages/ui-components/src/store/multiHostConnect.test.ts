@@ -8,6 +8,7 @@ import {
   resetGitProviderRegistry,
   type GitHostKind,
   type GitProvider,
+  type GitProviderOptions,
 } from '@apicircle/git';
 import type { GitHostSession, WorkspaceLocal } from '@apicircle/shared';
 import { anyWorkspaceSession, hostOfWorkspaceSession, useWorkspaceStore } from './workspaceStore';
@@ -921,5 +922,232 @@ describe("workspaceStore — the workspace's session is the one on its repo's ho
       expect(hostOfWorkspaceSession(local)).toBe('github');
       expect(anyWorkspaceSession(local)).toBeNull();
     }
+  });
+});
+
+describe('workspaceStore — a session reaches the server it was connected to', () => {
+  // The address was typed on the session form, used once to verify the token,
+  // and dropped. Every call after that read `connectedRepo.apiBaseUrl`, which
+  // does not exist until a repo is connected. So the repo browser, the repo
+  // connect itself and Test connection all went to the host's PUBLIC address
+  // with a self-managed token, unless the address was typed a second time on
+  // the repo form. For Azure DevOps, whose organisation is in that URL, the
+  // public address reaches nothing at all.
+  //
+  // These assert on the SERVER each client was built for, beside the token it
+  // was handed: "it called Azure DevOps" is true of the broken version too.
+  const ORG = 'https://dev.azure.com/acme';
+  const GITLAB = 'https://gl.acme.dev/api/v4';
+  let seen: Array<{ op: string; server: string; token: string }>;
+
+  /** A provider factory that records the server each call was aimed at. */
+  function serverSpy(host: GitHostKind) {
+    return (opts?: GitProviderOptions): GitProvider => {
+      const server = opts?.baseUrl ?? 'public';
+      const record = (op: string, token: string): void => {
+        seen.push({ op, server, token });
+      };
+      return {
+        getViewer: vi.fn(async (token: string) => {
+          record('getViewer', token);
+          return { viewer: { login: `${host}-user`, id: 1 }, scopes: { granted: [], missing: [] } };
+        }),
+        listAccessibleRepos: vi.fn(async (token: string) => {
+          record('listAccessibleRepos', token);
+          return [];
+        }),
+        listBranches: vi.fn(async (token: string) => {
+          record('listBranches', token);
+          return [];
+        }),
+        listPullRequests: vi.fn(async (token: string) => {
+          record('listPullRequests', token);
+          return [];
+        }),
+        getRepo: vi.fn(async (token: string, owner: string, name: string) => {
+          record('getRepo', token);
+          return {
+            fullName: `${owner}/${name}`,
+            owner,
+            name,
+            defaultBranch: 'main',
+            visibility: 'private' as const,
+            isPrivate: true,
+            pushable: true,
+          };
+        }),
+      } as unknown as GitProvider;
+    };
+  }
+
+  const servers = (): string[] => [...new Set(seen.map((s) => s.server))];
+
+  beforeEach(async () => {
+    seen = [];
+    resetGitProviderRegistry();
+    registerGitProvider('azure-devops', serverSpy('azure-devops'));
+    registerGitProvider('gitlab', serverSpy('gitlab'));
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    resetGitProviderRegistry();
+  });
+
+  it('verifies the token against the server it was given, and records it on the session', async () => {
+    const session = await useWorkspaceStore
+      .getState()
+      .connectHostSession('AZ-SECRET', 'azure-devops', { baseUrl: `  ${ORG}  ` });
+
+    expect(seen).toEqual([{ op: 'getViewer', server: ORG, token: 'AZ-SECRET' }]);
+    expect(session.apiBaseUrl).toBe(ORG);
+    const local = useWorkspaceStore.getState().local!;
+    expect(local.sessions.hosts?.['azure-devops']?.workspace?.apiBaseUrl).toBe(ORG);
+  });
+
+  it('records no server for a session connected to the public host', async () => {
+    const plain = await useWorkspaceStore.getState().connectHostSession('GL-SECRET', 'gitlab');
+    expect(plain).not.toHaveProperty('apiBaseUrl');
+    await useWorkspaceStore.getState().disconnectHostSession('gitlab');
+
+    // Whitespace is not an address.
+    const blank = await useWorkspaceStore
+      .getState()
+      .connectHostSession('GL-SECRET', 'gitlab', { baseUrl: '   ' });
+    expect(blank).not.toHaveProperty('apiBaseUrl');
+    expect(servers()).toEqual(['public']);
+  });
+
+  it('lists repos on that server before any repo is connected', async () => {
+    await useWorkspaceStore
+      .getState()
+      .connectHostSession('AZ-SECRET', 'azure-devops', { baseUrl: ORG });
+    seen.length = 0;
+
+    await useWorkspaceStore.getState().listAccessibleRepos({ host: 'azure-devops' });
+    await useWorkspaceStore.getState().listRepoBranches('proj', 'api', { host: 'azure-devops' });
+
+    expect(seen).toEqual([
+      { op: 'listAccessibleRepos', server: ORG, token: 'AZ-SECRET' },
+      { op: 'listBranches', server: ORG, token: 'AZ-SECRET' },
+    ]);
+  });
+
+  it('connects a repo on that server, and records it on the repo', async () => {
+    await useWorkspaceStore
+      .getState()
+      .connectHostSession('AZ-SECRET', 'azure-devops', { baseUrl: ORG });
+    seen.length = 0;
+
+    // No address passed: the form that connects a repo no longer has one.
+    const repo = await useWorkspaceStore
+      .getState()
+      .connectRepo('proj', 'api', { host: 'azure-devops' });
+
+    // The repo itself, and the pull-request probe that follows it.
+    expect(seen.map((s) => s.op)).toEqual(['getRepo', 'listPullRequests']);
+    expect(servers()).toEqual([ORG]);
+    // Lens clones and reviews from this record.
+    expect(repo.apiBaseUrl).toBe(ORG);
+    expect(useWorkspaceStore.getState().local!.connectedRepo?.apiBaseUrl).toBe(ORG);
+  });
+
+  it('tests and replaces the token on that server, with no repo connected', async () => {
+    await useWorkspaceStore
+      .getState()
+      .connectHostSession('AZ-SECRET', 'azure-devops', { baseUrl: ORG });
+    seen.length = 0;
+
+    await useWorkspaceStore.getState().verifyHostScopes('azure-devops');
+    await useWorkspaceStore.getState().preflightHostConnection('azure-devops');
+    await useWorkspaceStore.getState().updateHostToken('AZ-NEW', 'azure-devops');
+
+    expect(seen).toEqual([
+      { op: 'getViewer', server: ORG, token: 'AZ-SECRET' },
+      { op: 'getViewer', server: ORG, token: 'AZ-SECRET' },
+      { op: 'getViewer', server: ORG, token: 'AZ-NEW' },
+    ]);
+    // None of the three rewrites the session without its server.
+    const local = useWorkspaceStore.getState().local!;
+    expect(local.sessions.hosts?.['azure-devops']?.workspace?.apiBaseUrl).toBe(ORG);
+  });
+
+  it("does not lend one host's server to a repo connected on another host", async () => {
+    // `connectRepo` fell back to `connectedRepo.apiBaseUrl` whatever host that
+    // repo was on, so the second host's token went to the first host's server.
+    await useWorkspaceStore.getState().connectHostSession('AZ-SECRET', 'azure-devops');
+    // The address on the repo, as the repo form used to put it there.
+    await useWorkspaceStore
+      .getState()
+      .connectRepo('proj', 'api', { host: 'azure-devops', baseUrl: ORG });
+    await useWorkspaceStore.getState().connectHostSession('GL-SECRET', 'gitlab');
+    seen.length = 0;
+
+    const repo = await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    expect(seen.every((s) => s.token === 'GL-SECRET')).toBe(true);
+    expect(servers()).toEqual(['public']);
+    expect(repo).not.toHaveProperty('apiBaseUrl');
+  });
+
+  it("falls back to the connected repo's server for a session recorded without one", async () => {
+    // What a workspace connected before the address was kept on the session
+    // holds: the address on the repo alone, typed there a second time.
+    await useWorkspaceStore.getState().connectHostSession('GL-SECRET', 'gitlab');
+    await useWorkspaceStore
+      .getState()
+      .connectRepo('group', 'api', { host: 'gitlab', baseUrl: GITLAB });
+    expect(
+      useWorkspaceStore.getState().local!.sessions.hosts?.gitlab?.workspace,
+    ).not.toHaveProperty('apiBaseUrl');
+    seen.length = 0;
+
+    await useWorkspaceStore.getState().verifyHostScopes('gitlab');
+    await useWorkspaceStore.getState().listAccessibleRepos({ host: 'gitlab' });
+    // A second repo on the same host is on the same server.
+    await useWorkspaceStore.getState().connectRepo('group', 'other', { host: 'gitlab' });
+
+    expect(servers()).toEqual([GITLAB]);
+    // That server is its own host's, and no other host's.
+    seen.length = 0;
+    await useWorkspaceStore
+      .getState()
+      .connectHostSession('AZ-SECRET', 'azure-devops', { baseUrl: ORG });
+    await useWorkspaceStore.getState().listAccessibleRepos({ host: 'azure-devops' });
+    expect(servers()).toEqual([ORG]);
+  });
+
+  it("does not lend the session's server to a credential the caller supplies", async () => {
+    // A dedicated link token was not verified against the session's server.
+    await useWorkspaceStore
+      .getState()
+      .connectHostSession('AZ-SECRET', 'azure-devops', { baseUrl: ORG });
+    seen.length = 0;
+
+    await useWorkspaceStore
+      .getState()
+      .listAccessibleRepos({ host: 'azure-devops', tokenOverride: 'DEDICATED' });
+    expect(seen).toEqual([{ op: 'listAccessibleRepos', server: 'public', token: 'DEDICATED' }]);
+
+    // It keeps the fallback it always had, the connected repo's server...
+    await useWorkspaceStore.getState().connectRepo('proj', 'api', { host: 'azure-devops' });
+    seen.length = 0;
+    await useWorkspaceStore
+      .getState()
+      .listAccessibleRepos({ host: 'azure-devops', tokenOverride: 'DEDICATED' });
+    expect(seen).toEqual([{ op: 'listAccessibleRepos', server: ORG, token: 'DEDICATED' }]);
+
+    // ...and an address the caller names wins over both.
+    seen.length = 0;
+    await useWorkspaceStore.getState().listAccessibleRepos({
+      host: 'azure-devops',
+      tokenOverride: 'DEDICATED',
+      baseUrl: 'https://dev.azure.com/other',
+    });
+    expect(seen).toEqual([
+      { op: 'listAccessibleRepos', server: 'https://dev.azure.com/other', token: 'DEDICATED' },
+    ]);
   });
 });
