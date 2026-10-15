@@ -27,6 +27,14 @@
 
 ### Security
 
+- **The desktop app runs on Electron 44.** It ran on Electron 32.3.3, which is
+  out of support and named in 37 published advisories (12 of them high), among
+  them a context-isolation bypass and an ASAR integrity bypass. The app now
+  runs on Electron 44.7.2 and is built with electron-builder 26.15.3, which
+  also drops the vulnerable `tar` that electron-builder 25 pulled in;
+  electron-updater moves to 6.8.9. Studio's main process used none of the
+  Electron APIs removed between the two versions, and the desktop suite
+  passes unchanged except for its Help menu case (see Changed).
 - **A push stops and asks before it writes a value that looks like a
   secret.** `redactForGit` blanks the credential fields it knows about; free
   text it cannot vouch for — a literal bearer token in a header row,
@@ -550,6 +558,18 @@
 
 ### Changed
 
+- **The desktop app needs macOS 13 (Ventura) or later.** Electron 44 no longer
+  runs on macOS 12. Windows (x64) and Linux builds are unchanged.
+- **The desktop menu bar has no Help menu.** Studio sets no menu of its own,
+  and Electron's default menu no longer adds Help; the one it added linked to
+  Electron's website, not Studio's. Studio's help is the Help panel. The
+  desktop suite no longer claims TC-DS-0010 (Help About/Docs/Report).
+- **Development: `pnpm install` no longer downloads Electron.** Electron 44
+  fetches its binary the first time it is started (`require('electron')`), so
+  the first desktop build, test or E2E run on a fresh machine or CI runner
+  downloads it. electron-builder 26 reads the Windows `publisherName` and
+  `signingHashAlgorithms` from `win.signtoolOptions`, and refuses the whole
+  config when they sit directly under `win`; `electron-builder.yml` moves them.
 - **Disconnecting a session asks in a dialog that says what goes.** Disconnect
   on a session card (Secret Vault → Sessions) was confirmed by pressing the
   same button a second time, once it read "Confirm disconnect". That had room

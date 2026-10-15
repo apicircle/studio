@@ -25,12 +25,12 @@
     "@apicircle/shared": "workspace:*",
     "@apicircle/ui-components": "workspace:*",
     "@apicircle/web": "workspace:*",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "electron": "^32.0.0",
-    "electron-builder": "^25.0.0",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "tsup": "^8.3.0",
     "tsx": "^4.22.0",
     "typescript": "^5.4.0",

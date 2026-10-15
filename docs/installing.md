@@ -16,6 +16,8 @@ Download the installer for your OS from the latest release at
 
 ## macOS (`.dmg`)
 
+Requires **macOS 13 (Ventura) or later**, on Apple silicon or Intel.
+
 1. Open the downloaded `.dmg` and drag **API Circle Studio** into your
    `/Applications` folder.
 2. The first time you double-click the app, Gatekeeper will say:
@@ -23,7 +25,7 @@ Download the installer for your OS from the latest release at
 3. Click **Cancel**.
 4. Open **System Settings → Privacy & Security**, scroll to the
    _Security_ section, and click **Open Anyway** next to the
-   API Circle Studio entry. (On older macOS: System Preferences → Security & Privacy → General.)
+   API Circle Studio entry.
 5. Re-launch the app. macOS will ask one more time — click **Open**.
 
 After that, the app launches normally. Auto-updates land silently in the
@@ -61,6 +63,8 @@ until we ship signed binaries.
 > auto-update until signed builds ship.
 
 ## Windows (`.exe` installer)
+
+Requires **64-bit Windows 10 or later**.
 
 1. Run the downloaded `API Circle Studio-<version>-win-x64.exe`.
 2. Windows SmartScreen will show:

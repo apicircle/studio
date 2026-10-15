@@ -150,18 +150,21 @@ test.describe('Desktop-specific (DS)', () => {
   // doesn't reliably fire `before-quit`. See e2e/web/manual-residue.ts.
 
   // ---------------------------------------------------------------
-  // Native menu — Electron registers File/Edit/View/Window/Help. Verify
+  // Native menu — Electron registers File/Edit/View/Window. Verify
   // the menu exists with each top-level item. Sub-item activation is
   // OS-WM-driven and out of scope (manual-residue).
   // ---------------------------------------------------------------
 
-  for (const menuLabel of ['File', 'Edit', 'View', 'Window', 'Help']) {
+  // TC-DS-0010 (Help About/Docs/Report) has no test: Studio sets no menu
+  // of its own, and Electron's default menu has had no Help item since
+  // the move off Electron 32 (its old Help linked to electronjs.org).
+
+  for (const menuLabel of ['File', 'Edit', 'View', 'Window']) {
     const keyMap: Record<string, string> = {
       File: 'Native Menu :: File menu items work',
       Edit: 'Native Menu :: Edit menu Cut/Copy/Paste/Undo/Redo',
       View: 'Native Menu :: View Reload/DevTools/Zoom',
       Window: 'Native Menu :: Window Minimize/Zoom/Close',
-      Help: 'Native Menu :: Help About/Docs/Report',
     };
     test(tc(id(keyMap[menuLabel]!), `${menuLabel} menu present`), async () => {
       const { app } = await launchElectron();
@@ -171,7 +174,7 @@ test.describe('Desktop-specific (DS)', () => {
         return menu.items.some((i) => (i.label ?? '').includes(label));
       }, menuLabel);
       // Electron mounts a default menu when the app doesn't override —
-      // on Linux & Windows the default has File/Edit/View/Window/Help.
+      // on Linux & Windows the default has File/Edit/View/Window.
       // On macOS the app name takes the leading slot. We accept either.
       expect(has || menuLabel === 'File').toBe(true);
       await app.close();

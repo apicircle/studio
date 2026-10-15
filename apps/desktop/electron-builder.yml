@@ -83,9 +83,12 @@ win:
   # closes audit P1 #17 (auto-updater installing unsigned artifacts).
   # Local dev / unset-cert builds are still produced unsigned — same
   # behaviour as before, just with `publisherName` now declared.
-  publisherName: 'API Circle'
-  signingHashAlgorithms:
-    - sha256
+  # electron-builder 26 reads both settings from `signtoolOptions` and
+  # refuses the whole config when they sit directly under `win`.
+  signtoolOptions:
+    publisherName: 'API Circle'
+    signingHashAlgorithms:
+      - sha256
   # electron-updater on Windows verifies update artifacts against this
   # publisher name at install-time when the running app was signed by the
   # same publisher. Default is true; we set it explicitly so a future
