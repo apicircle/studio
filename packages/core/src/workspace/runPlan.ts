@@ -40,6 +40,11 @@ import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 // encrypts variables is an encryption key, never a `{{LABEL}}` value: a step
 // that references one is not sent. Supplied values are hidden in the history
 // this returns (`hideRunSecrets`).
+//
+// Extracted values: each step's captures feed the next steps. Only the ones
+// `extractContext` saves reach `nextState.local.globalContext`; a capture that
+// looks like a credential is used for the rest of the run, hidden in its
+// history like a supplied secret, and never returned to be written to disk.
 // =============================================================================
 
 // History buffer caps — mirror the store's circular-buffer behaviour so a CLI
@@ -361,7 +366,10 @@ export async function runPlan(
 
   // Rolling state across steps: extracted context vars feed the next step's
   // resolver; refreshed OAuth2 tokens replace the request's stored auth.
+  // Captures that look like credentials go to `heldContext`, which feeds the
+  // resolver too but never reaches `nextState`.
   let globalContext = { ...state.local.globalContext };
+  let heldContext: Record<string, string> = {};
   let requests = state.synced.collections.requests;
   const tokenRefreshes = new Map<string, RequestAuth>();
 
@@ -442,7 +450,7 @@ export async function runPlan(
       resolveSynced,
       plan,
       stepEnvRefs,
-      globalContext,
+      { ...globalContext, ...heldContext },
       step.linkedWorkspaceId ? buildEnvMaps(resolveSynced, secretsById, state.local) : flatEnvs,
       secretsByLabel,
       encryptionKeys,
@@ -483,12 +491,29 @@ export async function runPlan(
       },
     });
 
+    // Carry extracted context vars into the rolling scope for the next step.
+    // A held value sent by this step, or captured from its response, is a
+    // secret of this step's stored run as well as the supplied ones.
+    const sentSecrets = [...knownSecrets, ...Object.values(heldContext)];
+    if (baseRequest.extractions.length > 0) {
+      const { saved, held } = extractContext(result, baseRequest.extractions, sentSecrets);
+      const nextHeld = { ...heldContext };
+      const nextSaved = { ...globalContext, ...saved };
+      for (const key of Object.keys(saved)) delete nextHeld[key];
+      for (const [key, { value }] of Object.entries(held)) {
+        nextHeld[key] = value;
+        delete nextSaved[key];
+      }
+      globalContext = nextSaved;
+      heldContext = nextHeld;
+    }
+
     const assertionResults = withAssertions ? runAssertions(baseRequest.assertions, result) : [];
     const passed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
-    const requestRun = hideRunSecrets(
-      buildRequestRun(resolved, result, assertionResults),
-      knownSecrets,
-    );
+    const requestRun = hideRunSecrets(buildRequestRun(resolved, result, assertionResults), [
+      ...sentSecrets,
+      ...Object.values(heldContext),
+    ]);
     newRequestRuns.push(requestRun);
     stepRecords.push({ requestRunId: requestRun.id, passed });
     record({
@@ -502,12 +527,6 @@ export async function runPlan(
       missingVariables: missing,
       passed,
     });
-
-    // Carry extracted context vars into the rolling scope for the next step.
-    if (baseRequest.extractions.length > 0) {
-      const { extracted } = extractContext(result, baseRequest.extractions);
-      globalContext = { ...globalContext, ...extracted };
-    }
 
     // Fold a refreshed token back into `requests` so a later step reusing the
     // same request sees the fresh access token instead of re-refreshing.

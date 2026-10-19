@@ -6,12 +6,17 @@
 //
 //   • Extractors — rules that pull a value out of the response after every
 //     successful run. The variable name + path is git-synced (on the request);
-//     the extracted *value* lands in `local.globalContext` (local-only, never
-//     pushed to Git) and becomes visible to subsequent requests + plan steps
-//     as `{{name}}`. The local store survives reload via IDB.
+//     the extracted *value* becomes visible to subsequent requests + plan
+//     steps as `{{name}}`, and lives in one of two places, which each row
+//     says once a value is captured:
+//       - `local.globalContext` — saved on this device (IDB + disk mirror),
+//         never pushed to Git, survives reload;
+//       - `heldContext` in the store — a value that looks like a credential
+//         (a login's token), held in memory only and gone when Studio closes.
 
 import { memo, useState } from 'react';
-import { Crosshair, Plus, Trash2 } from 'lucide-react';
+import { Crosshair, HardDrive, MemoryStick, Plus, Trash2 } from 'lucide-react';
+import type { HeldContextValue } from '@apicircle/core';
 import type { ContextExtraction, Request as ApiRequest } from '@apicircle/shared';
 import { generateId, validateEnvVarName, validateJsonPath } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -40,6 +45,8 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
   const setExtractions = useWorkspaceStore((s) => s.setRequestExtractions);
   const lastRunBody = useWorkspaceStore((s) => s.lastRun[request.id]?.body ?? '');
   const lastRunBodyKind = useWorkspaceStore((s) => s.lastRun[request.id]?.bodyKind ?? null);
+  const savedContext = useWorkspaceStore((s) => s.local?.globalContext);
+  const heldContext = useWorkspaceStore((s) => s.heldContext);
   const [pickerForExtractionId, setPickerForExtractionId] = useState<string | null>(null);
 
   const updateRow = (index: number, patch: Partial<{ key: string; value: string }>): void => {
@@ -157,8 +164,8 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
         <header className="flex items-center justify-between">
           <h3 className={sectionTitle}>Auto-extract from response</h3>
           <span className="text-[0.6875rem] text-text-dim">
-            Names + paths pushed to Git · captured values stay local · feed <code>{'{{var}}'}</code>{' '}
-            in next requests.
+            Names + paths pushed to Git · values stay on this device, credentials in memory only ·
+            feed <code>{'{{var}}'}</code> in next requests.
           </span>
         </header>
         <div className="flex flex-col gap-1">
@@ -167,7 +174,7 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
               No extractors yet. Add one to capture a token, status, header, or JSON path.
             </p>
           )}
-          {request.extractions.map((ex, idx) => (
+          {request.extractions.map((ex, idx) => [
             <div key={ex.id} className="grid grid-cols-[auto_1fr_auto_2fr_auto] items-center gap-2">
               <input
                 type="checkbox"
@@ -252,8 +259,14 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
               >
                 <Trash2 size={12} />
               </button>
-            </div>
-          ))}
+            </div>,
+            <CapturedValueStatus
+              key={`${ex.id}-status`}
+              variable={ex.variable.trim()}
+              saved={savedContext}
+              held={heldContext}
+            />,
+          ])}
           <button
             type="button"
             onClick={addExtraction}
@@ -278,6 +291,45 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
     </div>
   );
 });
+
+/**
+ * Where the variable's last captured value lives, once there is one: saved on
+ * this device, or — when it looks like a credential — in memory only.
+ */
+function CapturedValueStatus({
+  variable,
+  saved,
+  held,
+}: {
+  variable: string;
+  saved: Record<string, string> | undefined;
+  held: Record<string, HeldContextValue>;
+}) {
+  if (!variable) return null;
+  const heldValue = Object.prototype.hasOwnProperty.call(held, variable)
+    ? held[variable]
+    : undefined;
+  if (heldValue) {
+    return (
+      <p className="flex items-start gap-1 pl-6 text-[0.625rem] text-text-muted">
+        <MemoryStick size={11} aria-hidden className="mt-px shrink-0 text-amber" />
+        <span>
+          In memory only: {heldValue.reason}. Not saved — Studio forgets it when it closes, so send
+          this request again to capture it.
+        </span>
+      </p>
+    );
+  }
+  if (saved && Object.prototype.hasOwnProperty.call(saved, variable)) {
+    return (
+      <p className="flex items-start gap-1 pl-6 text-[0.625rem] text-text-dim">
+        <HardDrive size={11} aria-hidden className="mt-px shrink-0" />
+        <span>Saved on this device. Never pushed to Git.</span>
+      </p>
+    );
+  }
+  return null;
+}
 
 function ExtractionVariableInput({
   value,

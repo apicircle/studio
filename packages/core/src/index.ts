@@ -193,6 +193,8 @@ export { hideRunSecrets } from './history/hideRunSecrets';
 
 export { extractContext } from './environment/extractContext';
 export type { ContextExtractionResult } from './environment/extractContext';
+export { extractedSecretReason, savedContextOnly } from './environment/extractedSecrets';
+export type { HeldContextValue } from './environment/extractedSecrets';
 
 export {
   resolveRequestForExecution,

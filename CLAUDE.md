@@ -333,6 +333,11 @@ A workspace is split into two JSON documents:
   the GitHub session, plain secret material, UI state. (`WorkspaceLocal.execution
 Plans` is **deprecated** — kept only so the hydration normalizer can lift
   pre-migration on-disk plans into `synced.executionPlans`; no code writes it.)
+  `globalContext` (values response extractors captured) never holds one that
+  looks like a credential: `extractContext` returns those as `held`, the UI
+  store keeps them in its in-memory `heldContext` and core `runPlan` only for
+  the run, and the load normalizer drops any that reach disk
+  (`savedContextOnly`).
 
 `packages/shared/src/types.ts` is the canonical schema for both.
 

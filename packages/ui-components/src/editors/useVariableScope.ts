@@ -9,6 +9,9 @@
 // Vault slots that encrypt environment variables are listed as the scope's
 // `encryptionKeys`, as at send time: they are not offered as variables, and
 // pre-send validation blocks a request that references one.
+//
+// Extracted values held in memory because they look like credentials
+// (`heldContext`) are context variables like the saved ones, shown masked.
 
 import { useMemo } from 'react';
 import { findEncryptionKeys, type ResolutionScope } from '@apicircle/core';
@@ -36,6 +39,7 @@ export function useVariableScope(
   );
   const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const globalContext = useWorkspaceStore((s) => s.local?.globalContext ?? {});
+  const heldContext = useWorkspaceStore((s) => s.heldContext);
   const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
   const synced = useWorkspaceStore((s) => s.synced);
 
@@ -51,9 +55,11 @@ export function useVariableScope(
   }, [synced, linkedCollections, secretEntries]);
 
   return useMemo(() => {
-    // Workspace globalContext is the lowest contextVars layer; per-request
-    // contextVars layer on top of that. Mirrors workspaceStore.resolveRequest.
+    // Workspace globalContext (with the held values, masked) is the lowest
+    // contextVars layer; per-request contextVars layer on top of that.
+    // Mirrors workspaceStore.resolveRequest.
     const ctx: Record<string, string> = { ...globalContext };
+    for (const key of Object.keys(heldContext)) ctx[key] = SECRET_MASK;
     if (request) {
       for (const v of request.contextVars) if (v.key) ctx[v.key] = v.value;
     }
@@ -94,6 +100,7 @@ export function useVariableScope(
     override,
     request,
     globalContext,
+    heldContext,
     secretEntries,
     encryptionKeys,
   ]);

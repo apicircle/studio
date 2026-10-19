@@ -288,7 +288,8 @@ describe('runPlan', () => {
     const out = await runPlan(state, 'p1', { fetchImpl });
 
     expect(calls[1].url).toContain('t=abc123');
-    expect(out.nextState.local.globalContext.token).toBe('abc123');
+    // `token` is named like a credential: used by step 2, never returned to be saved.
+    expect(out.nextState.local.globalContext).toEqual({});
   });
 
   it('halts on the first failure when stopOnAssertionFailure is set', async () => {
@@ -801,5 +802,125 @@ describe('runPlan — encryption keys and stored secrets', () => {
     expect(run.url).toBe('https://api.test/x?q=[hidden]');
     expect(run.responseBodyPreview).toBe('{"echo":"[hidden]","access_token":"[hidden]"}');
     expect(JSON.stringify(out.nextState.local)).not.toContain('plaintext-admin-token');
+  });
+});
+
+describe('runPlan — extracted values that look like credentials', () => {
+  function chainSynced(
+    login: Partial<ApiRequest>,
+    use: Partial<ApiRequest>,
+    extra: Record<string, ApiRequest> = {},
+    steps: Array<{ requestId: string }> = [{ requestId: 'login' }, { requestId: 'use' }],
+  ): WorkspaceSynced {
+    return makeSynced({
+      collections: {
+        tree: { id: 'root', type: 'root', children: [] },
+        requests: {
+          login: makeRequest('login', { url: 'https://api.test/login', ...login }),
+          use: makeRequest('use', { url: 'https://api.test/use', ...use }),
+          ...extra,
+        },
+        folders: {},
+      },
+      executionPlans: { p1: makePlan('p1', { steps }) },
+    });
+  }
+
+  it('sends a held token to later steps but never returns it, and hides it in history', async () => {
+    const synced = chainSynced(
+      {
+        extractions: [
+          { id: 'e1', variable: 'AUTH', source: 'body', path: 'data.access_token', enabled: true },
+          { id: 'e2', variable: 'USER_ID', source: 'body', path: 'data.id', enabled: true },
+        ],
+      },
+      {
+        url: 'https://api.test/use?user={{USER_ID}}',
+        headers: [{ key: 'Authorization', value: 'Bearer {{AUTH}}', enabled: true }],
+        body: { type: 'json', content: '{"t":"{{AUTH}}"}' },
+        method: 'POST',
+      },
+    );
+    const state: WorkspaceState = {
+      synced,
+      local: makeLocal({ globalContext: { KEPT: 'k' } }),
+    };
+    const { fetchImpl, calls } = makeFetch({
+      'https://api.test/login': {
+        status: 200,
+        body: '{"data":{"access_token":"login-token-value","id":"42"}}',
+      },
+      '*': { status: 200, body: '{"t":"login-token-value"}' },
+    });
+
+    const out = await runPlan(state, 'p1', { fetchImpl });
+
+    expect(calls[1].headers.authorization).toBe('Bearer login-token-value');
+    expect(calls[1].url).toBe('https://api.test/use?user=42');
+    // The saved capture is returned; the held one is not.
+    expect(out.nextState.local.globalContext).toEqual({ KEPT: 'k', USER_ID: '42' });
+    // Neither stored run holds the token: not the login response that produced it,
+    // nor the request body that sent it under a name that is not a credential's.
+    expect(JSON.stringify(out.nextState.local)).not.toContain('login-token-value');
+    const [useRun, loginRun] = out.nextState.local.history.requestRuns;
+    expect(loginRun.responseBodyPreview).toBe('{"data":{"access_token":"[hidden]","id":"42"}}');
+    expect(useRun.requestBodyPreview).toBe('{"t":"[hidden]"}');
+    expect(useRun.responseBodyPreview).toBe('{"t":"[hidden]"}');
+  });
+
+  it('drops a saved value of the same name when a later capture is held', async () => {
+    const synced = chainSynced(
+      {
+        extractions: [
+          { id: 'e1', variable: 'SESSION', source: 'cookie', path: 'sid', enabled: true },
+        ],
+      },
+      {},
+    );
+    const state: WorkspaceState = {
+      synced,
+      local: makeLocal({ globalContext: { SESSION: 'on' } }),
+    };
+    const { fetchImpl } = makeFetch({
+      'https://api.test/login': { status: 200, headers: { 'set-cookie': 'sid=s3ss10n-value' } },
+      '*': { status: 200 },
+    });
+
+    const out = await runPlan(state, 'p1', { fetchImpl });
+
+    expect(out.nextState.local.globalContext).toEqual({});
+  });
+
+  it('saves a value again once a later capture no longer looks like a credential', async () => {
+    const reuse = makeRequest('again', {
+      url: 'https://api.test/again',
+      extractions: [{ id: 'e1', variable: 'NEXT', source: 'body', path: 'next', enabled: true }],
+    });
+    const synced = chainSynced(
+      {
+        extractions: [{ id: 'e1', variable: 'NEXT', source: 'body', path: 'next', enabled: true }],
+      },
+      { url: 'https://api.test/use?n={{NEXT}}' },
+      { again: reuse },
+      [{ requestId: 'login' }, { requestId: 'use' }, { requestId: 'again' }],
+    );
+    const state: WorkspaceState = { synced, local: makeLocal() };
+    const { fetchImpl, calls } = makeFetch({
+      'https://api.test/login': {
+        status: 200,
+        body: '{"next":"ghp_abcdefghijklmnopqrstuvwxyz0123456789"}',
+      },
+      'https://api.test/again': { status: 200, body: '{"next":"page-2"}' },
+      '*': { status: 200 },
+    });
+
+    const out = await runPlan(state, 'p1', { fetchImpl });
+
+    expect(calls[1].url).toBe('https://api.test/use?n=ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(out.nextState.local.globalContext).toEqual({ NEXT: 'page-2' });
+    // The step that captured `page-2` still sent nothing held under a stored name.
+    expect(JSON.stringify(out.nextState.local)).not.toContain(
+      'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    );
   });
 });

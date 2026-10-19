@@ -67,6 +67,33 @@
   shown as hidden held one. Header names are kept." The live response is
   untouched. Applies on web and desktop, to the CLI's plan runs and to VS
   Code's History.
+- **An extracted value that looks like a credential is held in memory, never
+  saved.** A response extractor's captured value — typically the token a login
+  returns — went into `WorkspaceLocal.globalContext`, and so into IndexedDB and
+  the disk mirror (`~/.apicircle/workspaces/<id>/workspace.local.json`) in
+  plain text; core `runPlan` (the CLI) returned it in `nextState` to be
+  written back. `extractContext` (`@apicircle/core`) now sorts every capture
+  with `extractedSecretReason`: a value is **held** when it contains a secret
+  the send decrypted, when the variable is named or the value shaped like a
+  credential (the rules History and the push use), or when the header, cookie
+  or last JSON-path key it was read from is named like one (`access_token`,
+  `sid`, `X-Auth-Token`, …) and it holds a real value. Its result is now
+  `{ saved, held, warnings }` (was `{ extracted, warnings }`), with an optional
+  `knownSecrets` argument. On web and desktop, held values live in the store's
+  `heldContext`: later requests and plan steps resolve them as `{{name}}`
+  exactly as before, but they are cleared when another workspace opens and gone
+  when Studio closes or reloads. Core `runPlan` uses them for the rest of the
+  run and leaves them out of `nextState.local.globalContext`. A held value is
+  also hidden in History — in the run whose response it came from and in every
+  run that sends it — and a saved `globalContext` entry named or shaped like a
+  credential (left by an older build or another tool) is dropped when the
+  workspace loads (`savedContextOnly`). Each extractor row in the Context tab
+  now says where its last value is: "Saved on this device. Never pushed to
+  Git." or "In memory only: named like a credential. Not saved — Studio forgets
+  it when it closes, so send this request again to capture it." The Variables
+  panel lists captured values under **Extracted from responses**, held ones
+  masked and tagged _in memory_, and the Help Center's Context & extractors
+  section explains both. VS Code runs no extractions, so it is unchanged.
 - **The desktop app runs on Electron 44.** It ran on Electron 32.3.3, which is
   out of support and named in 37 published advisories (12 of them high), among
   them a context-isolation bypass and an ASAR integrity bypass. The app now

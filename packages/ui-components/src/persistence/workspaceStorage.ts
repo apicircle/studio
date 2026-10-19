@@ -14,7 +14,7 @@ import {
   generateId,
   normalizeAuth,
 } from '@apicircle/shared';
-import { generateSlotSalt } from '@apicircle/core';
+import { generateSlotSalt, savedContextOnly } from '@apicircle/core';
 import {
   LOCAL_STORE,
   readRecord,
@@ -657,7 +657,11 @@ export async function loadWorkspaceById(
       retiredBranch: local.retiredBranch ?? null,
       linkedCollections: local.linkedCollections ?? {},
       attachmentCache: local.attachmentCache ?? {},
-      globalContext: local.globalContext ?? {},
+      // A saved extracted value never holds a credential (those are held in
+      // memory): one saved by an older build, or written by another tool, is
+      // dropped here, and the next save of this half removes it from IDB and
+      // the disk mirror (on desktop, hydrate's own write-back at boot).
+      globalContext: savedContextOnly(local.globalContext ?? {}),
       mockRuntime: local.mockRuntime ?? { active: {} },
       // Forward-fill new settings keys when hydrating older workspaces;
       // existing fields are preserved so user choices stick.

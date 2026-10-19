@@ -3,6 +3,11 @@
 // whatever editor surface they're typing in. Active-panel-aware via
 // `useActiveVariableScope`: editor shows request-bound vars, execution
 // shows plan-bound, etc.
+//
+// Values captured by response extractors are context variables to the
+// resolver, but they are listed apart from the request's own: they are not
+// pushed to Git, and one that looks like a credential is held in memory only
+// (shown masked, tagged "in memory").
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Copy, Variable } from 'lucide-react';
@@ -14,19 +19,37 @@ import { safeCopyToClipboard } from '../../primitives/clipboard';
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
 
-const SOURCE_LABEL: Record<VariableSuggestion['source'], string> = {
+/** A suggestion's group: its resolver source, with captured values apart. */
+type VariableGroup = VariableSuggestion['source'] | 'extracted';
+
+const GROUP_ORDER: readonly VariableGroup[] = [
+  'context',
+  'extracted',
+  'priority-env',
+  'active-env',
+  'secret',
+];
+
+const SOURCE_LABEL: Record<VariableGroup, string> = {
   context: 'Context vars',
+  extracted: 'Extracted from responses',
   'active-env': 'Active env',
   'priority-env': 'Global layer',
   secret: 'Vault secrets',
 };
 
-const SOURCE_HINT: Record<VariableSuggestion['source'], string> = {
+const SOURCE_HINT: Record<VariableGroup, string> = {
   context: 'Per-request, pushed to Git via the Context tab.',
+  extracted:
+    'Captured by extractors. Saved on this device, never pushed to Git; credentials are held in memory until Studio closes.',
   'active-env': 'From the legacy active environment (deprecated).',
   'priority-env': 'From the prioritized environment layer (sidebar order wins).',
   secret: 'Names from your local Secret Vault — values stay local.',
 };
+
+function hasKey(map: Readonly<Record<string, unknown>> | undefined, key: string): boolean {
+  return map !== undefined && Object.prototype.hasOwnProperty.call(map, key);
+}
 
 function bodyText(body: RequestBody): string {
   if (
@@ -66,6 +89,8 @@ export function VariablesDockPanel() {
   const activeRequest = useWorkspaceStore((s) =>
     activeRequestId ? (s.synced?.collections.requests[activeRequestId] ?? null) : null,
   );
+  const savedContext = useWorkspaceStore((s) => s.local?.globalContext);
+  const heldContext = useWorkspaceStore((s) => s.heldContext);
 
   // Only highlight unresolved when we're in the editor — that's where a
   // request the user is editing makes the cue actionable.
@@ -90,19 +115,30 @@ export function VariablesDockPanel() {
   const unresolved = referenced.filter((n) => !knownNames.has(n));
 
   const grouped = useMemo(() => {
-    const map = new Map<VariableSuggestion['source'], VariableSuggestion[]>();
+    // The request's own context vars win over a captured value of the same
+    // name (the scope only holds them in the editor), so such a key is the
+    // request's, not a capture.
+    const requestKeys = new Set(
+      activePanel === 'editor' && activeRequest ? activeRequest.contextVars.map((v) => v.key) : [],
+    );
+    const map = new Map<VariableGroup, VariableSuggestion[]>();
     for (const s of suggestions) {
-      const list = map.get(s.source) ?? [];
+      const captured =
+        s.source === 'context' &&
+        !requestKeys.has(s.key) &&
+        (hasKey(savedContext, s.key) || hasKey(heldContext, s.key));
+      const group: VariableGroup = captured ? 'extracted' : s.source;
+      const list = map.get(group) ?? [];
       list.push(s);
-      map.set(s.source, list);
+      map.set(group, list);
     }
     return map;
-  }, [suggestions]);
+  }, [suggestions, activePanel, activeRequest, heldContext, savedContext]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return grouped;
-    const out = new Map<VariableSuggestion['source'], VariableSuggestion[]>();
+    const out = new Map<VariableGroup, VariableSuggestion[]>();
     for (const [src, list] of grouped) {
       const matched = list.filter(
         (s) => s.key.toLowerCase().includes(q) || (s.preview ?? '').toLowerCase().includes(q),
@@ -152,7 +188,7 @@ export function VariablesDockPanel() {
           </p>
         ) : (
           <div className="flex flex-col gap-4">
-            {(['context', 'priority-env', 'active-env', 'secret'] as const).map((src) => {
+            {GROUP_ORDER.map((src) => {
               const list = filtered.get(src) ?? [];
               if (list.length === 0) return null;
               return (
@@ -180,6 +216,14 @@ export function VariablesDockPanel() {
                           >
                             {s.preview || '(empty)'}
                           </span>
+                          {src === 'extracted' && hasKey(heldContext, s.key) && (
+                            <span
+                              className="shrink-0 rounded-sm border border-amber/40 px-1 text-[0.5625rem] text-amber"
+                              title={`Held in memory only: ${heldContext[s.key].reason}. Studio forgets it when it closes.`}
+                            >
+                              in memory
+                            </span>
+                          )}
                           {copied === s.key ? (
                             <span className="text-[0.625rem] text-accent">Copied</span>
                           ) : (

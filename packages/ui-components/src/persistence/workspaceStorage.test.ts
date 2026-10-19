@@ -326,6 +326,31 @@ describe('workspaceStorage — saveSynced / saveLocal / saveBoth (multi-workspac
     expect(entry.name).toBe('My Workspace');
   });
 
+  it('drops a saved extracted value that looks like a credential when loading', async () => {
+    await freshState();
+    const { local } = await loadWorkspace();
+    await saveLocal({
+      ...local,
+      globalContext: {
+        ACCESS_TOKEN: 'tok-from-an-older-build',
+        V: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+        USER_ID: '42',
+      },
+    });
+    const reloaded = await loadWorkspace();
+    expect(reloaded.local.globalContext).toEqual({ USER_ID: '42' });
+  });
+
+  it('loads a local doc saved without globalContext with an empty one', async () => {
+    await freshState();
+    const { local } = await loadWorkspace();
+    const { globalContext: _dropped, ...withoutContext } = local;
+    void _dropped;
+    await saveLocal(withoutContext as WorkspaceLocal);
+    const reloaded = await loadWorkspace();
+    expect(reloaded.local.globalContext).toEqual({});
+  });
+
   it('saveBoth writes the synced+local pair atomically', async () => {
     await clearAll();
     const seed = createEmptyWorkspace();

@@ -579,7 +579,16 @@ Worked example — log in, then call a protected endpoint:
 - **Cookie** — a cookie the response set, e.g. \`session\`.
 - **Status code** — the numeric status, useful for branching assertions.
 
-Extracted values are local-only — they live in this machine's context, never in the synced doc. A JSON path picker helps build the path once a JSON response exists.`,
+A JSON path picker helps build the path once a JSON response exists.
+
+## Where an extracted value lives
+
+Extracted values never go into the synced doc or to Git. Once an extractor has captured a value, its row in the Context tab says where that value is:
+
+- **Saved on this device** — kept in this machine's workspace data (IndexedDB and the \`workspace.local.json\` mirror), so it is still there after a restart.
+- **In memory only** — a value that looks like a credential: a token, a session cookie, a key, a JSON Web Token, or anything read from a field, header or cookie named like one. It is never written to disk. Requests use it until Studio closes or reloads; then send the login request again to capture a fresh one.
+
+The Variables panel lists captured values under **Extracted from responses**, with the in-memory ones masked and tagged *in memory*. Run history hides them too.`,
     keywords: [
       'context',
       'variable',
@@ -590,6 +599,9 @@ Extracted values are local-only — they live in this machine's context, never i
       'capture',
       'login',
       'token',
+      'in memory',
+      'saved on this device',
+      'credential',
     ],
   },
   {

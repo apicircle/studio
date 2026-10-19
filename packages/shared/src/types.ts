@@ -348,8 +348,10 @@ export interface Request {
   auth: RequestAuth;
   contextVars: Array<{ key: string; value: string }>;
   // Per-request post-run extractors. After a successful send the extracted
-  // values land in WorkspaceLocal.globalContext (local-only, never pushed)
-  // and become available as `{{name}}` to subsequent requests + plan steps.
+  // values become available as `{{name}}` to subsequent requests + plan
+  // steps. They land in WorkspaceLocal.globalContext (local-only, never
+  // pushed) — except values that look like credentials, which are held in
+  // memory only and never saved (see `extractContext` in @apicircle/core).
   extractions: ContextExtraction[];
   // Optional reference to a workspace-wide JSON Schema (in
   // WorkspaceSynced.globalAssets.schemas) used for body validation in the
@@ -1057,9 +1059,12 @@ export interface WorkspaceLocal {
   attachmentCache?: Record<string, LocalAttachmentCacheEntry>;
   // Local-only workspace-wide context. Populated by the post-run
   // extractions defined on each request. Latest write wins. Survives
-  // reload (it's persisted in IDB) but never round-trips through Git.
-  // Surfaced into `ResolutionScope.contextVars` as a fallback layer
-  // sitting between per-request context and the active environment.
+  // reload (it's persisted in IDB and the disk mirror) but never
+  // round-trips through Git. Surfaced into `ResolutionScope.contextVars` as
+  // a fallback layer sitting between per-request context and the active
+  // environment. Never holds a value that looks like a credential: those
+  // are held in memory by whoever ran the extraction (`heldContext` in the
+  // UI store, the run itself in core `runPlan`), and dropped when loaded.
   globalContext: Record<string, string>;
   // Per-host mock-server runtime status. Maps mockServerId → live port /
   // pid / counters when running. Cleared on app shutdown — restart re-

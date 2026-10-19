@@ -30,7 +30,7 @@ const ext = (overrides: Partial<ContextExtraction>): ContextExtraction => ({
 describe('extractContext', () => {
   it('returns the status as a string for source=status', () => {
     const out = extractContext(baseResult({ status: 201 }), [ext({ source: 'status' })]);
-    expect(out.extracted).toEqual({ OUT: '201' });
+    expect(out.saved).toEqual({ OUT: '201' });
     expect(out.warnings).toEqual([]);
   });
 
@@ -38,7 +38,7 @@ describe('extractContext', () => {
     const out = extractContext(baseResult({ headers: { 'X-Request-Id': 'abc-123' } }), [
       ext({ source: 'header', path: 'x-request-id' }),
     ]);
-    expect(out.extracted).toEqual({ OUT: 'abc-123' });
+    expect(out.saved).toEqual({ OUT: 'abc-123' });
   });
 
   it('warns and skips the variable when a header is missing', () => {
@@ -47,7 +47,7 @@ describe('extractContext', () => {
     // the user sees the broken extraction in the URL/body rather than a
     // silent defined-as-empty value.
     const out = extractContext(baseResult(), [ext({ source: 'header', path: 'X-Missing' })]);
-    expect(out.extracted).toEqual({});
+    expect(out.saved).toEqual({});
     expect(out.warnings[0]).toMatch(/Header "X-Missing" not found/);
   });
 
@@ -57,7 +57,9 @@ describe('extractContext', () => {
       ext({ source: 'body', path: 'data.token', variable: 'TOKEN' }),
       ext({ source: 'body', path: 'data.items[0].id', variable: 'ID', id: 'e2' }),
     ]);
-    expect(out.extracted).toEqual({ TOKEN: 'tk-1', ID: '7' });
+    // `TOKEN` is named like a credential, so its value is held, not saved.
+    expect(out.saved).toEqual({ ID: '7' });
+    expect(out.held).toEqual({ TOKEN: { value: 'tk-1', reason: 'named like a credential' } });
   });
 
   it('warns when body is not JSON and skips the variable', () => {
@@ -65,13 +67,13 @@ describe('extractContext', () => {
       ext({ source: 'body', path: 'whatever' }),
     ]);
     expect(out.warnings[0]).toMatch(/Body is not JSON/);
-    expect(out.extracted).toEqual({});
+    expect(out.saved).toEqual({});
   });
 
   it('skips the variable when body is empty', () => {
     const out = extractContext(baseResult({ body: '' }), [ext({ source: 'body', path: 'x' })]);
     expect(out.warnings[0]).toMatch(/Body is empty/);
-    expect(out.extracted).toEqual({});
+    expect(out.saved).toEqual({});
   });
 
   it('skips the variable when a body path does not resolve', () => {
@@ -79,7 +81,7 @@ describe('extractContext', () => {
       ext({ source: 'body', path: 'b.c' }),
     ]);
     expect(out.warnings[0]).toMatch(/did not resolve/);
-    expect(out.extracted).toEqual({});
+    expect(out.saved).toEqual({});
   });
 
   it('reads cookies from a Set-Cookie header', () => {
@@ -87,14 +89,14 @@ describe('extractContext', () => {
       baseResult({ headers: { 'set-cookie': 'session=abc; Path=/; HttpOnly' } }),
       [ext({ source: 'cookie', path: 'session' })],
     );
-    expect(out.extracted).toEqual({ OUT: 'abc' });
+    expect(out.saved).toEqual({ OUT: 'abc' });
   });
 
   it('skips disabled extractions', () => {
     const out = extractContext(baseResult({ status: 200 }), [
       ext({ source: 'status', enabled: false }),
     ]);
-    expect(out.extracted).toEqual({});
+    expect(out.saved).toEqual({});
   });
 
   it('stringifies non-string JSON values for body extractions', () => {
@@ -104,16 +106,55 @@ describe('extractContext', () => {
       ext({ source: 'body', path: 'nested', variable: 'NESTED', id: 'e2' }),
       ext({ source: 'body', path: 'arr', variable: 'ARR', id: 'e3' }),
     ]);
-    expect(out.extracted).toEqual({
+    expect(out.saved).toEqual({
       FLAG: 'true',
       NESTED: '{"count":5}',
       ARR: '[1,2]',
     });
   });
 
+  it('holds a value the request sent, and one read from a credential-named source', () => {
+    const body = JSON.stringify({ echo: 'sent-secret-value', auth: { access_token: 'opaque-1' } });
+    const out = extractContext(
+      baseResult({ body, headers: { 'set-cookie': 'sid=abcd1234; Path=/' } }),
+      [
+        ext({ source: 'body', path: 'echo', variable: 'ECHO' }),
+        ext({ source: 'body', path: 'auth.access_token', variable: 'OPAQUE', id: 'e2' }),
+        ext({ source: 'cookie', path: 'sid', variable: 'S', id: 'e3' }),
+      ],
+      ['sent-secret-value'],
+    );
+    expect(out.saved).toEqual({});
+    expect(out.held).toEqual({
+      ECHO: { value: 'sent-secret-value', reason: 'holds a secret this request sent' },
+      OPAQUE: { value: 'opaque-1', reason: 'read from a field named like a credential' },
+      S: { value: 'abcd1234', reason: 'read from a cookie named like a credential' },
+    });
+  });
+
+  it('keeps a variable captured twice where its last value belongs', () => {
+    const body = JSON.stringify({
+      a: 'plain',
+      b: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.sig',
+    });
+    const heldLast = extractContext(baseResult({ body }), [
+      ext({ source: 'body', path: 'a', variable: 'V' }),
+      ext({ source: 'body', path: 'b', variable: 'V', id: 'e2' }),
+    ]);
+    expect(heldLast.saved).toEqual({});
+    expect(heldLast.held.V?.reason).toBe('looks like a JSON Web Token');
+
+    const savedLast = extractContext(baseResult({ body }), [
+      ext({ source: 'body', path: 'b', variable: 'V' }),
+      ext({ source: 'body', path: 'a', variable: 'V', id: 'e2' }),
+    ]);
+    expect(savedLast.saved).toEqual({ V: 'plain' });
+    expect(savedLast.held).toEqual({});
+  });
+
   it('warns when the variable name is empty', () => {
     const out = extractContext(baseResult(), [ext({ variable: '   ' })]);
     expect(out.warnings[0]).toMatch(/empty variable name/);
-    expect(out.extracted).toEqual({});
+    expect(out.saved).toEqual({});
   });
 });

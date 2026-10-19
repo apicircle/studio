@@ -193,7 +193,11 @@ describe('workspaceStore', () => {
       });
 
       const ctx = useWorkspaceStore.getState().local!.globalContext;
-      expect(ctx).toMatchObject({ TOKEN: 'abc-123', TRACE: 'tr-9', CODE: '201' });
+      expect(ctx).toEqual({ TRACE: 'tr-9', CODE: '201' });
+      // `TOKEN` is named like a credential: held in memory, never saved.
+      expect(useWorkspaceStore.getState().heldContext).toEqual({
+        TOKEN: { value: 'abc-123', reason: 'named like a credential' },
+      });
     });
 
     it('skips extraction when the list is empty (no globalContext mutation)', async () => {

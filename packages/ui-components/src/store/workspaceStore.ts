@@ -105,6 +105,8 @@ import {
   encryptString,
   executeRequest as coreExecuteRequest,
   extractContext,
+  type ContextExtractionResult,
+  type HeldContextValue,
   findEncryptionKeys,
   hideRunSecrets,
   generateSlotSalt,
@@ -692,11 +694,16 @@ async function sendResolved(
   return coreExecuteRequest(resolved.request, opts);
 }
 
-/** Build the RequestRun history keeps, with its secrets hidden. */
+/**
+ * Build the RequestRun history keeps, with its secrets hidden. `extraction`
+ * is what the response's extractors captured: a value held because it looks
+ * like a credential is hidden in this run too.
+ */
 function buildRequestRun(
   resolved: ResolvedForSend,
   result: ExecutionResult,
   assertions: RequestRun['assertions'],
+  extraction: ContextExtractionResult = noExtraction(),
 ): RequestRun {
   const resolvedRequest = resolved.request;
   const { preview: responseBodyPreview, truncated } = clampPreview(result.body ?? '');
@@ -725,7 +732,47 @@ function buildRequestRun(
   };
   // History lives in IndexedDB and the plain-JSON disk mirror: hide the
   // secrets this send resolved, and credential headers, before it lands.
-  return hideRunSecrets(run, resolved.secretValues);
+  return hideRunSecrets(run, [
+    ...resolved.secretValues,
+    ...Object.values(extraction.held).map((held) => held.value),
+  ]);
+}
+
+function noExtraction(): ContextExtractionResult {
+  return { saved: {}, held: {}, warnings: [] };
+}
+
+/**
+ * What the request's extractors captured from `result`, sorted into saved and
+ * held values. The plaintexts the send resolved (secrets, and values already
+ * held) count as secrets: a capture containing one is held.
+ */
+function runExtractions(
+  request: ApiRequest,
+  result: ExecutionResult,
+  resolved: ResolvedForSend,
+): ContextExtractionResult {
+  return request.extractions && request.extractions.length > 0
+    ? extractContext(result, request.extractions, resolved.secretValues)
+    : noExtraction();
+}
+
+/**
+ * `local` and `heldContext` with an extraction's captures applied. Each
+ * variable lives in one place: a saved capture in `local.globalContext`
+ * (IndexedDB and the disk mirror), a held one in memory only, and a capture
+ * removes the variable's previous value from the other place.
+ */
+function applyExtraction(
+  local: WorkspaceLocal,
+  heldContext: Record<string, HeldContextValue>,
+  extraction: ContextExtractionResult,
+): { local: WorkspaceLocal; heldContext: Record<string, HeldContextValue> } {
+  const saved = { ...local.globalContext, ...extraction.saved };
+  const held = { ...heldContext, ...extraction.held };
+  for (const key of Object.keys(extraction.saved)) delete held[key];
+  for (const key of Object.keys(extraction.held)) delete saved[key];
+  return { local: { ...local, globalContext: saved }, heldContext: held };
 }
 
 /**
@@ -1094,6 +1141,14 @@ type WorkspaceStore = {
   // local.history once they complete; this is the live working result for
   // the editor panel.
   lastRun: Record<string, ExecutionResult | null>;
+  /**
+   * Values extractors captured that look like credentials — a login's token —
+   * keyed by variable name, each with why it is held. Never persisted: they
+   * resolve as `{{name}}` in later requests like `local.globalContext`, but
+   * never reach IndexedDB or the disk mirror. Cleared when another workspace
+   * opens; gone when the app closes or reloads.
+   */
+  heldContext: Record<string, HeldContextValue>;
   // Transient per-plan run details, keyed by planId. Populated after each
   // runPlan completes so the Execution panel can show per-step request,
   // status, response body, and assertion verdicts. Not persisted.
@@ -1674,11 +1729,11 @@ type WorkspaceStore = {
    */
   applyLinkedUpdateForLink: (resolutions: LinkedUpdateResolutionMap) => Promise<void>;
   /**
-   * Drop a single key from the local-only globalContext map. Used by the
-   * Context tab's "Forget extracted value" action.
+   * Forget one extracted value: drop the key from the local-only
+   * globalContext map and from the in-memory `heldContext`.
    */
   removeGlobalContextKey: (key: string) => void;
-  /** Clear every key in globalContext. */
+  /** Forget every extracted value, saved (globalContext) and held. */
   clearGlobalContext: () => void;
 
   // Form-data: replace the rows array. The store cleans up orphaned
@@ -2985,6 +3040,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   branchPushInFlight: false,
   activePlanId: null,
   lastRun: {},
+  heldContext: {},
   lastPlanResults: {},
   isExecuting: {},
   envFocus: null,
@@ -3183,6 +3239,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       pendingRefresh: null,
       activePlanId: null,
       lastRun: {},
+      heldContext: {},
       lastPlanResults: {},
       isExecuting: {},
       activeLinkedUpdate: null,
@@ -3224,6 +3281,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       pendingRefresh: null,
       activePlanId: null,
       lastRun: {},
+      heldContext: {},
       lastPlanResults: {},
       isExecuting: {},
       activeLinkedUpdate: null,
@@ -3254,6 +3312,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       pendingRefresh: null,
       activePlanId: null,
       lastRun: {},
+      heldContext: {},
       lastPlanResults: {},
       isExecuting: {},
       activeLinkedUpdate: null,
@@ -3271,6 +3330,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       synced: result.synced,
       local: result.local,
       workspaceRegistry: result.registry,
+      // A fresh workspace: nothing captured from the old one carries over.
+      heldContext: {},
     });
   },
 
@@ -4957,6 +5018,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
   removeGlobalContextKey: (key) => {
+    if (key in get().heldContext) {
+      const { [key]: _forgotten, ...held } = get().heldContext;
+      void _forgotten;
+      set({ heldContext: held });
+    }
     const local = get().local;
     if (!local) return;
     if (!(key in local.globalContext)) return;
@@ -4967,6 +5033,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     queueSaveLocal(next);
   },
   clearGlobalContext: () => {
+    set({ heldContext: {} });
     const local = get().local;
     if (!local) return;
     const next: WorkspaceLocal = { ...local, globalContext: {} };
@@ -7658,7 +7725,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         });
         const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
         const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
-        const requestRun = buildRequestRun(resolved, result, assertionResults);
+        const stepExtraction = runExtractions(request, result, resolved);
+        const requestRun = buildRequestRun(resolved, result, assertionResults, stepExtraction);
         newRequestRuns.push(requestRun);
         stepRecords.push({ requestRunId: requestRun.id, passed: allPassed });
         planResultDetails.push({
@@ -7669,19 +7737,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           requestMethod: request.method,
         });
 
-        // Carry extracted ctx vars into the rolling globalContext so the next
+        // Carry extracted ctx vars into the rolling globalContext (or, for a
+        // value that looks like a credential, `heldContext`) so the next
         // step's resolveRequest sees them. Linked-workspace steps still
         // contribute back to the consumer's local context — the value is what
         // matters, not which workspace produced it.
         if (request.extractions && request.extractions.length > 0) {
-          const stepExtraction = extractContext(result, request.extractions);
           const liveLocal = get().local;
           if (liveLocal) {
-            const merged: WorkspaceLocal = {
-              ...liveLocal,
-              globalContext: { ...liveLocal.globalContext, ...stepExtraction.extracted },
-            };
-            set({ local: merged });
+            set(applyExtraction(liveLocal, get().heldContext, stepExtraction));
           }
         }
 
@@ -8624,21 +8688,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, request.id) },
       });
       const assertionResults = runAssertions(request.assertions, result);
-      const run = buildRequestRun(resolved, result, assertionResults);
-      const extractionResult =
-        request.extractions && request.extractions.length > 0
-          ? extractContext(result, request.extractions)
-          : { extracted: {}, warnings: [] };
+      const extractionResult = runExtractions(request, result, resolved);
+      const run = buildRequestRun(resolved, result, assertionResults, extractionResult);
 
       const liveLocal = get().local;
       if (liveLocal) {
         const trimmed = [run, ...liveLocal.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+        const applied = applyExtraction(liveLocal, get().heldContext, extractionResult);
         const next: WorkspaceLocal = {
-          ...liveLocal,
+          ...applied.local,
           history: { ...liveLocal.history, requestRuns: trimmed },
-          globalContext: { ...liveLocal.globalContext, ...extractionResult.extracted },
         };
-        set({ local: next });
+        set({ local: next, heldContext: applied.heldContext });
         queueSaveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [active.itemId]: result } }));
@@ -8711,23 +8772,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, id) },
       });
       const assertionResults = runAssertions(request.assertions, result);
-      const run = buildRequestRun(resolved, result, assertionResults);
-      // Apply the request's post-run extractions into local.globalContext.
-      // Failures are logged as warnings but do not block the run.
-      const extractionResult =
-        request.extractions && request.extractions.length > 0
-          ? extractContext(result, request.extractions)
-          : { extracted: {}, warnings: [] };
+      // Apply the request's post-run extractions: saved values into
+      // local.globalContext, ones that look like credentials into the
+      // in-memory heldContext. Failures are logged as warnings but do not
+      // block the run.
+      const extractionResult = runExtractions(request, result, resolved);
+      const run = buildRequestRun(resolved, result, assertionResults, extractionResult);
 
       const local = get().local;
       if (local) {
         const trimmed = [run, ...local.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+        const applied = applyExtraction(local, get().heldContext, extractionResult);
         const next: WorkspaceLocal = {
-          ...local,
+          ...applied.local,
           history: { ...local.history, requestRuns: trimmed },
-          globalContext: { ...local.globalContext, ...extractionResult.extracted },
         };
-        set({ local: next });
+        set({ local: next, heldContext: applied.heldContext });
         queueSaveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [id]: result } }));
@@ -8877,20 +8937,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         resolveAttachment: attachmentResolver,
       });
       const assertionResults = runAssertions(request.assertions, result);
-      const replayRun = buildRequestRun(resolved, result, assertionResults);
-      const extractionResult =
-        request.extractions && request.extractions.length > 0
-          ? extractContext(result, request.extractions)
-          : { extracted: {}, warnings: [] };
+      const extractionResult = runExtractions(request, result, resolved);
+      const replayRun = buildRequestRun(resolved, result, assertionResults, extractionResult);
       const liveLocal = get().local;
       if (liveLocal) {
         const trimmed = [replayRun, ...liveLocal.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+        const applied = applyExtraction(liveLocal, get().heldContext, extractionResult);
         const next: WorkspaceLocal = {
-          ...liveLocal,
+          ...applied.local,
           history: { ...liveLocal.history, requestRuns: trimmed },
-          globalContext: { ...liveLocal.globalContext, ...extractionResult.extracted },
         };
-        set({ local: next });
+        set({ local: next, heldContext: applied.heldContext });
         queueSaveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [request.id]: result } }));
@@ -10572,11 +10629,18 @@ async function resolveRequest(
   }
 
   // contextVars layer ordering (lowest → highest priority):
-  //   1. workspace globalContext (rolling extracted state across runs)
+  //   1. workspace globalContext (rolling extracted state across runs) and
+  //      the in-memory heldContext (extracted values that look like
+  //      credentials; a variable is only ever in one of the two)
   //   2. plan-level variables (if this is a plan run; bind for the run)
   //   3. per-request contextVars (always last → wins on collision)
   // Below contextVars sits the env layer (priorityOrder), then secrets.
+  // A held value is a secret of the send: hidden in its stored run.
   const ctxMap: Record<string, string> = { ...(local?.globalContext ?? {}) };
+  for (const [key, held] of Object.entries(useWorkspaceStore.getState().heldContext)) {
+    ctxMap[key] = held.value;
+    secretValues.push(held.value);
+  }
   for (const v of overrides?.planVariables ?? []) {
     if (v.key) ctxMap[v.key] = v.value;
   }
