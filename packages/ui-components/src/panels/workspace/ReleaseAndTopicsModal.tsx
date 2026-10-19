@@ -214,7 +214,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
             <Tag size={12} aria-hidden="true" className="text-accent" />
             Tag a release on <code className="font-mono">main</code>
           </h3>
-          <p className="mb-2 text-[0.6875rem] text-text-dim">
+          <p className="mb-2 text-xs text-text-dim">
             Tags target <code>main</code>&apos;s current HEAD — never an unmerged working-branch
             commit. Publish first via the Workspace card, merge the PR, then tag here.
           </p>
@@ -222,11 +222,11 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
           {loadingTag ? (
             <LoadingState size="sm" title="Loading releases on main…" />
           ) : tagLoadError ? (
-            <p className="text-[0.6875rem] text-danger" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {tagLoadError}
             </p>
           ) : !latest ? (
-            <p className="rounded-sm border border-dashed border-border bg-card p-3 text-center text-[0.6875rem] text-text-dim">
+            <p className="rounded-sm border border-dashed border-border bg-card p-3 text-center text-xs text-text-dim">
               Nothing to tag. Every published version on <code>main</code> already has a Git tag.
               Publish a new version from the Workspace card and merge the PR to surface it here.
             </p>
@@ -257,7 +257,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
               ) : (
                 // Stated, not hidden. The tag still gets created, and a user who
                 // knows GitHub would otherwise wonder whether tagging failed too.
-                <p className="text-[0.6875rem] text-text-dim">
+                <p className="text-xs text-text-dim">
                   {hostLabel} has no release object to attach to a tag, so the tag is all that is
                   created here.
                 </p>
@@ -283,13 +283,13 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
               )}
 
               {tagError && (
-                <p className="text-[0.6875rem] text-danger" role="alert">
+                <p className="text-xs text-danger" role="alert">
                   {tagError}
                 </p>
               )}
 
               {tagSuccess && (
-                <p className="rounded-sm border border-success/40 bg-success/10 p-2 text-[0.6875rem] text-success">
+                <p className="rounded-sm border border-success/40 bg-success/10 p-2 text-xs text-success">
                   Tagged · <code className="font-mono">{tagSuccess.tagRef}</code> @{' '}
                   <code className="font-mono">{tagSuccess.sha.slice(0, 7)}</code>
                   {tagSuccess.releaseUrl && (
@@ -331,7 +331,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
             <Hash size={12} aria-hidden="true" className="text-accent" />
             Repo topics
           </h3>
-          <p className="mb-2 text-[0.6875rem] text-text-dim">
+          <p className="mb-2 text-xs text-text-dim">
             Topics drive marketplace discoverability for public API Circle workspaces. The{' '}
             <code>apicircle</code> topic is locked since the marketplace search depends on it.
             {canWriteTopics ? ` ${hostLabel} caps topics at 20.` : ''}
@@ -341,7 +341,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
             // Read-only rather than absent: the list still LOADS on every host,
             // and "this repo has no topics" is a real answer worth showing. Only
             // the editing controls come off.
-            <p className="mb-2 text-[0.6875rem] text-text-dim">
+            <p className="mb-2 text-xs text-text-dim">
               {hostLabel} has no API for setting topics, so this list is read-only.
             </p>
           )}
@@ -349,7 +349,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
           {loadingTopics ? (
             <LoadingState size="sm" title="Loading topics…" />
           ) : topicsLoadError ? (
-            <p className="text-[0.6875rem] text-danger" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {topicsLoadError}
             </p>
           ) : (
@@ -419,12 +419,12 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
               )}
 
               {topicsError && (
-                <p className="text-[0.6875rem] text-danger" role="alert">
+                <p className="text-xs text-danger" role="alert">
                   {topicsError}
                 </p>
               )}
               {topicsSavedAt !== null && !topicsDirty && !topicsError && (
-                <p className="text-[0.6875rem] text-success">Topics saved.</p>
+                <p className="text-xs text-success">Topics saved.</p>
               )}
 
               {canWriteTopics && (

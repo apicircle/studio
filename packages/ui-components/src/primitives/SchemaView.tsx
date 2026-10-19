@@ -60,14 +60,14 @@ function TypeBadge({ node }: { node: JsonSchemaNode }) {
     <span className="flex shrink-0 items-center gap-1">
       <span
         className={cn(
-          'rounded-sm border px-1 text-[10px] font-semibold uppercase tracking-wide',
+          'rounded-sm border px-1 text-[0.625rem] font-semibold uppercase tracking-wide',
           TYPE_TONE[type] ?? TYPE_TONE.any,
         )}
       >
         {type}
       </span>
       {nullable ? (
-        <span className="rounded-sm border border-border bg-card px-1 text-[10px] text-text-dim">
+        <span className="rounded-sm border border-border bg-card px-1 text-[0.625rem] text-text-dim">
           nullable
         </span>
       ) : null}
@@ -83,7 +83,7 @@ function Constraints({ node }: { node: JsonSchemaNode }) {
   if (node.enum) chips.push(node.enum.map((v) => String(v)).join(' | '));
   if (chips.length === 0) return null;
   return (
-    <span className="min-w-0 truncate text-[11px] text-text-dim" title={chips.join(' · ')}>
+    <span className="min-w-0 truncate text-[0.6875rem] text-text-dim" title={chips.join(' · ')}>
       {chips.join(' · ')}
     </span>
   );
@@ -130,11 +130,11 @@ function Row({
         <span className="shrink-0 font-mono text-xs text-text-primary">{name}</span>
         <TypeBadge node={node} />
         {required ? (
-          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-danger">
+          <span className="shrink-0 text-[0.625rem] font-semibold uppercase tracking-wide text-danger">
             required
           </span>
         ) : (
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-faint">
+          <span className="shrink-0 text-[0.625rem] uppercase tracking-wide text-text-faint">
             optional
           </span>
         )}
@@ -163,7 +163,7 @@ function Children({
     const required = new Set(node.required ?? []);
     const names = Object.keys(node.properties);
     if (names.length === 0) {
-      return <p className="text-[11px] text-text-dim">No fields described.</p>;
+      return <p className="text-xs text-text-dim">No fields described.</p>;
     }
     return (
       <ul className="flex flex-col">
@@ -235,7 +235,7 @@ export function SchemaView({
   const node = asNode(schema);
   if (!node) {
     return (
-      <p className="text-[11px] text-text-dim">
+      <p className="text-xs text-text-dim">
         This schema is not an object, so there are no fields to show.
       </p>
     );
@@ -263,7 +263,7 @@ export function SchemaView({
     <div role="group" aria-label={label} className={cn('flex flex-col gap-0.5', className)}>
       <Children node={node} depth={0} openDepth={openDepth} />
       {node.additionalProperties === false ? (
-        <p className="mt-1 text-[11px] text-text-dim">Extra fields are not allowed.</p>
+        <p className="mt-1 text-xs text-text-dim">Extra fields are not allowed.</p>
       ) : null}
     </div>
   );

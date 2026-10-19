@@ -28,16 +28,19 @@ Do not hand-write `h-5`/20px on anything clickable — that fails AA.
 
 ## Type scale
 
-Tailwind steps only; the three custom micro-sizes below exist but are being pushed
-up because they fail the business-analyst / contract-author readers:
+Tailwind steps only, with a floor: **text read as a sentence is 12px or more.**
 
 | Class              | px  | Use                                                                                           |
 | ------------------ | --- | --------------------------------------------------------------------------------------------- |
 | `text-sm`          | 14  | Body copy, primary labels, anything a non-developer reads at length. Prefer this in new work. |
-| `text-xs`          | 12  | Dense control labels, secondary text.                                                         |
-| `text-[0.6875rem]` | 11  | Micro-labels (uppercase field labels), chips.                                                 |
-| `text-[0.625rem]`  | 10  | Badges only. Avoid for anything read as a sentence.                                           |
-| `text-[0.5625rem]` | 9   | **Deprecated.** Do not add new uses.                                                          |
+| `text-xs`          | 12  | Dense control labels, secondary text, and the floor for any sentence: a hint, a note, a line. |
+| `text-[0.6875rem]` | 11  | Uppercase micro-labels (`Label`, `SectionHeading size="sm"`) and chips. Never a sentence.     |
+| `text-[0.625rem]`  | 10  | Badges and counts only.                                                                       |
+
+Nothing is smaller: the 9px step and the pixel sizes (`text-[10px]`,
+`text-[11px]`) are gone. `packages/ui-components/src/typeScale.test.ts` reads
+every source file and fails on a `<p>` under 12px, a size under 10px, or a
+section heading styled by hand instead of through `SectionHeading`.
 
 ## Semantic tone tokens
 
@@ -74,6 +77,31 @@ was added or edited without running it. Every theme must set its own `success`
 
 Two tones can share a colour in a theme (`info` equals `accent` in thirteen), so
 a status never rests on hue alone: give it a label or an icon as well.
+
+### The one main action is a solid accent button
+
+`Button variant="solid"` is a fill of the accent itself, for the single main
+action on a screen (Send, Run, the branch card's Push or Create PR). The rest
+stay `primary` (the tinted button), `ghost` or `subtle`: two solid buttons on
+one screen is no main action at all.
+
+Its label is `text-on-accent` and its hover `bg-accent-hover`, two tokens
+**generated** per theme by the same script as the `-fg` twins:
+
+- `--on-accent` — of the theme's `surface` and `text-primary`, whichever stands
+  out more on the accent, when it reads there at AA (4.5:1); where neither
+  does, pure black or white, whichever reads better (one of them always reaches
+  4.58:1). No fixed colour works for all 60 accents: white on Solarized Light's
+  blue is 3.7:1, black on GitHub Light's 4.0:1.
+- `--accent-hover` — the accent mixed away from the label (toward black under a
+  light label, toward white under a dark one) from 10%, by the least that is 6
+  from the accent in OKLab ×100: a step anyone can see. Away from the label
+  only raises the contrast, so a label that reads on the fill reads on its
+  hover.
+
+`theme-contrast.test.ts` holds both at AA in every theme and the hover at its
+step. A busy solid button (`loading`) wears the tinted look, so the brand mark,
+drawn in the theme's own colours, shows on it.
 
 ### A line of a diff uses the diff-row classes
 
@@ -142,7 +170,9 @@ in it is ever compared with the dock beside it.
 
 | Need                  | Use                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | --------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A button              | `Button`                 | `variant` primary/ghost/danger/subtle × `size`. Defaults to `type="button"` so it can't submit a form by accident.                                                                                                                                                                                                                                                                                                                                              |
+| A button              | `Button`                 | `variant` solid/primary/ghost/danger/subtle × `size`; `solid` for the one main action. Defaults to `type="button"` so it can't submit a form by accident. `loading` for an action in flight; `disabledReason` says why it is disabled.                                                                                                                                                                                                                          |
+| Why it is disabled    | `DisabledReason`         | Wraps any one control and says, on hover and on keyboard focus, why it is disabled (a `Tooltip` that explains a disabled trigger). Shows only while the control is disabled, so the reason expression can be passed in every state. **Every disabled action says why** — a greyed-out button with no reason leaves the user guessing.                                                                                                                           |
+| A section's title     | `SectionHeading`         | The small uppercase title over a section, as a real `h2`–`h4`. `md` (12px) for a panel's sections, `sm` (11px) inside a dense card.                                                                                                                                                                                                                                                                                                                             |
 | A text field          | `Input`                  | Shares the size scale; `invalid` wires `aria-invalid` + the danger border.                                                                                                                                                                                                                                                                                                                                                                                      |
 | A labelled field      | `Field`                  | Owns the label↔control association, required marker, and hint/error slot with `aria-describedby`. Pass the control as a render-prop to get the wired `id`. **Use this instead of a bare label + input** — a visible label that isn't bound to its control is an accessibility gap.                                                                                                                                                                              |
 | Just a label          | `Label`                  | The one uppercase micro-label style; pair with `htmlFor`.                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -166,6 +196,10 @@ in it is ever compared with the dock beside it.
 - **Label every field.** Prefer `Field`; at minimum bind a `Label` with
   `htmlFor`. A placeholder is not a label — it vanishes on input.
 - **Respect the height floor.** 24px minimum for anything clickable.
+- **Respect the text floor.** 12px for any sentence (see the type scale).
+- **Say why a control is disabled** — `DisabledReason`, or `Button
+disabledReason`. A reason that only lives in a native `title` reaches a mouse
+  and nothing else.
 - Tests are co-located and role/name-driven; changing a control's role or
   accessible name is a breaking change to its tests by design — update both
   together.

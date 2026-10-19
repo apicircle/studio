@@ -139,5 +139,91 @@ describe('Button', () => {
       render(<Button disabled>Send</Button>);
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
     });
+
+    it('wears the tinted look while a solid button is busy, so the brand mark shows', () => {
+      const { rerender } = render(<Button variant="solid">Run</Button>);
+      const btn = screen.getByRole('button', { name: 'Run' });
+      expect(btn).toHaveClass('bg-accent', 'text-on-accent');
+      rerender(
+        <Button variant="solid" loading>
+          Running…
+        </Button>,
+      );
+      const busy = screen.getByRole('button', { name: 'Running…' });
+      expect(busy).toHaveClass('bg-accent/15', 'text-accent-fg');
+      expect(busy).not.toHaveClass('text-on-accent');
+    });
+  });
+
+  describe('solid', () => {
+    it('fills with the accent, labels in the theme’s on-accent colour, and hovers to accent-hover', () => {
+      render(<Button variant="solid">Send</Button>);
+      expect(screen.getByRole('button', { name: 'Send' })).toHaveClass(
+        'bg-accent',
+        'border-accent',
+        'text-on-accent',
+        'hover:bg-accent-hover',
+        'hover:border-accent-hover',
+      );
+    });
+  });
+
+  describe('disabledReason', () => {
+    it('says why on hover and on keyboard focus while the button is disabled', async () => {
+      render(
+        <Button disabled disabledReason="Add a step first.">
+          Run
+        </Button>,
+      );
+      const btn = screen.getByRole('button', { name: 'Run' });
+      // The button is described by the reason at all times while disabled.
+      const id = btn.getAttribute('aria-describedby');
+      expect(document.getElementById(id!)).toHaveTextContent('Add a step first.');
+      const tip = screen.getByRole('tooltip');
+      expect(tip).toHaveClass('opacity-0');
+      // A disabled button takes no focus, so its wrapper takes the tab stop.
+      await userEvent.tab();
+      expect(btn.parentElement).toHaveFocus();
+      expect(tip).toHaveClass('opacity-100');
+    });
+
+    it('says nothing while the button can be pressed', () => {
+      render(<Button disabledReason="Add a step first.">Run</Button>);
+      expect(screen.getByRole('button', { name: 'Run' })).not.toHaveAttribute('aria-describedby');
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    it('says nothing while it is busy: the in-flight label says what is happening', () => {
+      render(
+        <Button loading disabledReason="Add a step first.">
+          Running…
+        </Button>,
+      );
+      expect(screen.getByRole('button', { name: 'Running…' })).not.toHaveAttribute(
+        'aria-describedby',
+      );
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    it('keeps the button in one place whether a reason applies or not', () => {
+      const { rerender } = render(
+        <Button disabled disabledReason="Add a step first." reasonClassName="ml-auto">
+          Run
+        </Button>,
+      );
+      const wrapper = screen.getByRole('button', { name: 'Run' }).parentElement;
+      expect(wrapper).toHaveClass('ml-auto');
+      rerender(
+        <Button disabledReason={null} reasonClassName="ml-auto">
+          Run
+        </Button>,
+      );
+      expect(screen.getByRole('button', { name: 'Run' }).parentElement).toBe(wrapper);
+    });
+
+    it('adds no wrapper when no reason is ever given', () => {
+      const { container } = render(<Button disabled>Run</Button>);
+      expect(container.firstElementChild?.tagName).toBe('BUTTON');
+    });
   });
 });

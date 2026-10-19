@@ -35,6 +35,7 @@ import {
 } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
+import { DisabledReason } from '../primitives/DisabledReason';
 import { ALL_THEMES } from '../theme/applyTheme';
 import { ALL_FONTS } from '../theme/applyFont';
 import { CommunitySection } from '../community/CommunitySection';
@@ -394,7 +395,7 @@ function SnapshotCapRow({
   return (
     <div className="rounded-sm border border-transparent p-1.5 hover:border-border-subtle">
       <div className="text-xs text-text-primary">Workspace snapshot cap</div>
-      <p className="mb-1.5 text-[0.6875rem] leading-snug text-text-dim">
+      <p className="mb-1.5 text-xs leading-snug text-text-dim">
         Total size budget for the local snapshot ledger. Auto-captures (push, merge, yank, etc.)
         keep the latest entries that fit; older snapshots evict when over cap.
       </p>
@@ -449,24 +450,26 @@ function FontSizeRow({
         <TextCursorInput size={13} className="text-text-dim" aria-hidden="true" />
         Text size
       </div>
-      <p className="mb-1.5 ml-[21px] text-[0.6875rem] leading-snug text-text-dim">
+      <p className="mb-1.5 ml-[21px] text-xs leading-snug text-text-dim">
         Scales all UI text, including code editors. Snaps in {FONT_SIZE_PERCENT_STEP}% steps.
       </p>
       <div className="ml-[21px] flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => onChange(current - FONT_SIZE_PERCENT_STEP)}
-          disabled={atMin}
-          aria-label="Decrease text size"
-          className={cn(
-            'inline-flex h-6 w-6 items-center justify-center rounded-sm border transition-colors',
-            atMin
-              ? 'cursor-not-allowed border-border-subtle bg-surface/40 text-text-faint'
-              : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
-          )}
-        >
-          <Minus size={12} aria-hidden="true" />
-        </button>
+        <DisabledReason reason={`${FONT_SIZE_PERCENT_MIN}% is the smallest text size.`}>
+          <button
+            type="button"
+            onClick={() => onChange(current - FONT_SIZE_PERCENT_STEP)}
+            disabled={atMin}
+            aria-label="Decrease text size"
+            className={cn(
+              'inline-flex h-6 w-6 items-center justify-center rounded-sm border transition-colors',
+              atMin
+                ? 'cursor-not-allowed border-border-subtle bg-surface/40 text-text-faint'
+                : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
+            )}
+          >
+            <Minus size={12} aria-hidden="true" />
+          </button>
+        </DisabledReason>
         <span
           aria-live="polite"
           aria-label={`Current text size ${current} percent`}
@@ -479,20 +482,22 @@ function FontSizeRow({
         >
           {current}%
         </span>
-        <button
-          type="button"
-          onClick={() => onChange(current + FONT_SIZE_PERCENT_STEP)}
-          disabled={atMax}
-          aria-label="Increase text size"
-          className={cn(
-            'inline-flex h-6 w-6 items-center justify-center rounded-sm border transition-colors',
-            atMax
-              ? 'cursor-not-allowed border-border-subtle bg-surface/40 text-text-faint'
-              : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
-          )}
-        >
-          <Plus size={12} aria-hidden="true" />
-        </button>
+        <DisabledReason reason={`${FONT_SIZE_PERCENT_MAX}% is the largest text size.`}>
+          <button
+            type="button"
+            onClick={() => onChange(current + FONT_SIZE_PERCENT_STEP)}
+            disabled={atMax}
+            aria-label="Increase text size"
+            className={cn(
+              'inline-flex h-6 w-6 items-center justify-center rounded-sm border transition-colors',
+              atMax
+                ? 'cursor-not-allowed border-border-subtle bg-surface/40 text-text-faint'
+                : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
+            )}
+          >
+            <Plus size={12} aria-hidden="true" />
+          </button>
+        </DisabledReason>
         {!atDefault && (
           <button
             type="button"
@@ -536,7 +541,7 @@ function ToggleRow({
           {label}
           {checked && <Check size={12} className="text-accent" aria-hidden="true" />}
         </div>
-        <p className="text-[0.6875rem] leading-snug text-text-dim">{description}</p>
+        <p className="text-xs leading-snug text-text-dim">{description}</p>
       </div>
     </label>
   );

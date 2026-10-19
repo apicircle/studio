@@ -8,6 +8,7 @@ import {
 } from '@apicircle/shared';
 import { Select } from '../../primitives/Select';
 import { MockReadOnlyContext } from './mockReadOnly';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 // =============================================================================
 // Request-schema editor — declares the inputs a mock endpoint expects (path /
@@ -77,9 +78,9 @@ export function MockRequestSchemaEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+        <SectionHeading as="h3" size="sm">
           Request schema
-        </h3>
+        </SectionHeading>
         {!readOnly && undeclaredSlots.length > 0 && (
           <button
             type="button"
@@ -92,7 +93,7 @@ export function MockRequestSchemaEditor({
           </button>
         )}
       </div>
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Declares the inputs this endpoint expects. Documentation only — it drives the OpenAPI export
         and is editable in the VS Code extension too. Runtime gating lives in the Validation node.
       </p>
@@ -146,11 +147,9 @@ function ParamTable({
 
   return (
     <div className="rounded-sm border border-border-subtle bg-card/40 p-2.5">
-      <p className="mb-1.5 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
-        {label}
-      </p>
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-text-dim">{label}</p>
       {params.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle px-2 py-2 text-center text-[0.625rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle px-2 py-2 text-center text-xs text-text-dim">
           No {label.toLowerCase()}.{!readOnly && ' Add one below.'}
         </p>
       ) : (
@@ -248,7 +247,7 @@ function BodyDocsEditor({
 
   return (
     <div className="rounded-sm border border-border-subtle bg-card/40 p-2.5">
-      <p className="mb-1.5 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-text-dim">
         Body shape (docs)
       </p>
       <label htmlFor="reqschema-body-desc" className="block text-[0.625rem] text-text-dim">

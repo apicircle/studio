@@ -212,6 +212,9 @@ import {
   setRequestQuery as setRequestQueryAction,
   setRequestUrl as setRequestUrlAction,
   renameRequest as renameRequestAction,
+  moveRefusal,
+  movePatch,
+  type CollectionNodeRef,
 } from './editorActions';
 import {
   duplicateMockEndpoint as duplicateMockEndpointAction,
@@ -1406,6 +1409,14 @@ type WorkspaceStore = {
   removeRequest: (id: string) => void;
   renameRequest: (id: string, name: string) => void;
   renameFolder: (id: string, name: string) => void;
+  /**
+   * Move a request into a folder (`null`: the top level), through
+   * `applyMutation` as a headless writer would. Returns false, having changed
+   * nothing, where `moveRefusal` has a reason it cannot go there.
+   */
+  moveRequest: (id: string, folderId: string | null) => boolean;
+  /** Move a folder, and everything in it, under another folder (`null`: the top level). */
+  moveFolder: (id: string, parentId: string | null) => boolean;
   /**
    * Clone a request inside the same folder, with fresh id + timestamps
    * and a uniquified `(copy)` name. Returns the new request id, or null
@@ -4137,6 +4148,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => renameRequestAction(s, id, name));
   },
   renameFolder: (id, name) => commitSynced(set, get, (s) => renameFolderAction(s, id, name)),
+  moveRequest: (id, folderId) => moveCollectionNode(set, get, { kind: 'request', id }, folderId),
+  moveFolder: (id, parentId) => moveCollectionNode(set, get, { kind: 'folder', id }, parentId),
   setRequestMethod: (id, method) => {
     if (routeLinkedField(get, set, id, 'method', method)) return;
     commitSynced(set, get, (s) => setRequestMethodAction(s, id, method));
@@ -6461,12 +6474,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    a CI bot) moved the branch and we'd otherwise upload blobs + a
     //    tree + a commit before discovering the divergence at updateRef.
     //    Throw BranchDivergedError up-front so the UI can route the user
-    //    through Refresh first — no orphan objects on the remote.
+    //    through Pull first — no orphan objects on the remote.
     const head = await beforeAnyWrite(() => client.getRef(token, owner, name, branch.name));
     if (branch.headSha && head.sha !== branch.headSha) {
       throw new BranchDivergedError(
         `Remote branch "${branch.name}" has moved since your last sync. ` +
-          `Refresh first to reconcile, then push again.`,
+          `Pull first to reconcile, then push again.`,
         branch.headSha,
         head.sha,
       );
@@ -7989,7 +8002,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
     const branch = local.workingBranch;
-    if (!branch) throw new Error('Create a working branch before refreshing');
+    if (!branch) throw new Error('Create a working branch before pulling');
 
     const token = await decryptSessionToken(local);
     const client = workspaceProvider(local);
@@ -8512,7 +8525,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       ))
     ) {
       throw new Error(
-        `"${branch.name}" on the remote does not contain ${commitSha.slice(0, 7)}. Refresh, then push again.`,
+        `"${branch.name}" on the remote does not contain ${commitSha.slice(0, 7)}. Pull, then push again.`,
       );
     }
     const current = get().local!;
@@ -10029,6 +10042,27 @@ function makeTokenRefreshPersister(
     set({ synced: updated });
     queueSaveSynced(updated);
   };
+}
+
+/**
+ * Move a request or a folder, unless `moveRefusal` says it cannot go there.
+ * The move is the same `WorkspacePatch` a headless writer sends, so the root
+ * list is kept in step by `applyMutation` alone.
+ */
+function moveCollectionNode(
+  set: SetState,
+  get: GetState,
+  node: CollectionNodeRef,
+  destination: string | null,
+): boolean {
+  const { synced, local } = get();
+  if (!synced || !local || moveRefusal(synced, node, destination) !== null) return false;
+  commitSynced(
+    set,
+    get,
+    (s) => applyMutation({ synced: s, local }, movePatch(node, destination)).next.synced,
+  );
+  return true;
 }
 
 function commitSynced(

@@ -96,10 +96,10 @@ export function AttachmentDownloadPromptModal() {
                       {item.source === 'workspace' ? 'Current workspace' : 'Linked workspace'}
                     </span>
                   </div>
-                  <p className="mt-1 text-[0.6875rem] text-text-muted">
+                  <p className="mt-1 text-xs text-text-muted">
                     Required by {formatRequiredBy(item.requiredBy)}
                   </p>
-                  <p className="mt-1 font-mono text-[0.625rem] text-text-dim">
+                  <p className="mt-1 font-mono text-xs text-text-dim">
                     {item.localPath
                       ? `local metadata: ${item.localPath}`
                       : 'not downloaded locally'}

@@ -33,6 +33,7 @@ import { useRepoDisconnectNotice } from '../repoDisconnectNotice';
 import { ClearStudioDataOption } from '../ClearStudioDataOption';
 import { clearStudioData } from '../clearStudioData';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { Radio } from '../../primitives/Radio';
 import { Tabs, tabPanelProps } from '../../primitives/Tabs';
 import { useShallow } from 'zustand/react/shallow';
@@ -62,6 +63,7 @@ import { isWebBuild } from './webBuild';
 import { isGitHubDeviceFlowAvailable } from './githubDeviceFlow';
 import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 // Frozen empty, so the folded selector keeps a stable identity across renders.
 const NO_LINKED_WORKSPACES: Record<string, LinkedWorkspace> = Object.freeze({});
@@ -300,7 +302,7 @@ function VaultTab() {
       </p>
 
       <p
-        className="rounded-sm border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-[0.6875rem] text-text-muted"
+        className="rounded-sm border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-text-muted"
         role="note"
       >
         <strong className="text-warning">Encrypted with your workspace passphrase.</strong>{' '}
@@ -315,9 +317,9 @@ function VaultTab() {
       {needsPassphraseUnlock && <UnlockPassphraseGate onUnlock={openPassphraseUnlock} />}
 
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-medium uppercase tracking-wider text-text-dim">
+        <SectionHeading as="h3">
           Entries{entries.length > 0 ? ` (${entries.length})` : ''}
-        </h3>
+        </SectionHeading>
         {!adding && !needsPassphraseSetup && !needsPassphraseUnlock && (
           <button
             type="button"
@@ -408,8 +410,9 @@ function VaultTab() {
       <div className="rounded-sm border border-border bg-card p-3 text-xs text-text-muted">
         <p className="mb-1 text-text-primary">Master key</p>
         <p>
-          Generated on this device on first use and stored in IndexedDB. Reinstalling the app or
-          clearing site data drops the key; re-enter your secrets afterwards.
+          Generated on this device on first use and saved with this device&apos;s workspace data.
+          Reinstalling the app or clearing site data drops the key; re-enter your secrets
+          afterwards.
         </p>
       </div>
     </div>
@@ -433,14 +436,12 @@ function SetupPassphraseGate({ onSet }: { onSet: () => void }) {
         <ShieldCheck size={14} className="text-accent" aria-hidden="true" />
         <p className="text-sm text-text-primary">Set a workspace passphrase to add secrets</p>
       </div>
-      <p className="text-[0.6875rem] text-text-muted">
+      <p className="text-xs text-text-muted">
         On the web build, secret values can only be saved after you set a passphrase. The passphrase
         encrypts every entry below and is required to decrypt them again — including on other
         devices and for teammates who clone this workspace.
       </p>
-      <p className="text-[0.6875rem] text-warning">
-        No recovery: lose the passphrase, lose the secrets.
-      </p>
+      <p className="text-xs text-warning">No recovery: lose the passphrase, lose the secrets.</p>
       <button
         type="button"
         onClick={onSet}
@@ -470,7 +471,7 @@ function UnlockPassphraseGate({ onUnlock }: { onUnlock: () => void }) {
         <Lock size={14} className="text-warning" aria-hidden="true" />
         <p className="text-sm text-text-primary">Secrets are locked</p>
       </div>
-      <p className="text-[0.6875rem] text-text-muted">
+      <p className="text-xs text-text-muted">
         Enter the workspace passphrase to decrypt existing secrets and add new ones. The passphrase
         is held only in memory; you&apos;ll be asked again after a restart or 15 minutes of
         inactivity.
@@ -527,7 +528,7 @@ function ProvideMissingSlotsGate({ slots }: ProvideMissingSlotsGateProps) {
           {slots.length === 1 ? '1 secret value needed' : `${slots.length} secret values needed`}
         </p>
       </div>
-      <p className="text-[0.6875rem] text-text-muted">
+      <p className="text-xs text-text-muted">
         This workspace references secret keys whose values aren&apos;t on this device yet. Provide
         each one to unlock encrypted environment variables that depend on it.
       </p>
@@ -582,16 +583,18 @@ function ProvideSlotRow({ slot }: { slot: SecretKeyMeta }) {
           if (e.key === 'Enter' && !submitting && value) void submit();
         }}
       />
-      <button
-        type="button"
-        onClick={() => void submit()}
-        disabled={submitting || !value}
-        aria-busy={submitting || undefined}
-        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
-      >
-        {submitting && <BrandLoader size="xs" />}
-        {submitting ? 'Saving…' : 'Save'}
-      </button>
+      <DisabledReason reason={value ? null : 'Enter a value first.'}>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={submitting || !value}
+          aria-busy={submitting || undefined}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
+        >
+          {submitting && <BrandLoader size="xs" />}
+          {submitting ? 'Saving…' : 'Save'}
+        </button>
+      </DisabledReason>
     </li>
   );
 }
@@ -871,14 +874,14 @@ function SecretRow({ entry, encrypts }: SecretRowProps) {
       {revealError !== null && (
         <p
           role="alert"
-          className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-[0.6875rem] text-danger"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger"
         >
           <AlertCircle size={11} aria-hidden="true" />
           {revealError}
         </p>
       )}
       {hasReveal && (
-        <p className="mt-1 text-[0.625rem] text-text-dim">
+        <p className="mt-1 text-xs text-text-dim">
           Auto-hides in {Math.round(SECRET_AUTO_MASK_MS / 1000)}s.
         </p>
       )}
@@ -887,7 +890,7 @@ function SecretRow({ entry, encrypts }: SecretRowProps) {
         // Its own full-width line, like "Used in": inside the label column
         // it would truncate to a few characters in the narrow dock.
         <p
-          className="mt-1 flex items-start gap-1 text-[0.6875rem] text-text-dim"
+          className="mt-1 flex items-start gap-1 text-xs text-text-dim"
           title={describeEncryptionKeyReference(displayLabel, encrypts)}
         >
           <Lock size={10} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -918,7 +921,7 @@ function SecretRow({ entry, encrypts }: SecretRowProps) {
         </ul>
       )}
       {confirmDelete && (
-        <p className="mt-2 text-[0.6875rem] text-warning">
+        <p className="mt-2 text-xs text-warning">
           This secret is used in {usedInCount} place{usedInCount === 1 ? '' : 's'}.
           {encrypts.length > 0 &&
             ` Deleting it clears the value${encrypts.length === 1 ? '' : 's'} of ${encrypts.join(', ')}, which it encrypts.`}{' '}
@@ -963,16 +966,16 @@ function SessionsTab() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
+        <SectionHeading as="h3" className="mb-1">
           Workspace session
-        </h3>
-        <p className="mb-2 text-[0.6875rem] text-text-muted">
+        </SectionHeading>
+        <p className="mb-2 text-xs text-text-muted">
           Drives push, pull, and PR creation for this workspace&apos;s own repo. Disconnecting
           doesn&apos;t touch linking sessions below.
         </p>
         {multiHost && (
           <div className="mb-2">
-            <p className="mb-1 text-[0.6875rem] text-text-muted">Host</p>
+            <p className="mb-1 text-xs text-text-muted">Host</p>
             {/* A real tablist rather than a <select>: the choice changes the
                 whole section below it (guidance + form or session card), the
                 connection status of every host is visible at once instead of
@@ -1055,16 +1058,16 @@ function SessionsTab() {
         </div>
       </div>
       <div>
-        <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
+        <SectionHeading as="h3" className="mb-1">
           Linking sessions
-        </h3>
-        <p className="mb-2 text-[0.6875rem] text-text-muted">
+        </SectionHeading>
+        <p className="mb-2 text-xs text-text-muted">
           Per-link credentials used to fetch source repos that aren&apos;t reachable from the
           workspace session. Manage each one from its link card under{' '}
           <span className="text-text-primary">Link Workspace</span>.
         </p>
         {linkSessionEntries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
             No linking sessions yet.
           </p>
         ) : (
@@ -1394,10 +1397,18 @@ function ConnectForm({
   const setError = (message: string | null) =>
     setFailure(message === null ? null : { host, message });
   const needsEmail = host === 'bitbucket' && bitbucketKind === 'api-token';
-  const canSubmit =
-    token.trim().length > 0 &&
-    (!needsEmail || email.trim().length > 0) &&
-    !isHostBaseUrlMissing(host, baseUrl);
+  const tokenLabel =
+    host === 'bitbucket' ? BITBUCKET_KIND_TITLE[bitbucketKind] : 'Personal access token';
+  // The first field Connect still waits for, by the label it wears on the form.
+  const missingField =
+    token.trim().length === 0
+      ? tokenLabel
+      : needsEmail && email.trim().length === 0
+        ? 'Atlassian account email'
+        : isHostBaseUrlMissing(host, baseUrl)
+          ? baseUrlField!.label
+          : null;
+  const canSubmit = missingField === null;
 
   // Device-flow state. While `code` is non-null, the polling loop is
   // running and the UI shows the user_code + verification URL with a
@@ -1504,11 +1515,11 @@ function ConnectForm({
             </button>
           )}
           {oauthError && !code && (
-            <p className="text-[0.6875rem] text-danger" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {oauthError}
             </p>
           )}
-          <p className="text-[0.625rem] text-text-dim">
+          <p className="text-xs text-text-dim">
             OAuth uses GitHub's device flow — no client secret stays in the browser. You'll be
             prompted on github.com/login/device to authorize API Circle Studio.
           </p>
@@ -1516,7 +1527,7 @@ function ConnectForm({
       )}
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
-        <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
+        <p className="text-xs font-medium uppercase tracking-wider text-text-dim">
           {deviceFlowAvailable
             ? 'Or — paste a personal access token'
             : host === 'bitbucket'
@@ -1554,7 +1565,7 @@ function ConnectForm({
           </>
         )}
         <label htmlFor="pat-input" className="block text-xs text-text-muted">
-          {host === 'bitbucket' ? BITBUCKET_KIND_TITLE[bitbucketKind] : 'Personal access token'}
+          {tokenLabel}
         </label>
         <input
           id="pat-input"
@@ -1599,7 +1610,7 @@ function ConnectForm({
                 if (e.key === 'Enter' && !submitting) void submit();
               }}
             />
-            <p id="host-base-url-hint" className="text-[0.6875rem] text-text-dim">
+            <p id="host-base-url-hint" className="text-xs text-text-dim">
               {baseUrlField.hint}
             </p>
           </>
@@ -1610,18 +1621,20 @@ function ConnectForm({
           </p>
         )}
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={submitting || !canSubmit}
-            aria-busy={submitting || undefined}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            {submitting && <BrandLoader size="xs" />}
-            {submitting ? 'Verifying…' : 'Connect'}
-          </button>
+          <DisabledReason reason={missingField && `Fill in “${missingField}” first.`}>
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={submitting || !canSubmit}
+              aria-busy={submitting || undefined}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              {submitting && <BrandLoader size="xs" />}
+              {submitting ? 'Verifying…' : 'Connect'}
+            </button>
+          </DisabledReason>
         </div>
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           We verify the token via <code>GET /user</code> before storing it. The token is encrypted
           with your local master key — only this browser can decrypt it.
         </p>
@@ -1704,7 +1717,7 @@ function DeviceFlowCard({
           Copy
         </button>
       </div>
-      <p className="text-[0.625rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Expires in{' '}
         <strong className="text-text-primary">
           {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
@@ -1712,7 +1725,7 @@ function DeviceFlowCard({
         {busy ? ' · waiting for GitHub authorization…' : ''}
       </p>
       {error && (
-        <p className="text-[0.6875rem] text-danger" role="alert">
+        <p className="text-xs text-danger" role="alert">
           {error}
         </p>
       )}
@@ -1803,8 +1816,8 @@ function PreflightResult({ report }: { report: HostPreflightReport }) {
         role="status"
         className={
           healthy
-            ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-[0.6875rem] text-success'
-            : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger'
+            ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-xs text-success'
+            : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-xs text-danger'
         }
       >
         {healthy ? (
@@ -1892,7 +1905,14 @@ function ActiveSessionCard({
   const [clearOnDisconnect, setClearOnDisconnect] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const needsEmail = host === 'bitbucket' && bitbucketKind === 'api-token';
-  const canUpdate = newToken.trim().length > 0 && (!needsEmail || newEmail.trim().length > 0);
+  // What Update still waits for.
+  const updateBlocker =
+    newToken.trim().length === 0
+      ? 'Paste the new token first.'
+      : needsEmail && newEmail.trim().length === 0
+        ? 'Enter the Atlassian account email first.'
+        : null;
+  const canUpdate = updateBlocker === null;
 
   const onVerify = async () => {
     setVerifying(true);
@@ -2169,13 +2189,13 @@ function ActiveSessionCard({
         </dd>
       </dl>
       {missingRequired.length > 0 && (
-        <p className="rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger">
+        <p className="rounded-sm border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
           Required scope(s) missing: <code>{missingRequired.join(', ')}</code>. Linking and push to
           save will fail until you update the token.
         </p>
       )}
       {missingRequired.length === 0 && prCapability === false && (
-        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
           This token can&apos;t create pull requests. Push to save works, but creating PRs from the
           app will fail until you update the token.
         </p>
@@ -2184,7 +2204,7 @@ function ActiveSessionCard({
       {testResult?.kind === 'fail' && (
         <p
           role="status"
-          className="flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger"
+          className="flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-xs text-danger"
         >
           <XCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
           <span>{testResult.message}</span>
@@ -2231,16 +2251,18 @@ function ActiveSessionCard({
             className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
           />
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void onUpdate()}
-              disabled={updating || !canUpdate}
-              aria-busy={updating || undefined}
-              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-            >
-              {updating && <BrandLoader size="xs" />}
-              {updating ? 'Verifying…' : 'Update'}
-            </button>
+            <DisabledReason reason={updateBlocker}>
+              <button
+                type="button"
+                onClick={() => void onUpdate()}
+                disabled={updating || !canUpdate}
+                aria-busy={updating || undefined}
+                className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              >
+                {updating && <BrandLoader size="xs" />}
+                {updating ? 'Verifying…' : 'Update'}
+              </button>
+            </DisabledReason>
             <button
               type="button"
               onClick={() => {

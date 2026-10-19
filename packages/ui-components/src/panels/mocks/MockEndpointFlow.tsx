@@ -103,7 +103,7 @@ function ArrowEdge({ label }: { label?: string }) {
     <div className="flex flex-col items-center justify-center gap-0.5 px-1 text-text-faint">
       <ArrowRight size={14} aria-hidden="true" />
       {label && (
-        <span className="rounded-sm bg-card px-1 py-0.5 text-[0.5625rem] uppercase tracking-wider text-text-dim">
+        <span className="rounded-sm bg-card px-1 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-dim">
           {label}
         </span>
       )}
@@ -119,7 +119,7 @@ const EndpointNode = memo(function EndpointNode({ endpoint, selection, onSelect 
       onClick={() => onSelect({ kind: 'endpoint' })}
       ariaLabel={`Endpoint ${endpoint.method} ${endpoint.pathPattern}`}
     >
-      <span className="text-[0.5625rem] uppercase tracking-wider text-text-dim">Endpoint</span>
+      <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">Endpoint</span>
       <div className="flex items-center gap-1.5">
         <MethodChip method={endpoint.method} />
         <code className="truncate font-mono text-text-primary">{endpoint.pathPattern}</code>
@@ -159,7 +159,7 @@ const ValidationNode = memo(function ValidationNode({
       onClick={() => onSelect({ kind: 'validation' })}
       ariaLabel="Validation node"
     >
-      <span className="flex items-center gap-1 text-[0.5625rem] uppercase tracking-wider text-text-dim">
+      <span className="flex items-center gap-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
         <ShieldAlert size={10} aria-hidden="true" />
         {label}
       </span>
@@ -172,8 +172,8 @@ const ValidationNode = memo(function ValidationNode({
               key={i}
               className={
                 c.enabled
-                  ? 'rounded-sm border border-danger/40 bg-danger/5 px-1 py-0 font-mono text-[0.5625rem] text-danger'
-                  : 'rounded-sm border border-border bg-surface px-1 py-0 font-mono text-[0.5625rem] text-text-muted line-through'
+                  ? 'rounded-sm border border-danger/40 bg-danger/5 px-1 py-0 font-mono text-[0.625rem] text-danger'
+                  : 'rounded-sm border border-border bg-surface px-1 py-0 font-mono text-[0.625rem] text-text-muted line-through'
               }
               title={c.enabled ? undefined : 'Disabled — skipped at runtime'}
             >
@@ -181,7 +181,7 @@ const ValidationNode = memo(function ValidationNode({
             </span>
           ))}
           {chips.length > 4 && (
-            <span className="text-[0.5625rem] text-text-dim">+{chips.length - 4}</span>
+            <span className="text-[0.625rem] text-text-dim">+{chips.length - 4}</span>
           )}
         </span>
       )}
@@ -215,7 +215,7 @@ const RulesNode = memo(function RulesNode({
       onClick={() => onSelect({ kind: 'rules' })}
       ariaLabel="Response rules node"
     >
-      <span className="flex items-center gap-1 text-[0.5625rem] uppercase tracking-wider text-text-dim">
+      <span className="flex items-center gap-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
         <Sparkles size={10} aria-hidden="true" />
         {label}
       </span>
@@ -228,8 +228,8 @@ const RulesNode = memo(function RulesNode({
               key={i}
               className={
                 c.enabled
-                  ? 'rounded-sm border border-success/40 bg-success/5 px-1 py-0 font-mono text-[0.5625rem] text-success'
-                  : 'rounded-sm border border-border bg-surface px-1 py-0 font-mono text-[0.5625rem] text-text-muted line-through'
+                  ? 'rounded-sm border border-success/40 bg-success/5 px-1 py-0 font-mono text-[0.625rem] text-success'
+                  : 'rounded-sm border border-border bg-surface px-1 py-0 font-mono text-[0.625rem] text-text-muted line-through'
               }
               title={c.enabled ? undefined : 'Disabled — skipped at runtime'}
             >
@@ -237,7 +237,7 @@ const RulesNode = memo(function RulesNode({
             </span>
           ))}
           {chips.length > 4 && (
-            <span className="text-[0.5625rem] text-text-dim">+{chips.length - 4}</span>
+            <span className="text-[0.625rem] text-text-dim">+{chips.length - 4}</span>
           )}
         </span>
       )}
@@ -253,7 +253,7 @@ const DefaultNode = memo(function DefaultNode({ endpoint, selection, onSelect }:
       onClick={() => onSelect({ kind: 'default' })}
       ariaLabel="Default response node"
     >
-      <span className="flex items-center gap-1 text-[0.5625rem] uppercase tracking-wider text-text-dim">
+      <span className="flex items-center gap-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
         <Zap size={10} aria-hidden="true" />
         Default
       </span>
@@ -281,7 +281,7 @@ function MethodChip({ method }: { method: string }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center rounded-sm border bg-surface px-1 py-0 font-mono text-[0.5625rem] uppercase',
+        'inline-flex shrink-0 items-center rounded-sm border bg-surface px-1 py-0 font-mono text-[0.625rem] uppercase',
         t,
       )}
     >

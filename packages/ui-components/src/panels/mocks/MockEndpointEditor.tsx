@@ -228,7 +228,7 @@ function PathPatternInput({
         )}
       />
       {reason && (
-        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {reason}
         </p>
       )}

@@ -127,7 +127,7 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
   return (
     <Modal open={props.open} onClose={props.onClose} title={title} className="max-w-2xl">
       <div className="space-y-3">
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Pick one or more rules to copy into this endpoint. Imported rules get fresh ids — future
           edits don&rsquo;t sync back to the originals.
         </p>
@@ -142,12 +142,12 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
           />
         )}
         {allEntries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-xs text-text-dim">
             No {props.kind === 'validation' ? 'validation' : 'response'} rules in the workspace yet.
             Create one with <strong>Add rule</strong> first.
           </p>
         ) : entries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-xs text-text-dim">
             No rules match &ldquo;{search}&rdquo;. Clear the search to see all.
           </p>
         ) : (
@@ -180,14 +180,14 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
                         )}
                         {entry.isSelf && (
                           <span
-                            className="rounded-sm bg-card px-1 py-0 text-[0.5625rem] uppercase tracking-wider text-text-dim"
+                            className="rounded-sm bg-card px-1 py-0 text-[0.625rem] uppercase tracking-wider text-text-dim"
                             title="This rule lives on the endpoint you're importing into — useful for clone-with-tweaks"
                           >
                             this endpoint
                           </span>
                         )}
                       </div>
-                      <p className="truncate text-[0.625rem] text-text-dim">
+                      <p className="truncate text-xs text-text-dim">
                         {entry.serverName} · {entry.endpointLabel}
                       </p>
                     </div>
@@ -230,7 +230,7 @@ function ValidationRuleSummary({ rule }: { rule: MockValidationRule }) {
         {rule.target ? ` · ${rule.target}` : ''}
       </span>
       {!rule.enabled && (
-        <span className="rounded-sm border border-border-subtle px-1 py-0 text-[0.5625rem] uppercase tracking-wider text-text-dim">
+        <span className="rounded-sm border border-border-subtle px-1 py-0 text-[0.625rem] uppercase tracking-wider text-text-dim">
           disabled
         </span>
       )}

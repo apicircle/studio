@@ -29,7 +29,9 @@ import { MockResponseEditor } from './MockResponseEditor';
 import { MockRequestSchemaEditor } from './MockRequestSchemaEditor';
 import { MockRulePicker } from './MockRulePicker';
 import { Select } from '../../primitives/Select';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { MockReadOnlyContext } from './mockReadOnly';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 // Node-editor surface for whichever flow node the user has selected.
 // Imports each inner editor below so the selection switch is a single
@@ -107,7 +109,7 @@ export function MockNodeEditor({
 
 function FallbackMissing({ label }: { label: string }) {
   return (
-    <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
+    <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-xs text-text-dim">
       The selected {label} no longer exists. Pick another node from the flow above.
     </p>
   );
@@ -128,7 +130,7 @@ function EndpointDetailsEditor({
   return (
     <div className="space-y-3">
       <SectionHeader>Endpoint</SectionHeader>
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Method + path live in the editor toolbar. Edit the friendly name and documentation here.
       </p>
       <div>
@@ -276,13 +278,13 @@ function ValidationOverview({
       <SectionHeader icon={<ShieldAlert size={12} aria-hidden="true" />}>
         Validation rules
       </SectionHeader>
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Run before any response logic. The first failing rule&rsquo;s response is returned
         immediately. Click a rule to edit it; uncheck the box to disable a rule without deleting it;
         use the up/down buttons to reorder — order is significant.
       </p>
       {endpoint.requestValidation.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-xs text-text-dim">
           No validation rules.
           {!readOnly && (
             <>
@@ -330,24 +332,28 @@ function ValidationOverview({
                   {rule.target ? ` · ${rule.target}` : ''}
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => move(idx, -1)}
-                disabled={idx === 0}
-                aria-label={`Move rule ${idx + 1} up`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowUp size={10} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => move(idx, 1)}
-                disabled={idx === endpoint.requestValidation.length - 1}
-                aria-label={`Move rule ${idx + 1} down`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowDown size={10} aria-hidden="true" />
-              </button>
+              <DisabledReason reason="This rule is first already.">
+                <button
+                  type="button"
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  aria-label={`Move rule ${idx + 1} up`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
+                >
+                  <ArrowUp size={10} aria-hidden="true" />
+                </button>
+              </DisabledReason>
+              <DisabledReason reason="This rule is last already.">
+                <button
+                  type="button"
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === endpoint.requestValidation.length - 1}
+                  aria-label={`Move rule ${idx + 1} down`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
+                >
+                  <ArrowDown size={10} aria-hidden="true" />
+                </button>
+              </DisabledReason>
               <button
                 type="button"
                 onClick={() => remove(idx)}
@@ -511,7 +517,7 @@ function ValidationRuleEditor({
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">
-        <p className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           Fail response (returned when this rule fails)
         </p>
         <MockResponseEditor
@@ -596,12 +602,12 @@ function ResponseRulesOverview({
   return (
     <div className="space-y-3">
       <SectionHeader icon={<Sparkles size={12} aria-hidden="true" />}>Response rules</SectionHeader>
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Evaluated top-down; the first rule whose <strong>all</strong> clauses match wins. Click a
         rule to edit it. If none match, the Default Response is returned.
       </p>
       {endpoint.responseRules.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-xs text-text-dim">
           No response rules.
           {!readOnly && (
             <>
@@ -645,24 +651,28 @@ function ResponseRulesOverview({
                   {rule.when.length} clause{rule.when.length === 1 ? '' : 's'}
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => move(idx, -1)}
-                disabled={idx === 0}
-                aria-label={`Move rule ${idx + 1} up`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowUp size={10} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => move(idx, 1)}
-                disabled={idx === endpoint.responseRules.length - 1}
-                aria-label={`Move rule ${idx + 1} down`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowDown size={10} aria-hidden="true" />
-              </button>
+              <DisabledReason reason="This rule is first already.">
+                <button
+                  type="button"
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  aria-label={`Move rule ${idx + 1} up`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
+                >
+                  <ArrowUp size={10} aria-hidden="true" />
+                </button>
+              </DisabledReason>
+              <DisabledReason reason="This rule is last already.">
+                <button
+                  type="button"
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === endpoint.responseRules.length - 1}
+                  aria-label={`Move rule ${idx + 1} down`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary disabled:opacity-30"
+                >
+                  <ArrowDown size={10} aria-hidden="true" />
+                </button>
+              </DisabledReason>
               <button
                 type="button"
                 onClick={() => remove(idx)}
@@ -786,7 +796,7 @@ function ResponseRuleEditor({
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">
-        <p className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           When (all of)
         </p>
         <ul className="space-y-1">
@@ -845,15 +855,21 @@ function ResponseRuleEditor({
                 ) : (
                   <span aria-hidden="true" />
                 )}
-                <button
-                  type="button"
-                  onClick={() => removeClause(cIdx)}
-                  aria-label={`Remove clause ${cIdx + 1}`}
-                  disabled={rule.when.length <= 1}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger disabled:opacity-30"
-                >
-                  <X size={10} aria-hidden="true" />
-                </button>
+                {/* A rule needs at least one clause (one with none never fires),
+                    so its last clause has no Remove — a button that could never
+                    be pressed. Its column keeps the row lined up. */}
+                {rule.when.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => removeClause(cIdx)}
+                    aria-label={`Remove clause ${cIdx + 1}`}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
+                  >
+                    <X size={10} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <span aria-hidden="true" className="h-7 w-7" />
+                )}
               </li>
             );
           })}
@@ -871,7 +887,7 @@ function ResponseRuleEditor({
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">
-        <p className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           Then (response)
         </p>
         <MockResponseEditor
@@ -892,10 +908,10 @@ function ResponseRuleEditor({
 
 function SectionHeader({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <h2 className="flex items-center gap-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
+    <SectionHeading size="sm" className="flex items-center gap-1.5">
       {icon}
       {children}
-    </h2>
+    </SectionHeading>
   );
 }
 

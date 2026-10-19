@@ -62,7 +62,7 @@ export function ExecutionSidebar() {
         />
       </div>
       {planArray.length === 0 ? (
-        <p className="p-3 text-[0.6875rem] text-text-dim">
+        <p className="p-3 text-xs text-text-dim">
           {searchQuery ? 'No matching plans.' : 'No plans yet.'}
         </p>
       ) : (

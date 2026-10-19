@@ -275,7 +275,7 @@ export function HistorySidebar() {
               ))}
               {emptyClearHint && (
                 <p
-                  className="rounded-sm bg-card/60 px-2 py-1 text-[0.625rem] text-text-dim"
+                  className="rounded-sm bg-card/60 px-2 py-1 text-xs text-text-dim"
                   role="status"
                   aria-live="polite"
                 >
@@ -293,7 +293,7 @@ export function HistorySidebar() {
             <span className="font-medium text-text-primary">{formatBytes(storageBytes)}</span> in
             local history
           </p>
-          <p className="mt-0.5 text-[0.625rem] text-text-dim">
+          <p className="mt-0.5 text-xs text-text-dim">
             {requestRuns.length} request run{requestRuns.length === 1 ? '' : 's'} ·{' '}
             {planRuns.length} plan run{planRuns.length === 1 ? '' : 's'}
           </p>

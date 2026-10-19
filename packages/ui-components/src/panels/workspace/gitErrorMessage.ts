@@ -28,7 +28,7 @@ export interface GitErrorView {
   message: string;
   /** What the UI should let the user do about it. */
   action: GitErrorAction;
-  /** When true, the failure may have left server-side artifacts (orphan commits) — recommend refresh before retry. */
+  /** When true, the failure may have left server-side artifacts (orphan commits) — recommend a pull before retry. */
   partialWrite: boolean;
 }
 
@@ -47,7 +47,7 @@ export function formatGitError(
   if (err instanceof NothingWrittenError) {
     // The call site proved the operation had not written anything yet, so the
     // partial-write warning would be false however bad the underlying error is
-    // -- and it would send the user to Refresh when a retry is the safe act.
+    // -- and it would send the user to Pull when a retry is the safe act.
     // Everything else about the failure still holds: a 401 still asks for a
     // reconnect, a rate limit still says when to come back.
     return { ...formatGitError(err.underlying, opName, host), partialWrite: false };
@@ -56,7 +56,7 @@ export function formatGitError(
     return {
       message:
         `Remote branch has moved since your last sync. ` +
-        `Refresh first to see what changed, then ${opName.toLowerCase()} again.`,
+        `Pull first to see what changed, then ${opName.toLowerCase()} again.`,
       action: { kind: 'refresh-first' },
       partialWrite: false, // pre-flight catches it before any write
     };
@@ -65,7 +65,7 @@ export function formatGitError(
     return {
       message:
         `${opName} timed out after ${err.timeoutMs}ms. ` +
-        `Your network may be slow, or the write partially landed — refresh to check before retrying.`,
+        `Your network may be slow, or the write partially landed — pull to check before retrying.`,
       action: { kind: 'none' },
       partialWrite: true,
     };

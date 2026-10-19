@@ -104,14 +104,14 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'env',
     title: 'Environments',
-    body: 'Environments are layered. Tick several to stack them — when a variable is looked up, the first match wins.',
+    body: 'Tick the environments to use when sending. When two set the same variable, the one higher in the list wins.',
     panel: 'env',
     target: 'nav-env',
   },
   {
     id: 'dock-variables',
     title: 'Variables inspector',
-    body: 'Open this to see every variable currently in scope and trace exactly which layer each value resolves from.',
+    body: 'Open this to see every variable currently in scope and where each value comes from.',
     target: 'dock-variables',
   },
   {
@@ -491,7 +491,7 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
             <Compass size={14} aria-hidden="true" />
           </span>
           <div className="flex-1">
-            <p className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+            <p className="text-xs font-medium uppercase tracking-wider text-text-dim">
               Quick tour · {stepIndex + 1} of {VISIBLE_STEPS.length}
             </p>
             <h2 id={titleId} className="mt-0.5 text-sm font-semibold text-text-primary">

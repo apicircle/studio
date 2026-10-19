@@ -43,7 +43,7 @@ describe('EnvironmentsPanel', () => {
       useWorkspaceStore.getState().addEnvironment('prod');
     });
     await screen.findByRole('group', { name: 'Variables for dev' });
-    expect(screen.getByText(/Layer position 1 of 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/Used when sending · 1 of 2/i)).toBeInTheDocument();
   });
 
   it('add variable + commit value persists a plain row', async () => {

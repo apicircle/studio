@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../primitives/ConfirmDialog';
 import { WorkspaceLockedNotice } from './WorkspaceLockedNotice';
 import { canCreateWorkspace, unlockedWorkspaceIds, useWorkspaceAccess } from './workspaceAccess';
 import { BrandLoader } from '../primitives/BrandLoader';
+import { DisabledReason } from '../primitives/DisabledReason';
 
 // B.6 — Top-bar workspace switcher. Replaces the static `/ <name>` chip
 // with a dropdown that lists all registered workspaces, lets the user
@@ -222,7 +223,7 @@ export function WorkspaceSwitcher() {
       )}
       {error && (
         <p
-          className="absolute left-0 top-full z-20 mt-1 max-w-[18rem] rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-[0.625rem] text-danger"
+          className="absolute left-0 top-full z-20 mt-1 max-w-[18rem] rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger"
           role="alert"
         >
           {error}
@@ -302,7 +303,7 @@ function NewWorkspaceModal({
   return (
     <Modal open onClose={onClose} title="New workspace">
       <div className="space-y-3">
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Each workspace has its own collections, environments, links, releases, and GitHub
           connection. Switching workspaces reloads the editor.
         </p>
@@ -336,16 +337,18 @@ function NewWorkspaceModal({
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={() => void onSubmit()}
-            disabled={submitting || !name.trim()}
-            aria-busy={submitting || undefined}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            {submitting ? <BrandLoader size="xs" /> : <Plus size={11} aria-hidden="true" />}
-            {submitting ? 'Creating…' : 'Create workspace'}
-          </button>
+          <DisabledReason reason={name.trim() ? null : 'Name the workspace first.'}>
+            <button
+              type="button"
+              onClick={() => void onSubmit()}
+              disabled={submitting || !name.trim()}
+              aria-busy={submitting || undefined}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              {submitting ? <BrandLoader size="xs" /> : <Plus size={11} aria-hidden="true" />}
+              {submitting ? 'Creating…' : 'Create workspace'}
+            </button>
+          </DisabledReason>
         </div>
       </div>
     </Modal>

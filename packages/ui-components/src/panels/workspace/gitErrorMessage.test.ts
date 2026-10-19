@@ -11,7 +11,7 @@ import { NothingWrittenError } from '../../store/nothingWritten';
 import { formatGitError } from './gitErrorMessage';
 
 describe('formatGitError', () => {
-  it('routes a diverged branch to Refresh first, and claims no partial write', () => {
+  it('routes a diverged branch to Pull first, and claims no partial write', () => {
     const view = formatGitError(new BranchDivergedError('moved', 'sha-a', 'sha-b'), 'Push');
 
     expect(view.action).toEqual({ kind: 'refresh-first' });

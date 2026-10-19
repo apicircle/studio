@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { mockSpecWarningToast } from '../../store/mockSpecWarnings';
 import { Modal } from '../../primitives/Modal';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { DisabledReason } from '../../primitives/DisabledReason';
 
 // "Serve OpenAPI contract" — the dedicated run-live entry point. It stands up a
 // mock server that serves an OpenAPI/Swagger contract DIRECTLY from a spec
@@ -117,7 +118,7 @@ export function ServeContractModal() {
       <div className="space-y-3">
         <div className="flex items-start gap-2 rounded-sm border border-accent/40 bg-accent/10 p-2">
           <Info size={13} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
-          <p className="text-[0.6875rem] text-text-primary">
+          <p className="text-xs text-text-primary">
             Stands up a live mock server{' '}
             <strong className="text-text-primary">directly from an OpenAPI/Swagger contract</strong>
             . Endpoints are derived from the contract and stay in sync with the asset —
@@ -130,7 +131,7 @@ export function ServeContractModal() {
         {specAssets.length === 0 ? (
           <div className="flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/10 p-2">
             <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-            <p className="text-[0.6875rem] text-text-dim">
+            <p className="text-xs text-text-dim">
               No OpenAPI/Swagger assets yet. Upload one under Assets &rarr; Files, then return here.
             </p>
           </div>
@@ -169,7 +170,7 @@ export function ServeContractModal() {
                     {selected.spec.version ? ` · v${selected.spec.version}` : ''}
                   </span>
                 </div>
-                <p className="mt-1 text-[0.625rem] text-text-dim">
+                <p className="mt-1 text-xs text-text-dim">
                   {selected.spec.dialect === 'swagger-2' ? 'Swagger 2.0' : 'OpenAPI 3.x'} ·{' '}
                   {selected.spec.operationCount} operation
                   {selected.spec.operationCount === 1 ? '' : 's'} · served live from{' '}
@@ -226,16 +227,22 @@ export function ServeContractModal() {
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={() => void onSubmit()}
-            disabled={submitting || !assetId || !name.trim()}
-            aria-busy={submitting || undefined}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          <DisabledReason
+            reason={
+              !assetId ? 'Pick a contract first.' : !name.trim() ? 'Name the server first.' : null
+            }
           >
-            {submitting ? <BrandLoader size="xs" /> : <Server size={11} aria-hidden="true" />}
-            {submitting ? 'Creating…' : 'Create contract server'}
-          </button>
+            <button
+              type="button"
+              onClick={() => void onSubmit()}
+              disabled={submitting || !assetId || !name.trim()}
+              aria-busy={submitting || undefined}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              {submitting ? <BrandLoader size="xs" /> : <Server size={11} aria-hidden="true" />}
+              {submitting ? 'Creating…' : 'Create contract server'}
+            </button>
+          </DisabledReason>
         </div>
       </div>
     </Modal>

@@ -42,9 +42,7 @@ export function HelpSidebar() {
       </div>
       <nav className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="px-2 py-4 text-center text-[0.6875rem] text-text-dim">
-            No matching sections.
-          </p>
+          <p className="px-2 py-4 text-center text-xs text-text-dim">No matching sections.</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {filtered.map((section) => {

@@ -28,7 +28,9 @@ import {
   type FolderExportReport,
 } from '@apicircle/core';
 import { Modal } from '../../primitives/Modal';
+import { downloadTextFile } from '../../primitives/download';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 export interface ExportFolderModalProps {
   /** When non-null, the modal renders for that source folder. */
@@ -61,7 +63,7 @@ export function ExportFolderModal({ folderId, onClose, download }: ExportFolderM
         {!computed ? (
           <p
             role="alert"
-            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[0.6875rem] text-danger"
+            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-xs text-danger"
           >
             Couldn't read the folder — it may have been deleted. Close and retry.
           </p>
@@ -118,12 +120,9 @@ function ExportFolderBody({ envelope, report, onClose, download }: ExportFolderB
   return (
     <>
       <section aria-labelledby="export-summary-heading" className="flex flex-col gap-1.5">
-        <h3
-          id="export-summary-heading"
-          className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
-        >
+        <SectionHeading as="h3" size="sm" id="export-summary-heading">
           Summary
-        </h3>
+        </SectionHeading>
         <div className="grid grid-cols-[120px_1fr] gap-y-1 rounded-sm border border-border-subtle bg-card p-2.5">
           <span className="text-text-dim">Folder</span>
           <span className="font-medium text-text-primary">{report.folderName}</span>
@@ -191,20 +190,17 @@ function CredentialsSection({
       className="flex flex-col gap-1.5"
       data-testid="export-credentials"
     >
-      <h3
-        id="export-credentials-heading"
-        className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
-      >
+      <SectionHeading as="h3" size="sm" id="export-credentials-heading">
         Security credentials
-      </h3>
+      </SectionHeading>
       {credentials.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle bg-surface px-2.5 py-2 text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle bg-surface px-2.5 py-2 text-xs text-text-dim">
           No request or folder in this subtree carries a credential-bearing auth field. Safe to
           export as-is.
         </p>
       ) : (
         <div className="flex flex-col gap-2 rounded-sm border border-amber/30 bg-amber/5 p-2.5">
-          <p className="flex items-start gap-1 text-[0.625rem] text-amber">
+          <p className="flex items-start gap-1 text-xs text-amber">
             <AlertTriangle size={10} className="mt-[1px] shrink-0" aria-hidden="true" />
             <span>
               These fields will be <strong className="font-semibold">redacted by default</strong>.
@@ -242,7 +238,7 @@ function CredentialsSection({
                     {included && (
                       <span
                         data-testid={`include-flag-${c.id}`}
-                        className="ml-auto rounded-sm border border-amber/40 bg-amber/15 px-1 py-0.5 text-[0.5625rem] uppercase tracking-wide text-amber"
+                        className="ml-auto rounded-sm border border-amber/40 bg-amber/15 px-1 py-0.5 text-[0.625rem] uppercase tracking-wide text-amber"
                       >
                         included
                       </span>
@@ -272,14 +268,11 @@ function DependencyReportSection({ report }: { report: FolderExportReport }) {
       className="flex flex-col gap-1.5"
       data-testid="export-dependencies"
     >
-      <h3
-        id="export-dependencies-heading"
-        className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
-      >
+      <SectionHeading as="h3" size="sm" id="export-dependencies-heading">
         Global Asset dependencies
-      </h3>
+      </SectionHeading>
       {!report.hasDependencies ? (
-        <p className="rounded-sm border border-dashed border-border-subtle bg-surface px-2.5 py-2 text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle bg-surface px-2.5 py-2 text-xs text-text-dim">
           No global JSON Schemas, GraphQL definitions, or file assets are referenced by this folder.
         </p>
       ) : (
@@ -356,9 +349,7 @@ function DepGroup(props: {
       </header>
       <p
         className={
-          props.warn
-            ? 'flex items-start gap-1 text-[0.625rem] text-amber'
-            : 'text-[0.625rem] text-text-dim'
+          props.warn ? 'flex items-start gap-1 text-xs text-amber' : 'text-xs text-text-dim'
         }
       >
         {props.warn && <AlertTriangle size={10} className="mt-[1px] shrink-0" aria-hidden="true" />}
@@ -376,28 +367,5 @@ function formatBytes(n: number): string {
 }
 
 function defaultDownload(filename: string, contents: string): boolean {
-  // jsdom doesn't implement `<a>.click()` reliably — guard for the
-  // non-browser path so unit tests can swap the downloader.
-  if (
-    typeof window === 'undefined' ||
-    typeof document === 'undefined' ||
-    typeof Blob === 'undefined' ||
-    typeof URL === 'undefined' ||
-    typeof URL.createObjectURL !== 'function'
-  ) {
-    return false;
-  }
-  const blob = new Blob([contents], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Release the object URL on the next microtask so the click handler
-  // has a chance to start the download before the underlying blob is
-  // garbage-collected.
-  queueMicrotask(() => URL.revokeObjectURL(url));
-  return true;
+  return downloadTextFile(filename, contents, 'application/json');
 }

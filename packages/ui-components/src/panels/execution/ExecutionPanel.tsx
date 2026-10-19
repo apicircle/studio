@@ -20,10 +20,15 @@ import { envPriorityKey, validateEnvVarName, validatePlanName } from '@apicircle
 import { BrandLoader } from '../../primitives/BrandLoader';
 import { Button } from '../../primitives/Button';
 import { cn } from '../../primitives/cn';
+import { DisabledReason } from '../../primitives/DisabledReason';
+import { SectionHeading } from '../../primitives/SectionHeading';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ResponseViewer } from '../editor/ResponseViewer';
 import { RequestQuickView } from './RequestQuickView';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+
+/** Why a plan's own controls are off while it runs. */
+const RUNNING_REASON = 'The plan is running. Wait for it to finish, or cancel it.';
 
 export function ExecutionPanel() {
   const plans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
@@ -48,8 +53,8 @@ function EmptyState() {
       <Layers size={32} className="text-text-dim" aria-hidden="true" />
       <h2 className="text-base text-text-primary">No execution plans yet</h2>
       <p className="text-xs text-text-muted">
-        Plans run a sequence of requests in order. Plan-level env priority overrides the
-        workspace&apos;s global priority during the run; context variables stay highest priority.
+        Plans run a sequence of requests in order. A plan can choose the environments it uses when
+        sending; a request&apos;s own context variables still come first.
       </p>
       <button
         type="button"
@@ -197,17 +202,18 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">Steps</h2>
-          <button
-            type="button"
-            onClick={() => setPickerOpen((v) => !v)}
-            disabled={requestArray.length === 0 || running}
-            title={running ? 'Plan is running — wait for it to finish or cancel' : undefined}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            <Plus size={11} />
-            Add step
-          </button>
+          <SectionHeading>Steps</SectionHeading>
+          <DisabledReason reason={running ? RUNNING_REASON : 'Add a request in the Editor first.'}>
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              disabled={requestArray.length === 0 || running}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              <Plus size={11} />
+              Add step
+            </button>
+          </DisabledReason>
         </div>
         {pickerOpen && (
           <PlanStepPicker
@@ -224,7 +230,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           />
         )}
         {plan.steps.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border bg-card p-3 text-[0.6875rem] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border bg-card p-3 text-xs text-text-dim">
             No steps yet. Add at least one request before running the plan.
           </p>
         ) : (
@@ -283,12 +289,10 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
       </section>
 
       <section>
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          Plan-level env priority
-        </h2>
-        <p className="mb-2 text-[0.6875rem] text-text-dim">
-          Overrides the workspace&apos;s global priority order during runs of this plan. Empty =
-          inherit the workspace order.
+        <SectionHeading className="mb-2">Environments for this plan</SectionHeading>
+        <p className="mb-2 text-xs text-text-dim">
+          The environments this plan uses when sending, checked in this order. Leave it empty to use
+          the ones ticked in Environments.
         </p>
         <PlanEnvPriorityEditor
           plan={plan}
@@ -298,25 +302,34 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
       </section>
 
       <section>
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          Plan variables
-        </h2>
-        <p className="mb-2 text-[0.6875rem] text-text-dim">
-          Bind <code>{'{{NAME}}'}</code> values for this plan only. Plan variables sit between
-          extracted globals and the env priority list — per-request context vars still win.
+        <SectionHeading className="mb-2">Plan variables</SectionHeading>
+        <p className="mb-2 text-xs text-text-dim">
+          Bind <code>{'{{NAME}}'}</code> values for this plan only. They are checked after values
+          captured from responses and before the environments; a request&apos;s own context
+          variables still come first.
         </p>
         <PlanVariablesEditor plan={plan} onChange={(vars) => setPlanVariables(plan.id, vars)} />
       </section>
 
-      <section>
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">Run</h2>
+      {/* The run controls stay in view at the foot of the panel while a long
+          plan scrolls under them, and settle back into place above the run
+          details at the end. A sticky box stops at the scroll area's padding,
+          so `-bottom-6` takes back the panel's p-6 and the bar sits flush on
+          its bottom edge, with no strip of steps showing under it. */}
+      <section
+        aria-label="Run plan"
+        data-testid="plan-run-bar"
+        className="sticky -bottom-6 z-10 -mx-6 border-t border-border-subtle bg-surface px-6 py-3"
+      >
+        <SectionHeading className="mb-2">Run</SectionHeading>
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            variant="primary"
+            variant="solid"
             size="md"
             leftIcon={<Play size={11} aria-hidden="true" />}
             loading={runMode === 'plain'}
             disabled={running || plan.steps.length === 0}
+            disabledReason={running ? RUNNING_REASON : 'Add a step first.'}
             onClick={() => void onRun(false)}
           >
             {runMode === 'plain' ? 'Running…' : 'Run'}
@@ -327,6 +340,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
             leftIcon={<Play size={11} aria-hidden="true" />}
             loading={runMode === 'assertions'}
             disabled={running || plan.steps.length === 0}
+            disabledReason={running ? RUNNING_REASON : 'Add a step first.'}
             onClick={() => void onRun(true)}
           >
             {runMode === 'assertions' ? 'Running with assertions…' : 'Run with assertions'}
@@ -489,7 +503,7 @@ function PlanNameHeader({
         )}
       />
       {reason && (
-        <p role="alert" className="text-[0.6875rem] text-danger">
+        <p role="alert" className="text-xs text-danger">
           {reason}
         </p>
       )}
@@ -517,9 +531,7 @@ function PlanRunDetails({ planId }: { planId: string }) {
 
   return (
     <section aria-label="Per-step run details">
-      <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-        Last run · per-step details
-      </h2>
+      <SectionHeading className="mb-2">Last run · per-step details</SectionHeading>
       <ul className="space-y-1">
         {results.map((step, i) => {
           const open = openIndex === i;
@@ -788,14 +800,14 @@ function PlanStepPicker({
 
       <div className="max-h-72 overflow-y-auto">
         {totalVisible === 0 ? (
-          <p className="px-3 py-4 text-center text-[0.6875rem] text-text-dim">
+          <p className="px-3 py-4 text-center text-xs text-text-dim">
             {q ? `No requests match “${filter}”.` : 'No requests yet.'}
           </p>
         ) : (
           <>
             {localFiltered.length > 0 && (
               <>
-                <p className="border-b border-border-subtle px-3 py-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
+                <p className="border-b border-border-subtle px-3 py-1 text-xs uppercase tracking-wider text-text-dim">
                   This workspace
                 </p>
                 <ul>
@@ -832,7 +844,7 @@ function PlanStepPicker({
             )}
             {linkedFiltered.map((group) => (
               <div key={group.link.id}>
-                <p className="border-b border-t border-border-subtle px-3 py-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
+                <p className="border-b border-t border-border-subtle px-3 py-1 text-xs uppercase tracking-wider text-text-dim">
                   {group.link.name}
                   <span className="ml-1 text-text-dim normal-case">
                     · {group.link.source.repoFullName}@{group.link.source.branch}
@@ -943,15 +955,17 @@ function PlanStepRow({
       )}
     >
       <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={enabled}
-          disabled={locked}
-          onChange={(e) => onToggleEnabled(e.target.checked)}
-          aria-label={`Enable step ${index + 1}`}
-          className="h-3 w-3 cursor-pointer disabled:cursor-not-allowed"
-          style={{ accentColor: 'rgb(var(--accent))' }}
-        />
+        <DisabledReason reason={RUNNING_REASON}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={locked}
+            onChange={(e) => onToggleEnabled(e.target.checked)}
+            aria-label={`Enable step ${index + 1}`}
+            className="h-3 w-3 cursor-pointer disabled:cursor-not-allowed"
+            style={{ accentColor: 'rgb(var(--accent))' }}
+          />
+        </DisabledReason>
         <span className="w-6 text-center text-[0.625rem] text-text-dim">{index + 1}.</span>
         {request ? (
           <>
@@ -1003,33 +1017,39 @@ function PlanStepRow({
             <Eye size={11} />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onMoveUp}
-          disabled={isFirst || locked}
-          aria-label="Move step up"
-          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-        >
-          <ArrowUp size={11} />
-        </button>
-        <button
-          type="button"
-          onClick={onMoveDown}
-          disabled={isLast || locked}
-          aria-label="Move step down"
-          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-        >
-          <ArrowDown size={11} />
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={locked}
-          aria-label="Remove step"
-          className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10 disabled:opacity-30"
-        >
-          <Trash2 size={10} />
-        </button>
+        <DisabledReason reason={locked ? RUNNING_REASON : 'This step is first already.'}>
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={isFirst || locked}
+            aria-label="Move step up"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+          >
+            <ArrowUp size={11} />
+          </button>
+        </DisabledReason>
+        <DisabledReason reason={locked ? RUNNING_REASON : 'This step is last already.'}>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={isLast || locked}
+            aria-label="Move step down"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+          >
+            <ArrowDown size={11} />
+          </button>
+        </DisabledReason>
+        <DisabledReason reason={RUNNING_REASON}>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={locked}
+            aria-label="Remove step"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10 disabled:opacity-30"
+          >
+            <Trash2 size={10} />
+          </button>
+        </DisabledReason>
       </div>
       {breadcrumb.length > 0 && (
         <nav
@@ -1059,8 +1079,8 @@ function PlanVariablesEditor({
   return (
     <div className="space-y-1.5 rounded-sm border border-border bg-card p-2">
       {vars.length === 0 && (
-        <p className="text-[0.6875rem] text-text-dim">
-          No plan variables yet — env values resolve as usual.
+        <p className="text-xs text-text-dim">
+          No plan variables yet: values come from the environments as usual.
         </p>
       )}
       {vars.map((v, i) => {
@@ -1116,7 +1136,7 @@ function PlanVariablesEditor({
               </button>
             </div>
             {reason && (
-              <p role="alert" className="ml-1 text-[0.625rem] text-danger">
+              <p role="alert" className="ml-1 text-xs text-danger">
                 {reason}
               </p>
             )}
@@ -1159,8 +1179,9 @@ function PlanEnvPriorityEditor({
   return (
     <div className="space-y-2 rounded-sm border border-border bg-card p-2">
       {inOrder.length === 0 ? (
-        <p className="text-[0.6875rem] text-text-dim">
-          No plan-level priority — inherits workspace order. Add envs below to override.
+        <p className="text-xs text-text-dim">
+          None picked: the plan uses the environments ticked in Environments. Add one below to
+          choose for this plan.
         </p>
       ) : (
         <ol className="space-y-1">
@@ -1183,29 +1204,33 @@ function PlanEnvPriorityEditor({
                   )}
                   <span className="truncate">{meta.label}</span>
                   {meta.sublabel && (
-                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[0.5625rem] text-text-dim">
+                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[0.625rem] text-text-dim">
                       {meta.sublabel}
                     </span>
                   )}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onChange(swap(inOrder, i, i - 1))}
-                  disabled={i === 0}
-                  aria-label={`Move ${meta.label} up`}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-                >
-                  <ArrowUp size={10} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChange(swap(inOrder, i, i + 1))}
-                  disabled={i === inOrder.length - 1}
-                  aria-label={`Move ${meta.label} down`}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-                >
-                  <ArrowDown size={10} />
-                </button>
+                <DisabledReason reason="This environment is checked first already.">
+                  <button
+                    type="button"
+                    onClick={() => onChange(swap(inOrder, i, i - 1))}
+                    disabled={i === 0}
+                    aria-label={`Move ${meta.label} up`}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+                  >
+                    <ArrowUp size={10} />
+                  </button>
+                </DisabledReason>
+                <DisabledReason reason="This environment is checked last already.">
+                  <button
+                    type="button"
+                    onClick={() => onChange(swap(inOrder, i, i + 1))}
+                    disabled={i === inOrder.length - 1}
+                    aria-label={`Move ${meta.label} down`}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+                  >
+                    <ArrowDown size={10} />
+                  </button>
+                </DisabledReason>
                 <button
                   type="button"
                   onClick={() => onChange(inOrder.filter((r) => envPriorityKey(r) !== key))}

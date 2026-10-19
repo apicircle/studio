@@ -19,6 +19,7 @@ import { CreateMockServerModal } from './CreateMockServerModal';
 import { ServeContractModal } from './ServeContractModal';
 import { DesktopAppLink } from '../../primitives/desktopDownload';
 import { Button } from '../../primitives/Button';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
 
 // Friendly label for a mock's source kind — the raw union tags (`openapi-asset`)
@@ -476,11 +477,8 @@ function MockRunBar({
         leftIcon={<Play size={11} aria-hidden="true" />}
         loading={starting}
         disabled={!bridge}
-        title={
-          bridge
-            ? `Start ${server.name}`
-            : "Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port"
-        }
+        disabledReason="Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port"
+        title={bridge ? `Start ${server.name}` : undefined}
         onClick={onStart}
       >
         {starting ? 'Starting…' : 'Start'}
@@ -548,7 +546,7 @@ function PortSection({
     <div className="flex max-w-xl flex-col gap-2 rounded-sm border border-border-subtle bg-card p-3">
       <div>
         <p className="text-xs font-medium text-text-primary">Default port</p>
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           The port the mock listens on when started. Leave blank to let the runtime pick a free
           port. Range: 1024–65535. The runtime will surface a clear error if the port is busy or
           invalid.
@@ -588,7 +586,7 @@ function PortSection({
         )}
       </div>
       {error && (
-        <p role="alert" className="text-[0.6875rem] text-danger">
+        <p role="alert" className="text-xs text-danger">
           {error}
         </p>
       )}
@@ -633,7 +631,7 @@ function CorsSection({ server }: { server: MockServer }) {
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs font-medium text-text-primary">CORS</p>
-          <p className="text-[0.6875rem] text-text-dim">
+          <p className="text-xs text-text-dim">
             Off by default — same-origin only. Enable + list origins to let browser apps on other
             ports call the running mock.
           </p>
@@ -665,19 +663,21 @@ function CorsSection({ server }: { server: MockServer }) {
               aria-label="Add allowed origin"
               className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
             />
-            <button
-              type="button"
-              onClick={addOrigin}
-              disabled={!draft.trim()}
-              aria-label="Add origin"
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-40"
-            >
-              <Plus size={10} aria-hidden="true" />
-              Add
-            </button>
+            <DisabledReason reason={'Type an origin first.'}>
+              <button
+                type="button"
+                onClick={addOrigin}
+                disabled={!draft.trim()}
+                aria-label="Add origin"
+                className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-40"
+              >
+                <Plus size={10} aria-hidden="true" />
+                Add
+              </button>
+            </DisabledReason>
           </div>
           {server.cors.origins.length === 0 ? (
-            <p className="text-[0.625rem] italic text-text-dim">
+            <p className="text-xs italic text-text-dim">
               No origins yet — add at least one (or <code className="font-mono">*</code> to allow
               any) for the runtime to send CORS headers.
             </p>

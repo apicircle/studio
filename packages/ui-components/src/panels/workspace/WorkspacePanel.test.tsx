@@ -625,7 +625,7 @@ describe('WorkspacePanel', () => {
         expect(screen.getByText('GitLab locked')).toBeInTheDocument();
         expect(screen.queryByText('Branch ready')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /^Push/ })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /Refresh/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Pull$/ })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Create PR/ })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Sync attachments/ })).not.toBeInTheDocument();
         // The first-pull prompt pulls from the host; it waits for the unlock too.
@@ -647,7 +647,7 @@ describe('WorkspacePanel', () => {
 
         expect(screen.getByText('Branch ready')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /^Push/ })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Pull$/ })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create PR/ })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Sync attachments/ })).toBeInTheDocument();
         expect(screen.getByText('This branch already has content')).toBeInTheDocument();
@@ -2290,7 +2290,7 @@ describe('WorkspacePanel push: values that look like secrets', () => {
   });
 });
 
-// When the remote matches, Refresh's notice also counts what is still unpushed,
+// When the remote matches, Pull's notice also counts what is still unpushed,
 // and that count has to be the strip's. The refresh makes the remote the
 // last-pulled baseline, so a count taken before it named changes the strip no
 // longer showed.
@@ -2323,8 +2323,16 @@ describe('WorkspacePanel refresh notice', () => {
 
   async function refreshWith(refreshWorkspace: ReturnType<typeof vi.fn>): Promise<void> {
     act(() => useWorkspaceStore.setState({ refreshWorkspace }));
-    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pull' }));
   }
+
+  it('says there is nothing to pull yet when the branch has no workspace on it', async () => {
+    await renderBranchWith([]);
+    await refreshWith(vi.fn(async () => ({ status: 'no-remote' as const })));
+    expect(
+      await screen.findByText('Nothing on the working branch to pull yet — push first.'),
+    ).toBeInTheDocument();
+  });
 
   it('says the branch is up to date when the refresh leaves nothing unpushed', async () => {
     await renderBranchWith(['Users', 'Orders']);
@@ -2430,7 +2438,7 @@ describe('WorkspacePanel names the host the repo is on', () => {
 
     it.each([
       ['Push to save', () => ({ pushWorkspace: vi.fn().mockRejectedValue(rejected()) })],
-      ['Refresh', () => ({ refreshWorkspace: vi.fn().mockRejectedValue(rejected()) })],
+      ['Pull', () => ({ refreshWorkspace: vi.fn().mockRejectedValue(rejected()) })],
       ['Sync attachments', () => ({ syncAttachments: vi.fn().mockRejectedValue(rejected()) })],
     ] as const)('%s on a GitLab repo says GitLab rejected the token', async (button, failing) => {
       await renderRepoOn('gitlab');

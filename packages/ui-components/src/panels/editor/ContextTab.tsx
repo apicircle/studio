@@ -21,6 +21,7 @@ import type { ContextExtraction, Request as ApiRequest } from '@apicircle/shared
 import { generateId, validateEnvVarName, validateJsonPath } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { JsonPathPicker } from './JsonPathPicker';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
 
@@ -142,7 +143,7 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
                   </button>
                 </div>
                 {nameInvalid && !nameValidation.ok && (
-                  <p role="alert" className="ml-1 text-[0.625rem] text-danger">
+                  <p role="alert" className="ml-1 text-xs text-danger">
                     {nameValidation.reason}
                   </p>
                 )}
@@ -225,26 +226,32 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
                     )}
                   />
                   {ex.source === 'body' && (
-                    <button
-                      type="button"
-                      onClick={() => setPickerForExtractionId(ex.id)}
-                      disabled={!lastRunBody || lastRunBodyKind !== 'json'}
-                      aria-label={`Pick JSON path for extraction ${idx + 1}`}
-                      title={
+                    <DisabledReason
+                      reason={
                         !lastRunBody
-                          ? 'Send the request first to capture a response'
-                          : lastRunBodyKind !== 'json'
-                            ? 'Last response is not JSON'
-                            : 'Pick a JSON path from the last response'
+                          ? 'Send the request first to capture a response.'
+                          : 'The last response is not JSON.'
                       }
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
                     >
-                      <Crosshair size={12} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setPickerForExtractionId(ex.id)}
+                        disabled={!lastRunBody || lastRunBodyKind !== 'json'}
+                        aria-label={`Pick JSON path for extraction ${idx + 1}`}
+                        title={
+                          !lastRunBody || lastRunBodyKind !== 'json'
+                            ? undefined
+                            : 'Pick a JSON path from the last response'
+                        }
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+                      >
+                        <Crosshair size={12} />
+                      </button>
+                    </DisabledReason>
                   )}
                 </div>
                 {ex.source === 'body' && ex.path && !validateJsonPath(ex.path).ok && (
-                  <p role="alert" className="text-[0.625rem] text-danger">
+                  <p role="alert" className="text-xs text-danger">
                     {validateJsonPath(ex.path).ok
                       ? ''
                       : (validateJsonPath(ex.path) as { ok: false; reason: string }).reason}
@@ -311,7 +318,7 @@ function CapturedValueStatus({
     : undefined;
   if (heldValue) {
     return (
-      <p className="flex items-start gap-1 pl-6 text-[0.625rem] text-text-muted">
+      <p className="flex items-start gap-1 pl-6 text-xs text-text-muted">
         <MemoryStick size={11} aria-hidden className="mt-px shrink-0 text-amber" />
         <span>
           In memory only: {heldValue.reason}. Not saved — Studio forgets it when it closes, so send
@@ -322,7 +329,7 @@ function CapturedValueStatus({
   }
   if (saved && Object.prototype.hasOwnProperty.call(saved, variable)) {
     return (
-      <p className="flex items-start gap-1 pl-6 text-[0.625rem] text-text-dim">
+      <p className="flex items-start gap-1 pl-6 text-xs text-text-dim">
         <HardDrive size={11} aria-hidden className="mt-px shrink-0" />
         <span>Saved on this device. Never pushed to Git.</span>
       </p>
@@ -357,7 +364,7 @@ function ExtractionVariableInput({
         )}
       />
       {invalid && !validation.ok && (
-        <p role="alert" className="mt-0.5 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-0.5 text-xs text-danger">
           {validation.reason}
         </p>
       )}

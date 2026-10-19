@@ -20,6 +20,9 @@ export {
   tabPanelProps,
   SchemaView,
   Tooltip,
+  // Why a control is disabled, and the title over a section of a panel.
+  DisabledReason,
+  SectionHeading,
   FLOATING_Z,
   Z,
   FloatingPortal,

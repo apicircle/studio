@@ -66,7 +66,7 @@ export function UpdateAvailableBanner() {
         <div className="font-medium text-text-primary">
           API Circle Studio v{pending.version} is ready to install
         </div>
-        <p className="text-[0.6875rem] text-text-muted">
+        <p className="text-xs text-text-muted">
           Restart to apply the update. macOS or Windows may show a security warning the first time
           you run the new build — see the release notes for the right-click → Open step.
         </p>

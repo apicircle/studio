@@ -144,11 +144,11 @@ export function FileAssetStatusPill({
   } else if (state === 'merged' && asset?.workingBranchRef && asset?.baseBranchRef) {
     verboseLines.push(`${asset.workingBranchRef.branchName} + ${asset.baseBranchRef.branchName}`);
   } else if (state === 'diverged') {
-    verboseLines.push('Same path resolves to different blobs on the two refs');
+    verboseLines.push('The same path holds a different file on each branch');
   } else if (state === 'missing') {
     verboseLines.push('No working or base ref resolves; re-upload to restore.');
   } else if (state === 'uploading') {
-    verboseLines.push('Bytes are in local IDB; next push uploads them.');
+    verboseLines.push('Saved on this device; the next push uploads it.');
   }
   if (usage) {
     verboseLines.push(`used in ${usage.total} place${usage.total === 1 ? '' : 's'}`);

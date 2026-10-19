@@ -1,7 +1,9 @@
 import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExecutionResult } from '@apicircle/core';
 import { ResponseViewer } from './ResponseViewer';
+import * as download from '../../primitives/download';
 
 const failed = (error: string, extra: Partial<ExecutionResult> = {}): ExecutionResult => ({
   startedAt: '2026-10-19T00:00:00.000Z',
@@ -207,5 +209,145 @@ describe('ResponseViewer — while sending', () => {
     render(<ResponseViewer result={null} assertions={[]} isExecuting={false} />);
     expect(screen.getByText(/to run this request\./)).toBeInTheDocument();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('ResponseViewer — Copy, Save and Raw', () => {
+  // The editor mounts a tick after the panel does.
+  const shownBody = async (): Promise<string> =>
+    ((await screen.findByTestId('monaco-editor-mock')) as HTMLTextAreaElement).value;
+  const json = (text: string, extra: Partial<ExecutionResult> = {}): ExecutionResult => ({
+    ...ok(text),
+    bodyKind: 'json',
+    ...extra,
+  });
+  const PRETTY = JSON.stringify({ id: 1, tags: ['a'] }, null, 2);
+
+  it('shows a JSON body formatted, and Raw shows it exactly as it came', async () => {
+    render(
+      <ResponseViewer result={json('{"id":1,"tags":["a"]}')} assertions={[]} isExecuting={false} />,
+    );
+    expect(await shownBody()).toBe(PRETTY);
+    const rawToggle = screen.getByRole('button', { name: 'Raw' });
+    expect(rawToggle).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(rawToggle);
+    expect(rawToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(await shownBody()).toBe('{"id":1,"tags":["a"]}');
+    await userEvent.click(rawToggle);
+    expect(await shownBody()).toBe(PRETTY);
+  });
+
+  it('offers no Raw where the body is shown as it came anyway', () => {
+    const { rerender } = render(
+      <ResponseViewer
+        result={json('plain words', {
+          headers: { 'content-type': 'text/plain' },
+          bodyKind: 'text',
+        })}
+        assertions={[]}
+        isExecuting={false}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Raw' })).toBeNull();
+    // JSON that already arrived formatted has nothing else to show either.
+    rerender(<ResponseViewer result={json(PRETTY)} assertions={[]} isExecuting={false} />);
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Raw' })).toBeNull();
+  });
+
+  it('copies the body as shown, and says "Copied" for two seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // user-event puts a clipboard of its own on the page; read what it holds.
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+    render(<ResponseViewer result={json('{"id":1}')} assertions={[]} isExecuting={false} />);
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(await navigator.clipboard.readText()).toBe(JSON.stringify({ id: 1 }, null, 2));
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Response body copied');
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+
+    // With Raw on, the copy is the body as received.
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(await navigator.clipboard.readText()).toBe('{"id":1}');
+  });
+
+  it('says so when the copy fails', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+    render(<ResponseViewer result={json('{"id":1}')} assertions={[]} isExecuting={false} />);
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(await screen.findByRole('button', { name: 'Couldn’t copy' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Could not copy the response body');
+  });
+
+  it('saves the body as received, named after the URL', async () => {
+    const save = vi.spyOn(download, 'downloadTextFile').mockReturnValue(true);
+    render(<ResponseViewer result={json('{"id":1}')} assertions={[]} isExecuting={false} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(save).toHaveBeenCalledWith('1.json', '{"id":1}', 'application/json');
+  });
+
+  it('saves as plain text when the response names no type', async () => {
+    const save = vi.spyOn(download, 'downloadTextFile').mockReturnValue(true);
+    render(
+      <ResponseViewer
+        result={json('hello', { headers: {}, bodyKind: 'text', url: 'https://api.example.test/' })}
+        assertions={[]}
+        isExecuting={false}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(save).toHaveBeenCalledWith('api.example.test.txt', 'hello', 'text/plain');
+  });
+
+  it('keeps Save off for a binary body, and says why', () => {
+    render(
+      <ResponseViewer
+        result={json('PK', {
+          headers: { 'content-type': 'application/octet-stream' },
+          bodyKind: 'binary',
+        })}
+        assertions={[]}
+        isExecuting={false}
+      />,
+    );
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAccessibleDescription(/This response is binary/);
+    // Copy still works on what is shown.
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeEnabled();
+  });
+
+  it('shows the body tools only on the Body tab, and only for a body', async () => {
+    const { rerender } = render(
+      <ResponseViewer result={json('{"id":1}')} assertions={[]} isExecuting={false} />,
+    );
+    const tools = () => screen.queryByRole('group', { name: 'Response body actions' });
+    await userEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    expect(tools()).toBeNull();
+    await userEvent.click(screen.getByRole('tab', { name: 'Body' }));
+    expect(tools()).toBeInTheDocument();
+    rerender(<ResponseViewer result={json('')} assertions={[]} isExecuting={false} />);
+    expect(tools()).toBeNull();
+    rerender(<ResponseViewer result={failed('boom')} assertions={[]} isExecuting={false} />);
+    expect(tools()).toBeNull();
+  });
+});
+
+describe('ResponseViewer — fullscreen', () => {
+  it('opens the panel fullscreen, tools and all', async () => {
+    render(<ResponseViewer result={ok('{"id":1}')} assertions={[]} isExecuting={false} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fullscreen response panel' }));
+    const overlay = screen.getByRole('dialog', { name: 'Response' });
+    expect(
+      within(overlay).getByRole('group', { name: 'Response body actions' }),
+    ).toBeInTheDocument();
+    // The control that opened it is not drawn inside it.
+    expect(screen.queryByRole('button', { name: 'Fullscreen response panel' })).toBeNull();
   });
 });

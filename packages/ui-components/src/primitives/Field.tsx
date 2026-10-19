@@ -78,7 +78,7 @@ export function Field({
         <p
           id={describedById}
           role={error ? 'alert' : undefined}
-          className={cn('text-[0.6875rem]', error ? 'text-danger' : 'text-text-muted')}
+          className={cn('text-xs', error ? 'text-danger' : 'text-text-muted')}
         >
           {describedText}
         </p>

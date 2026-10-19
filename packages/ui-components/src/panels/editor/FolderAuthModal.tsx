@@ -60,7 +60,7 @@ export function FolderAuthModal({ folder, onClose }: FolderAuthModalProps) {
           </button>
         </header>
 
-        <p className="border-b border-border-subtle bg-card px-4 py-2 text-[0.6875rem] text-text-muted">
+        <p className="border-b border-border-subtle bg-card px-4 py-2 text-xs text-text-muted">
           This auth applies to any descendant request whose own auth is set to{' '}
           <code className="text-text-primary">Inherit</code>. The resolver walks up the folder chain
           and uses the first folder with an explicit auth.

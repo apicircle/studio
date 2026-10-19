@@ -866,7 +866,7 @@ function JsonTextarea({
         )}
       />
       {invalid && (
-        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {result.reason}
         </p>
       )}
@@ -933,7 +933,7 @@ function RegionInput({
         ))}
       </datalist>
       {invalid && (
-        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {result.reason}
         </p>
       )}
@@ -974,7 +974,7 @@ function CustomHeaderNameInput({
         aria-invalid={invalid || undefined}
       />
       {invalid && (
-        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {result.reason}
         </p>
       )}

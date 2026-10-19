@@ -52,6 +52,7 @@ import { Modal } from '../../primitives/Modal';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { DisabledReason } from '../../primitives/DisabledReason';
 
 type SourceFormat =
   | 'auto'
@@ -446,11 +447,11 @@ export function ImportModal({
             aria-label="Import source"
             className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
-          <p className="text-[0.625rem] text-text-dim">
+          <p className="text-xs text-text-dim">
             Auto-detect picks the right parser; force a format above if a file looks ambiguous.
           </p>
           {readError && (
-            <p role="alert" className="text-[0.6875rem] text-danger">
+            <p role="alert" className="text-xs text-danger">
               {readError}
             </p>
           )}
@@ -459,7 +460,7 @@ export function ImportModal({
         {result.error && (
           <p
             role="alert"
-            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[0.6875rem] text-danger"
+            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-xs text-danger"
           >
             {result.error}
           </p>
@@ -487,7 +488,7 @@ export function ImportModal({
         {importError && (
           <p
             role="alert"
-            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[0.6875rem] text-danger"
+            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-xs text-danger"
           >
             {importError}
           </p>
@@ -502,22 +503,27 @@ export function ImportModal({
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={onImport}
-            disabled={!result.detected || importing}
-            aria-busy={importing || undefined}
-            className={cn(
-              'inline-flex h-8 items-center gap-1 rounded-sm border px-3 text-[0.6875rem]',
-              result.detected
-                ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
-                : 'border-border bg-surface text-text-faint',
-              importing && 'cursor-progress',
-            )}
+          {/* A paste Studio cannot read says why in the alert above. */}
+          <DisabledReason
+            reason={text.trim() ? null : 'Paste what to import, or upload a file, first.'}
           >
-            {importing ? <BrandLoader size="xs" /> : <Send size={11} />}
-            {importing ? 'Importing…' : 'Import'}
-          </button>
+            <button
+              type="button"
+              onClick={onImport}
+              disabled={!result.detected || importing}
+              aria-busy={importing || undefined}
+              className={cn(
+                'inline-flex h-8 items-center gap-1 rounded-sm border px-3 text-[0.6875rem]',
+                result.detected
+                  ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
+                  : 'border-border bg-surface text-text-faint',
+                importing && 'cursor-progress',
+              )}
+            >
+              {importing ? <BrandLoader size="xs" /> : <Send size={11} />}
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+          </DisabledReason>
         </footer>
       </div>
     </Modal>
@@ -700,7 +706,7 @@ function BindStep({
             &rdquo;
           </span>
         </div>
-        <p className="text-[0.6875rem] text-text-muted">
+        <p className="text-xs text-text-muted">
           The imported environment expects vault slots that don&rsquo;t exist on this workspace yet.
           Provide a value for each one to bind it now, or skip — the variables will resolve to empty
           until you bind them under Environments.
@@ -745,7 +751,7 @@ function BindStep({
               </span>
             </div>
             {b.labelFromFallback && (
-              <p className="text-[0.625rem] text-text-dim">
+              <p className="text-xs text-text-dim">
                 The source export didn&rsquo;t carry a slot label — using the variable key as a
                 fallback name. You can rename the slot later under Settings &rarr; Vault.
               </p>
@@ -773,25 +779,33 @@ function BindStep({
         >
           Skip & finish
         </button>
-        <button
-          type="button"
-          onClick={onBindFinish}
-          disabled={!canBind}
-          aria-busy={binding || undefined}
-          className={cn(
-            'inline-flex h-8 items-center gap-1 rounded-sm border px-3 text-[0.6875rem]',
-            canBind
-              ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
-              : 'border-border bg-surface text-text-faint',
-          )}
+        <DisabledReason
+          reason={
+            !binding && !vaultBlocked && filledCount === 0
+              ? 'Enter a value for at least one secret, or skip.'
+              : null
+          }
         >
-          {binding ? <BrandLoader size="xs" /> : <KeyRound size={11} />}
-          {binding
-            ? 'Binding…'
-            : filledCount === 0
-              ? 'Bind & finish'
-              : `Bind ${filledCount} & finish`}
-        </button>
+          <button
+            type="button"
+            onClick={onBindFinish}
+            disabled={!canBind}
+            aria-busy={binding || undefined}
+            className={cn(
+              'inline-flex h-8 items-center gap-1 rounded-sm border px-3 text-[0.6875rem]',
+              canBind
+                ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
+                : 'border-border bg-surface text-text-faint',
+            )}
+          >
+            {binding ? <BrandLoader size="xs" /> : <KeyRound size={11} />}
+            {binding
+              ? 'Binding…'
+              : filledCount === 0
+                ? 'Bind & finish'
+                : `Bind ${filledCount} & finish`}
+          </button>
+        </DisabledReason>
       </footer>
     </div>
   );

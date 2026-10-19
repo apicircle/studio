@@ -129,6 +129,16 @@
 
 ### Fixed
 
+- **A move to the top level no longer drops an item out of the sidebar.**
+  `applyMutation`'s `folder.move`, and `request.update` with a `folderId`,
+  changed the parent but not the root list (`collections.tree.children`), which
+  the Editor sidebar and VS Code's Editor view draw the top level from. A folder
+  or request moved to the top level by a headless writer (API Circle Lens's MCP
+  `folder.update` / `request.update`, the CLI's `folder move`) vanished from the
+  sidebar until the next load healed it, and one moved into a folder stayed
+  listed at the top of VS Code's tree as well. Both now keep the root list in
+  step, and so does `folder.delete`, whose children land on the top level when
+  the folder was there.
 - **An OpenAPI import says when it fails, and keeps the spec.** The import
   closed the dialog at once and created the collection in the background with
   no `.catch`: a spec the parser could not read failed silently, and the
@@ -546,6 +556,46 @@
 
 ### Added
 
+- **A response body can be copied, saved, and seen as it came.** The response
+  pane's header has **Copy** (the body as shown; it reads "Copied" for two
+  seconds, or "Couldn’t copy", and says so to a screen reader once), **Save**
+  (downloads the body as received, named after the last part of the URL with
+  an extension from its type: `/v1/users` → `users.json`, the host for `/`,
+  else `response`) and **Raw** (a pressed toggle that shows a JSON body exactly
+  as it arrived instead of pretty-printed; offered only where the two differ).
+  Save stays off for a binary body, and says why: Studio holds a body as text,
+  so the file would not match what the server sent. History's run detail uses
+  the same pane, so its separate Download button is gone.
+- **Move to… on a request's and a folder's row menu.** It opens a list of the
+  top level and every folder (depth first, by name, with a filter that shows
+  paths). A place it cannot go stays listed, disabled, with the reason on its
+  row: "The request is here now.", "A folder can’t go inside itself.", "A
+  request named “List” is already there." (names stay unique per folder, as a
+  rename keeps them). After the move the folders down to it open, and a toast
+  says where it went. The store's `moveRequest` / `moveFolder` send the same
+  `request.update` / `folder.move` patches a headless writer does, through
+  `applyMutation`; the rules are `moveRefusal` in `store/editorActions.ts`.
+- **A solid button for the one main action on a screen.** `Button
+variant="solid"` fills with the accent itself. Its label and hover are two
+  new tokens generated per theme by `scripts/gen-status-fg.mjs`:
+  `--on-accent` is the theme's own `surface` or `text-primary`, whichever
+  stands out more on the accent, where it reads at AA, and pure black or white
+  where neither does (no one colour reads on all 60 accents: white on
+  Solarized Light's blue is 3.7:1, black on GitHub Light's 4.0:1);
+  `--accent-hover` moves the fill away from the label until it is a plainly
+  seen step (6 in OKLab ×100), so a hover never makes the label harder to
+  read. `theme-contrast.test.ts` holds both at AA in every theme. A busy solid
+  button wears the tinted look so the brand mark shows. Send, the plan's Run,
+  and the branch card's main action use it; `variant="primary"` stays the
+  tinted button it was.
+- **`DisabledReason` and `Button disabledReason`.** A disabled control says
+  why, on hover and on keyboard focus (the `Tooltip`, whose wrapper takes the
+  pointer and the tab stop a disabled button cannot), and is described by the
+  reason for a screen reader. The reason shows only while the control is
+  disabled, and not while a `Button` is `loading`.
+- **`SectionHeading`**, the small uppercase title over a panel's sections, as
+  a real `h2`–`h4` (`md` 12px, `sm` 11px for a dense card). The 24 headings
+  that were styled by hand use it.
 - **The API Circle mark is Studio's loader.** `BrandLoader` (primitives,
   exported from `@apicircle/ui-components`) draws the logo — the violet hub
   with its chevron and six services on a ring — and sets it in motion: a pulse
@@ -724,6 +774,47 @@
 
 ### Changed
 
+- **A disabled button says why.** Every action Studio disables in a shipped
+  build now says what it waits for: the plan's Run and Run with assertions
+  ("Add a step first."), Add step, the step row's controls while the plan runs
+  ("The plan is running. Wait for it to finish, or cancel it.") and at the ends
+  of the list, Send ("Fix the problems listed below the address before
+  sending." — it said "above"), Create PR ("Push to save before opening a pull
+  request.", or that the token cannot open one), the branch card's buttons
+  while another of its actions runs, Connect ("Fill in “Organisation URL”
+  first." and the like), Update token, the passphrase prompt, OAuth2's Refresh
+  and Clear, a vault slot's Save, Create workspace, Create & bind, Add origin,
+  Create mock server, Create contract server, Connect repo, Import, Bind &
+  finish, the text-size buttons at their limits, rule and environment
+  reordering, Pick JSON path, a deleted run's Replay and Open, a mock body type
+  a status cannot carry, Format schema and Start (mock). Where a mouse-only
+  `title` said it before, the reason now reaches the keyboard too. The Remove
+  of a response rule's only clause is gone: a rule needs one, so it could
+  never be pressed.
+- **Environments say "used when sending".** The sidebar's checkbox is "Use
+  dev when sending" (a name that no longer flips between Add and Remove), its
+  menu has Move up / Move down, and its note says what ticking does and that
+  the higher of two environments wins. The editor's badge reads "Used when
+  sending · 1 of 2" or "Not used when sending", and the line under it says
+  where a `{{NAME}}` comes from in plain order. A plan's section is
+  "Environments for this plan". No visible copy says "global layer",
+  "priority" or "resolver" any more.
+- **The working-branch card has one main action, and Push and Pull.** Push to
+  save is the solid button while there is something to push; once the branch
+  is pushed and clean, Create PR is; otherwise neither. **Refresh is now
+  Pull** ("Pulling…"), and the messages that sent you to it say "Pull first".
+  No visible copy says IndexedDB, IDB or blob: the local-only note, the reset
+  confirm, the master-key note, the large-file warning, a file asset's status
+  and the attachments line say what they mean ("on this device").
+- **A long plan keeps its Run controls in view.** The Run section is sticky at
+  the foot of the panel while the steps scroll under it, and settles back into
+  place at the end, above the run details.
+- **Text read as a sentence is at least 12px.** Every paragraph that was 11 or
+  10px is now `text-xs`, including `Field` hints and tooltips; 11px is kept for
+  uppercase labels and chips, 10px for badges, and the deprecated 9px (and the
+  stray `text-[10px]` / `text-[11px]`) is gone. `src/typeScale.test.ts` reads
+  the whole package and fails on a paragraph under 12px, a size under 10px, or
+  a hand-styled section heading.
 - **A send keeps the last response up, and shows how long it has waited.**
   The response pane used to blank to a bare "Sending…". A first send now waits
   on the brand mark with "Sending request…" and a running time ("1.2 s",
@@ -991,6 +1082,14 @@
 
 ### Tests
 
+- **Actions and reasons** (`e2e/web/actions-and-reasons.spec.ts`, 9 cells):
+  Copy / Save / Raw on a response, Move to… for a request and a folder (with
+  axe on the dialog), a disabled button's reason on hover and on keyboard
+  focus, the environment wording, the branch card's main action and copy, the
+  sticky Run bar on a 30-step plan, and the solid Send button at AA. The
+  response-panel workbook cells for Pretty/Raw, Download and binary bodies now
+  assert the real controls. The working-branch golden DOM is regenerated for
+  the card's new buttons and the 12px floor.
 - **The Playwright web suite passes again.** Twenty specs had been failing
   because they checked old markup or old behaviour. None of them found a
   product bug.

@@ -8,6 +8,7 @@ import type {
 import { formatBytes } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { downloadTextFile } from '../../primitives/download';
 
 /**
  * Lightweight diff summary used in the restore preview. Counts requests,
@@ -153,14 +154,14 @@ export function SnapshotsTimeline() {
           )}
         </div>
       </div>
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Auto-captured before destructive ops (push, merge, workspace import, linked-update, yank,
         deprecate). Restore swaps the synced doc back to the captured state and clears the diff base
         so the next push re-forks against remote. Cap:{' '}
         <code>Settings → Workspace snapshot cap</code>.
       </p>
       {ledger.entries.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-xs text-text-dim">
           No snapshots yet. The next push, merge, or release op will capture one — or use the button
           above to save the current state manually.
         </p>
@@ -189,7 +190,7 @@ export function SnapshotsTimeline() {
                 Removes this snapshot from the local ledger. The workspace itself isn&apos;t
                 affected.
               </p>
-              <p className="text-[0.6875rem] text-text-dim">
+              <p className="text-xs text-text-dim">
                 {TRIGGER_LABEL[pendingDelete.triggeredBy]} · captured{' '}
                 {formatTimestamp(pendingDelete.createdAt)} · {formatBytes(pendingDelete.sizeBytes)}
               </p>
@@ -231,7 +232,7 @@ export function SnapshotsTimeline() {
               </p>
               {restoreDiff.length > 0 && (
                 <div className="rounded-sm border border-border-subtle bg-surface p-2">
-                  <p className="mb-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
+                  <p className="mb-1 text-xs uppercase tracking-wider text-text-dim">
                     Counts after restore
                   </p>
                   <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 text-[0.6875rem] font-mono">
@@ -263,12 +264,12 @@ export function SnapshotsTimeline() {
                   </ul>
                 </div>
               )}
-              <p className="text-[0.6875rem] text-text-dim">
+              <p className="text-xs text-text-dim">
                 {TRIGGER_LABEL[restoreTarget.triggeredBy]} · captured{' '}
                 {formatTimestamp(restoreTarget.createdAt)} · {formatBytes(restoreTarget.sizeBytes)}
               </p>
               {restoreTarget.note && (
-                <p className="rounded-sm border border-border-subtle bg-surface px-2 py-1 text-[0.6875rem] text-text-muted">
+                <p className="rounded-sm border border-border-subtle bg-surface px-2 py-1 text-xs text-text-muted">
                   Note: {restoreTarget.note}
                 </p>
               )}
@@ -353,16 +354,8 @@ function SnapshotRow({
  */
 function downloadSnapshot(entry: WorkspaceSnapshot): void {
   const json = JSON.stringify(entry.workspaceSyncedSnapshot, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
   const stamp = entry.createdAt.replace(/[:.]/g, '-');
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `apicircle-snapshot-${stamp}.json`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadTextFile(`apicircle-snapshot-${stamp}.json`, json, 'application/json');
 }
 
 function formatTimestamp(iso: string): string {

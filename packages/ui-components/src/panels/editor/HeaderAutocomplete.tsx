@@ -159,14 +159,14 @@ export function HeaderKeyAutocomplete({
                 {entry.reserved === 'app' ? (
                   <span
                     title={entry.reservedNote ?? 'Auto-injected at send'}
-                    className="inline-flex items-center gap-0.5 rounded-sm border border-accent/40 bg-accent/5 px-1 py-0.5 text-[0.5625rem] uppercase tracking-wider text-accent"
+                    className="inline-flex items-center gap-0.5 rounded-sm border border-accent/40 bg-accent/5 px-1 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent"
                   >
                     <Sparkles size={9} /> auto
                   </span>
                 ) : entry.reserved === 'browser' ? (
                   <span
                     title={entry.reservedNote ?? 'Set by the browser; cannot override from web'}
-                    className="inline-flex items-center gap-0.5 rounded-sm border border-amber/30 bg-amber/5 px-1 py-0.5 text-[0.5625rem] uppercase tracking-wider text-amber"
+                    className="inline-flex items-center gap-0.5 rounded-sm border border-amber/30 bg-amber/5 px-1 py-0.5 text-[0.625rem] uppercase tracking-wider text-amber"
                   >
                     <Lock size={9} /> browser
                   </span>

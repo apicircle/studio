@@ -17,6 +17,7 @@ import type {
 } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 function reportError(title: string, err: unknown): void {
   const detail = err instanceof Error ? err.message : String(err);
@@ -58,11 +59,11 @@ function LinkedEnvironmentsSectionBody() {
   if (links.length === 0) return null;
   return (
     <section aria-label="Linked environments" className="mt-6 border-t border-border-subtle pt-4">
-      <h2 className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-text-dim">
+      <SectionHeading className="mb-2 flex items-center gap-2">
         <Link2 size={12} aria-hidden="true" />
         Linked environments
-      </h2>
-      <p className="mb-3 max-w-2xl text-[0.6875rem] text-text-dim">
+      </SectionHeading>
+      <p className="mb-3 max-w-2xl text-xs text-text-dim">
         Environments inherited from linked workspaces. Edit values inline — overrides persist on the
         synced doc and apply on top of the source&apos;s env on next refresh.
       </p>
@@ -98,7 +99,7 @@ function LinkedEnvGroup({ link }: { link: LinkedWorkspace }) {
         <Package size={12} className="shrink-0 text-accent" aria-hidden="true" />
         <span className="font-medium text-text-primary">{link.name}</span>
         {link.pinnedVersion && (
-          <span className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[0.5625rem] text-text-dim">
+          <span className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[0.625rem] text-text-dim">
             v{link.pinnedVersion}
           </span>
         )}
@@ -109,11 +110,11 @@ function LinkedEnvGroup({ link }: { link: LinkedWorkspace }) {
       {open && (
         <div className="border-t border-border-subtle px-3 py-3">
           {!snapshot ? (
-            <p className="text-[0.6875rem] text-text-dim">
+            <p className="text-xs text-text-dim">
               Refresh this link from the Link Workspace panel to load its environments.
             </p>
           ) : envs.length === 0 ? (
-            <p className="text-[0.6875rem] text-text-dim">Source has no environments yet.</p>
+            <p className="text-xs text-text-dim">Source has no environments yet.</p>
           ) : (
             <div className="flex flex-col gap-3">
               {envs.map((env) => (
@@ -197,7 +198,7 @@ function LinkedEnvVarTable({
           void safe(setOverride(link.id, envName, varKey, { value: '' }), 'Could not add override')
         }
       />
-      <p className="mt-2 text-[0.625rem] text-text-dim">
+      <p className="mt-2 text-xs text-text-dim">
         Reset returns this row to the source workspace&apos;s value. Soft-delete hides a source
         variable from this consumer only.
       </p>
@@ -311,7 +312,7 @@ function LinkedEnvVarRow({
         />
       )}
       {isConsumerOnly && (
-        <span className="rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.5625rem] text-accent">
+        <span className="rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.625rem] text-accent">
           added
         </span>
       )}

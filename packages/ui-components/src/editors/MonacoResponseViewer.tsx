@@ -4,22 +4,8 @@
 
 import { useMemo } from 'react';
 import { MonacoEditorBase } from './MonacoEditorBase';
+import { formatResponseForView, isLargeResponsePayload } from './formatResponseForView';
 import { useMonacoLanguage } from './useMonacoLanguage';
-
-const LARGE_PAYLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
-
-function estimatePayloadBytes(value: string): number {
-  if (typeof TextEncoder === 'undefined') return value.length;
-  return new TextEncoder().encode(value).byteLength;
-}
-
-function tryFormatJson(value: string): string {
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
-}
 
 export interface MonacoResponseViewerProps {
   value: string;
@@ -28,6 +14,12 @@ export interface MonacoResponseViewerProps {
   minHeight?: number;
   modelPath?: string;
   ariaLabel?: string;
+  /**
+   * Show `value` exactly as given, without pretty-printing it: for a caller that
+   * has already formatted it (`formatResponseForView`), or wants the body as it
+   * was received.
+   */
+  asGiven?: boolean;
 }
 
 export function MonacoResponseViewer({
@@ -37,17 +29,15 @@ export function MonacoResponseViewer({
   minHeight = 200,
   modelPath,
   ariaLabel,
+  asGiven = false,
 }: MonacoResponseViewerProps) {
   const language = useMonacoLanguage(contentType);
-  const isLargePayload = useMemo(
-    () => estimatePayloadBytes(value) >= LARGE_PAYLOAD_THRESHOLD_BYTES,
-    [value],
-  );
+  const isLargePayload = useMemo(() => isLargeResponsePayload(value), [value]);
 
-  const displayValue = useMemo(() => {
-    if (language !== 'json' || isLargePayload) return value;
-    return tryFormatJson(value);
-  }, [isLargePayload, language, value]);
+  const displayValue = useMemo(
+    () => (asGiven ? value : formatResponseForView(value, language)),
+    [asGiven, language, value],
+  );
 
   return (
     <MonacoEditorBase

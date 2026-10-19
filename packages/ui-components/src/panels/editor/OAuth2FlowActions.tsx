@@ -21,6 +21,7 @@
 import { useRef, useState } from 'react';
 import { CheckCircle2, Copy, KeyRound, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { refreshToken as runRefreshToken } from '@apicircle/core';
 import { safeExternalHref } from '@apicircle/shared';
@@ -82,6 +83,14 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
   // fresh pair instead.
   const canRefresh =
     hasToken && auth.type !== 'oauth2-implicit' && refreshTokenValue.trim().length > 0;
+  // Why Refresh is off, when it is off for a reason of the token's own.
+  const refreshBlocker = !hasToken
+    ? 'Get a token first.'
+    : auth.type === 'oauth2-implicit'
+      ? 'The implicit grant issues no refresh token. Run the flow again for a new one.'
+      : !canRefresh
+        ? 'The server sent no refresh token. Run the flow again for a new one.'
+        : null;
 
   const runFlow = async () => {
     // Re-entry guard: if a flow is already running, drop the click.
@@ -206,24 +215,28 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
           )}
           {hasToken ? 'Re-run flow' : flowButtonLabel(auth.type)}
         </button>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={!canRefresh || state.status === 'running'}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary hover:bg-card disabled:opacity-40"
-        >
-          <RefreshCw size={11} aria-hidden="true" />
-          Refresh
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirmClearOpen(true)}
-          disabled={!hasToken || state.status === 'running'}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
-        >
-          <Trash2 size={11} aria-hidden="true" />
-          Clear
-        </button>
+        <DisabledReason reason={refreshBlocker}>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={!canRefresh || state.status === 'running'}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary hover:bg-card disabled:opacity-40"
+          >
+            <RefreshCw size={11} aria-hidden="true" />
+            Refresh
+          </button>
+        </DisabledReason>
+        <DisabledReason reason={hasToken ? null : 'There is no token to clear.'}>
+          <button
+            type="button"
+            onClick={() => setConfirmClearOpen(true)}
+            disabled={!hasToken || state.status === 'running'}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
+          >
+            <Trash2 size={11} aria-hidden="true" />
+            Clear
+          </button>
+        </DisabledReason>
         <TokenStateSummary
           hasToken={hasToken}
           isExpired={isExpired}
@@ -232,7 +245,7 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
       </div>
 
       {state.status === 'success' && state.message && (
-        <p className="inline-flex items-center gap-1.5 text-[0.6875rem] text-success">
+        <p className="inline-flex items-center gap-1.5 text-xs text-success">
           <CheckCircle2 size={11} aria-hidden="true" />
           {state.message}
         </p>

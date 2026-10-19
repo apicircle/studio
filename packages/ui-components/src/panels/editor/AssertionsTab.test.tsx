@@ -453,7 +453,9 @@ describe('AssertionsTab', () => {
     render(<LiveAssertionsTab requestId={id} />);
     const picker = screen.getByLabelText('Pick JSON path for assertion 1');
     expect(picker).toBeDisabled();
-    expect(picker).toHaveAttribute('title', 'Last response is not JSON');
+    // Said on hover and on focus, not only in a mouse-only title.
+    expect(picker).toHaveAccessibleDescription('The last response is not JSON.');
+    expect(picker).not.toHaveAttribute('title');
   });
 
   it('flags an invalid regex for the matches op', () => {

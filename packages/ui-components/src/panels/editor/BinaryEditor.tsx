@@ -32,7 +32,7 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
         tone: 'error',
         title: 'File is over 100 MB',
         detail:
-          "Sending will likely exhaust IDB quota and may exceed GitHub's blob limit when synced. Consider hosting the file externally and sending a URL.",
+          "A file this large may not fit in this device's storage, and is over what GitHub takes in one file when you push. Consider hosting it elsewhere and sending its URL.",
       });
     }
     void attachBinaryFile(request.id, f).catch((err) => {
@@ -108,7 +108,7 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
         />
       )}
 
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         The Content-Type header is set automatically from the file&apos;s MIME type when the request
         is sent. Any user-set Content-Type is stripped to avoid corrupting the body. Files over
         100&nbsp;MB warn - they may exceed GitHub&apos;s blob limit when synced.
@@ -116,7 +116,7 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
       {oversize && (
         <p
           role="alert"
-          className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning"
+          className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning"
         >
           This file is over 100&nbsp;MB. The send may succeed but syncing the workspace to Git will
           likely be refused.

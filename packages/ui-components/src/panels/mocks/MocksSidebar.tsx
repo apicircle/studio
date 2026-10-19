@@ -118,7 +118,7 @@ export function MocksSidebar() {
         />
       </div>
       {servers.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-xs text-text-dim">
           {searchQuery
             ? 'No matching mock servers or endpoints.'
             : 'No mock servers yet. Use the menu above to create one.'}

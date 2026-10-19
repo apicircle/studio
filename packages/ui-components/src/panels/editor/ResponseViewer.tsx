@@ -1,12 +1,26 @@
-import { NOT_SENT_PREFIX, type ExecutionResult } from '@apicircle/core';
-import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Maximize2, RotateCw, XCircle } from 'lucide-react';
+import { NOT_SENT_PREFIX, getLanguageFromContentType, type ExecutionResult } from '@apicircle/core';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  Copy,
+  Download,
+  Maximize2,
+  RotateCw,
+  XCircle,
+} from 'lucide-react';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { Button } from '../../primitives/Button';
 import { cn } from '../../primitives/cn';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
+import { downloadTextFile } from '../../primitives/download';
 import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
 import { Tabs } from '../../primitives/Tabs';
 import { MonacoResponseViewer } from '../../editors/MonacoResponseViewer';
+import { formatResponseForView } from '../../editors/formatResponseForView';
 import { ResponseSizeHint } from './ResponseSizeHint';
+import { responseFileName } from './responseFile';
 
 /**
  * Categorize a result.error string into something the user can act on.
@@ -128,6 +142,13 @@ interface ResponseViewerProps {
 
 type ResponseTab = 'body' | 'headers' | 'assertions';
 
+/** How long "Copied" stays on the Copy button before it reads "Copy" again. */
+const COPIED_FOR_MS = 2000;
+
+/** Why Save is off for a binary body, which Studio holds only as decoded text. */
+const BINARY_SAVE_REASON =
+  'This response is binary. Studio reads it as text, so a saved file would not match what the server sent.';
+
 function findResponseContentType(headers: Record<string, string>): string | undefined {
   for (const [k, v] of Object.entries(headers)) {
     if (k.toLowerCase() === 'content-type') return v;
@@ -138,7 +159,27 @@ function findResponseContentType(headers: Record<string, string>): string | unde
 export function ResponseViewer({ result, assertions, isExecuting, onRetry }: ResponseViewerProps) {
   const [tab, setTab] = useState<ResponseTab>('body');
   const [fullscreen, setFullscreen] = useState(false);
+  // Show the body as it came off the wire instead of pretty-printed.
+  const [raw, setRaw] = useState(false);
+  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
   const elapsedMs = useElapsedMs(isExecuting);
+
+  const responseContentType = result ? findResponseContentType(result.headers) : undefined;
+  const body = result?.body ?? '';
+  // What the viewer shows unless Raw is on. Raw is offered only where the two
+  // differ: for a body shown as it came, there is nothing else to see.
+  const pretty = useMemo(
+    () => formatResponseForView(body, getLanguageFromContentType(responseContentType)),
+    [body, responseContentType],
+  );
+  const canShowRaw = pretty !== body;
+  const shown = raw && canShowRaw ? body : pretty;
+
+  useEffect(() => {
+    if (copy === 'idle') return;
+    const timer = window.setTimeout(() => setCopy('idle'), COPIED_FOR_MS);
+    return () => window.clearTimeout(timer);
+  }, [copy]);
 
   // The first send of this request: nothing to show yet but the wait.
   if (isExecuting && !result) {
@@ -174,7 +215,18 @@ export function ResponseViewer({ result, assertions, isExecuting, onRetry }: Res
       ? 'border-success/40 bg-success/10 text-success'
       : 'border-warning/40 bg-warning/10 text-warning';
 
-  const responseContentType = findResponseContentType(result.headers);
+  const onCopy = async () => {
+    const outcome = await safeCopyToClipboard(shown);
+    setCopy(outcome.ok ? 'copied' : 'failed');
+  };
+  const onSave = () => {
+    downloadTextFile(
+      responseFileName(result.url, result.bodyKind, responseContentType),
+      result.body,
+      responseContentType ?? 'text/plain',
+    );
+  };
+  const bodyTools = tab === 'body' && !result.error && result.body.length > 0;
 
   // Empty-body responses render as a dedicated card instead of stuffing
   // the placeholder string into Monaco — the editor styling makes the
@@ -183,13 +235,14 @@ export function ResponseViewer({ result, assertions, isExecuting, onRetry }: Res
     result.body.length === 0 ? (
       <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center text-xs text-text-dim">
         <p className="font-medium text-text-muted">Empty response body</p>
-        <p className="text-[0.6875rem]">
+        <p className="text-xs">
           The server returned no body bytes. Status, headers, and timing are still available above.
         </p>
       </div>
     ) : (
       <MonacoResponseViewer
-        value={result.body}
+        value={shown}
+        asGiven
         contentType={responseContentType}
         ariaLabel="Response body"
         height="100%"
@@ -241,17 +294,68 @@ export function ResponseViewer({ result, assertions, isExecuting, onRetry }: Res
               <ResponseSizeHint body={result.body} contentType={responseContentType} />
             </>
           )}
-          {!fullscreen && (
-            <button
-              type="button"
-              onClick={() => setFullscreen(true)}
-              aria-label="Fullscreen response panel"
-              title="Fullscreen (Esc to exit)"
-              className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
-            >
-              <Maximize2 size={12} />
-            </button>
-          )}
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {bodyTools && (
+              <div
+                role="group"
+                aria-label="Response body actions"
+                className="flex items-center gap-1"
+              >
+                {/* The button's own label changes too, but a label change on a
+                    focused button is not announced: this says it once. */}
+                {copy !== 'idle' && (
+                  <span role="status" className="sr-only">
+                    {copy === 'copied'
+                      ? 'Response body copied'
+                      : 'Could not copy the response body'}
+                  </span>
+                )}
+                <Button
+                  size="xs"
+                  leftIcon={
+                    copy === 'copied' ? (
+                      <Check size={11} aria-hidden="true" />
+                    ) : (
+                      <Copy size={11} aria-hidden="true" />
+                    )
+                  }
+                  onClick={() => void onCopy()}
+                >
+                  {copy === 'copied' ? 'Copied' : copy === 'failed' ? 'Couldn’t copy' : 'Copy'}
+                </Button>
+                <Button
+                  size="xs"
+                  leftIcon={<Download size={11} aria-hidden="true" />}
+                  onClick={onSave}
+                  disabled={result.bodyKind === 'binary'}
+                  disabledReason={BINARY_SAVE_REASON}
+                >
+                  Save
+                </Button>
+                {canShowRaw && (
+                  <Button
+                    size="xs"
+                    variant={raw ? 'primary' : 'ghost'}
+                    aria-pressed={raw}
+                    onClick={() => setRaw((on) => !on)}
+                  >
+                    Raw
+                  </Button>
+                )}
+              </div>
+            )}
+            {!fullscreen && (
+              <button
+                type="button"
+                onClick={() => setFullscreen(true)}
+                aria-label="Fullscreen response panel"
+                title="Fullscreen (Esc to exit)"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
+              >
+                <Maximize2 size={12} />
+              </button>
+            )}
+          </div>
         </div>
 
         <Tabs

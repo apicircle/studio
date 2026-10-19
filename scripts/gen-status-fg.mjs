@@ -25,6 +25,14 @@
 // that stands off the surface, never so much the text on it stops being
 // readable. See `solveDiffTint`.
 //
+// And it generates the per-theme `--on-accent` / `--accent-hover` tokens: the
+// label and the hover fill of a solid accent button (`Button variant="solid"`),
+// the one main action on a screen. No one label colour reads on all 60 accents
+// (white on Solarized Light's blue is 3.7:1, black on GitHub Light's 4.0:1), so
+// each theme gets its own, and a hover that moves the fill away from the label,
+// so pointing at the button never makes it harder to read. See `solveOnAccent`
+// and `solveAccentHover`.
+//
 // Usage:
 //   node scripts/gen-status-fg.mjs           rewrite global.css in place
 //   node scripts/gen-status-fg.mjs --check   exit 1 if global.css is stale
@@ -63,10 +71,25 @@ export const DIFF_CODE_MIN_CONTRAST = 4.5;
 /** A line number is a label beside the code: the 3:1 large-text floor. */
 export const DIFF_NUMBER_MIN_CONTRAST = 3;
 
+/** WCAG 2.1 AA for the label of a solid accent button, on its fill and on its hover. */
+export const ON_ACCENT_MIN_CONTRAST = 4.5;
+/** The share of black or white (whole percent) every accent hover starts from. */
+export const ACCENT_HOVER_FLOOR = 10;
+/** The most an accent hover takes before it stops looking like the accent at all. */
+export const ACCENT_HOVER_CEILING = 60;
+/**
+ * The least a hover differs from the accent, in OKLab x100 (`difference`): a
+ * plainly seen step, three times the ~2 an eye can just tell apart.
+ */
+export const ACCENT_HOVER_TARGET = 6;
+
 const SURFACES = ['surface', 'card'];
 const BLOCK = /\[data-theme='([^']+)'\]\s*\{([^}]*)\}/g;
 const TRIPLET = /--([\w-]+):\s*(\d+)\s+(\d+)\s+(\d+)\s*;/g;
-const GENERATED_LINE = /^[ \t]*--(?:[\w-]+-fg|diff-[\w-]+):[^;]*;[ \t]*\r?\n/gm;
+const GENERATED_LINE =
+  /^[ \t]*--(?:[\w-]+-fg|diff-[\w-]+|on-accent|accent-hover):[^;]*;[ \t]*\r?\n/gm;
+const BLACK = [0, 0, 0];
+const WHITE = [255, 255, 255];
 
 const linear = (c) => {
   const s = c / 255;
@@ -153,6 +176,36 @@ export function solveDiffTint(tone, page, code, number) {
   return at(share);
 }
 
+/**
+ * The label of a solid accent button in one theme. The theme's own colours come
+ * first: of `surface` and `text`, the one that stands out more on the accent,
+ * when it reads there at AA. Where neither does, pure black or white, whichever
+ * reads better — one of the two always reaches 4.58:1 on any colour.
+ */
+export function solveOnAccent(accent, surface, text) {
+  const [best] = [surface, text].sort((a, b) => contrast(b, accent) - contrast(a, accent));
+  if (contrast(best, accent) >= ON_ACCENT_MIN_CONTRAST) return best;
+  return contrast(BLACK, accent) >= contrast(WHITE, accent) ? BLACK : WHITE;
+}
+
+/**
+ * The hover fill of a solid accent button: the accent mixed away from its label
+ * (toward black under a light label, toward white under a dark one), starting
+ * at the floor share and taking the least more that is `ACCENT_HOVER_TARGET`
+ * from the accent. Away from the label only ever raises the contrast between
+ * the two, so a label that reads on the accent reads on its hover. It stops at
+ * the ceiling, where it would no longer look like the accent.
+ */
+export function solveAccentHover(accent, onAccent) {
+  const toward = luminance(onAccent) > luminance(accent) ? BLACK : WHITE;
+  const at = (share) => composite(toward, accent, share / 100).map(Math.round);
+  let share = ACCENT_HOVER_FLOOR;
+  while (share < ACCENT_HOVER_CEILING && difference(at(share), accent) < ACCENT_HOVER_TARGET) {
+    share += 1;
+  }
+  return at(share);
+}
+
 function parseTokens(body) {
   const tokens = {};
   for (const tok of body.matchAll(TRIPLET)) {
@@ -163,7 +216,8 @@ function parseTokens(body) {
 
 /**
  * Return `css` with every theme block's generated tokens — the `-fg`
- * foregrounds and the diff tints — regenerated. Pure, and idempotent: feeding
+ * foregrounds, the diff tints and the solid accent's label and hover —
+ * regenerated. Pure, and idempotent: feeding
  * its own output back in changes nothing, which is what `--check` and the
  * contrast test rely on.
  */
@@ -194,7 +248,12 @@ export function generate(css) {
       );
       return `  --diff-${kind}: ${tint.join(' ')};${eol}`;
     });
-    const lines = [...fgLines, ...diffLines].join('');
+    const onAccent = solveOnAccent(tokens.accent, tokens.surface, tokens['text-primary']);
+    const accentLines = [
+      `  --on-accent: ${onAccent.join(' ')};${eol}`,
+      `  --accent-hover: ${solveAccentHover(tokens.accent, onAccent).join(' ')};${eol}`,
+    ];
+    const lines = [...fgLines, ...diffLines, ...accentLines].join('');
     // After `--info`, so the generated group sits with the tones it derives from.
     const anchor = /^[ \t]*--info:[^;]*;[ \t]*\r?\n/m;
     const next = stripped.replace(anchor, (line) => line + lines);
@@ -213,19 +272,19 @@ function main(argv) {
   if (argv.includes('--check')) {
     if (next !== current) {
       console.error(
-        'apps/web/src/styles/global.css has stale --<tone>-fg or --diff-* tokens. Run: node scripts/gen-status-fg.mjs',
+        'apps/web/src/styles/global.css has stale generated theme tokens (--<tone>-fg, --diff-*, --on-accent, --accent-hover). Run: node scripts/gen-status-fg.mjs',
       );
       process.exit(1);
     }
-    console.log('--<tone>-fg and --diff-* tokens are up to date.');
+    console.log('Generated theme tokens are up to date.');
     return;
   }
   if (next === current) {
-    console.log('--<tone>-fg and --diff-* tokens already up to date.');
+    console.log('Generated theme tokens already up to date.');
     return;
   }
   writeFileSync(CSS_PATH, next);
-  console.log('Regenerated --<tone>-fg and --diff-* tokens in apps/web/src/styles/global.css.');
+  console.log('Regenerated the generated theme tokens in apps/web/src/styles/global.css.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

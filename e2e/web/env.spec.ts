@@ -31,7 +31,7 @@ test.describe('Environments — C8', () => {
   test(
     tc(
       id('Env :: Activate env'),
-      'active env switching mid-session: which env is in the global layer wins @smoke',
+      'active env switching mid-session: which env is used when sending wins @smoke',
     ),
     async ({ app, e2eMock, sidebar }) => {
       // Create envs A and B with the SAME key but different values.
@@ -41,9 +41,9 @@ test.describe('Environments — C8', () => {
       await addVar(app, 'KEY', 'b-val');
 
       // Initially both A and B are added to priorityOrder by addEnvironment.
-      // Untick B so only A is in the global layer → A wins.
+      // Untick B so only A is used when sending → A wins.
       const bCheckbox = app.getByRole('checkbox', {
-        name: /(Add|Remove) env-B (from|to|in) global environment layer/,
+        name: 'Use env-B when sending',
       });
       await bCheckbox.uncheck();
 
@@ -62,7 +62,7 @@ test.describe('Environments — C8', () => {
       // Switch: untick A, tick B → B wins.
       await app.getByRole('button', { name: /^Environments$/ }).click();
       const aCheckbox = app.getByRole('checkbox', {
-        name: /(Add|Remove) env-A (from|to|in) global environment layer/,
+        name: 'Use env-A when sending',
       });
       await aCheckbox.uncheck();
       await bCheckbox.check();

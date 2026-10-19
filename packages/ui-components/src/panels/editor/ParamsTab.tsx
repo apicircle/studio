@@ -241,7 +241,7 @@ function PathParams({ placeholders, values, onChange }: PathParamsProps) {
           </div>
         </aside>
       )}
-      <p className="mt-2 text-[0.6875rem] text-text-dim">
+      <p className="mt-2 text-xs text-text-dim">
         Values are URL-encoded at send time. Variables (<code>{'{{NAME}}'}</code>) are not yet
         expanded inside path placeholders — paste literal values for now.
       </p>

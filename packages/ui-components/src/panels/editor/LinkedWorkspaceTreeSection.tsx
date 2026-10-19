@@ -19,6 +19,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-http-get',
@@ -62,9 +63,9 @@ function LinkedWorkspaceTreeSectionBody({ searchQuery }: { searchQuery?: string 
   const trimmedQuery = searchQuery?.trim().toLowerCase() ?? '';
   return (
     <section aria-label="Linked workspaces" className="mt-3 border-t border-border-subtle pt-3">
-      <h2 className="mb-1.5 px-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+      <SectionHeading size="sm" className="mb-1.5 px-1">
         Linked workspaces
-      </h2>
+      </SectionHeading>
       <ul className="flex flex-col gap-0.5" role="tree" aria-label="Linked workspaces">
         {links.map((link) => (
           <LinkedRoot key={link.id} link={link} searchQuery={trimmedQuery} />
@@ -110,7 +111,7 @@ function LinkedRoot({ link, searchQuery }: { link: LinkedWorkspace; searchQuery:
         <span className="truncate">{link.name}</span>
         {link.pinnedVersion && (
           <span
-            className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.5625rem] text-text-dim"
+            className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.625rem] text-text-dim"
             title={`Pinned version v${link.pinnedVersion}`}
           >
             v{link.pinnedVersion}
@@ -118,7 +119,7 @@ function LinkedRoot({ link, searchQuery }: { link: LinkedWorkspace; searchQuery:
         )}
         {overrideCount > 0 && (
           <span
-            className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.5625rem] text-accent"
+            className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.625rem] text-accent"
             title={`${overrideCount} local modification${overrideCount === 1 ? '' : 's'}`}
           >
             {overrideCount} mod{overrideCount === 1 ? '' : 's'}
@@ -199,7 +200,7 @@ function LinkedTree({
 
   if (topLevel.length === 0) {
     return (
-      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[0.6875rem] text-text-dim">
+      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-xs text-text-dim">
         {searchQuery
           ? 'No matching requests in this linked workspace.'
           : 'Source has no requests or folders yet.'}

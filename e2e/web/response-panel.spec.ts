@@ -214,11 +214,11 @@ test.describe('Response Panel — workbook iteration', () => {
     // from the workbook key. Drive a mocked response with the matching
     // content-type at the size and assert the response panel renders.
     //
-    // The product uses MonacoResponseViewer (one rendering surface; no
-    // explicit Pretty/Raw/Preview toggle — the workbook's 3-mode
-    // distinction maps to one underlying behaviour for text content
-    // types, and to the binary-placeholder card for octet-stream/pdf/
-    // image content types). All 3 mode cells share the same wire test.
+    // The product uses MonacoResponseViewer (one rendering surface: JSON
+    // is shown formatted, with a Raw toggle for the body as received — see
+    // the 'Pretty/Raw/Preview toggle' cell — and every other type as it
+    // came). The workbook's 3-mode distinction maps to that one viewer, so
+    // all 3 mode cells share the same wire test.
     //
     // Small sizes (0B, 1KB, 100KB) run real; large sizes (1MB, 10MB,
     // 100MB) are documented-skip — the bytes-per-test cost would
@@ -414,18 +414,24 @@ test.describe('Response Panel — Body Viewer', () => {
   test(
     tc(
       id('Body Viewer :: Pretty/Raw/Preview toggle'),
-      'response body viewer offers pretty/raw/preview toggle on a JSON response',
+      'a JSON response is shown formatted, and Raw shows it as received',
     ),
-    async ({ app, e2eMock, sidebar }) => {
-      const path = `/anything/rp-pretty-${Math.random().toString(36).slice(2, 8)}`;
+    async ({ app, mockApi, monaco, sidebar }) => {
+      const body = '{"id":1,"items":[1,2]}';
+      await mockApi.text('https://api.example.test/rp-pretty', body, {
+        contentType: 'application/json',
+      });
       await sidebar.createRequest('rp-pretty');
-      await app.getByLabel('Request URL').fill(e2eMock.url(path));
+      await app.getByLabel('Request URL').fill('https://api.example.test/rp-pretty');
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible();
-      // The response panel exposes a mode picker. Match any of the
-      // canonical labels.
-      const modePicker = app.getByRole('button', { name: /pretty|raw|preview/i }).first();
-      await expect(modePicker).toBeVisible({ timeout: 10_000 });
+      await monaco.ready('Response body');
+      expect(await monaco.read('Response body')).toBe(JSON.stringify(JSON.parse(body), null, 2));
+      const raw = app.getByRole('button', { name: 'Raw', exact: true });
+      await expect(raw).toHaveAttribute('aria-pressed', 'false');
+      await raw.click();
+      await expect(raw).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => monaco.read('Response body')).toBe(body);
     },
   );
 
@@ -451,7 +457,10 @@ test.describe('Response Panel — Body Viewer', () => {
   );
 
   test(
-    tc(id('Body Viewer :: Binary preview shows hex/download'), 'binary response surfaces'),
+    tc(
+      id('Body Viewer :: Binary preview shows hex/download'),
+      'a binary response says why it cannot be saved as a file',
+    ),
     async ({ app, e2eMock, sidebar }) => {
       // The mock's /binary returns octet-stream bytes.
       const path = `/binary?t=${Math.random().toString(36).slice(2, 8)}`;
@@ -459,10 +468,13 @@ test.describe('Response Panel — Body Viewer', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
-      // The body panel should either show a Download affordance or
-      // hex/binary copy. Look for either.
-      const binaryAffordance = app.getByRole('button', { name: /download|binary|raw/i }).first();
-      await expect(binaryAffordance).toBeVisible({ timeout: 10_000 });
+      // Studio holds a body as text, so a saved copy of binary bytes would be
+      // corrupt: Save stays off and says so. Copy still copies what is shown.
+      const tools = app.getByRole('group', { name: 'Response body actions' });
+      const save = tools.getByRole('button', { name: 'Save' });
+      await expect(save).toBeDisabled();
+      await expect(save).toHaveAccessibleDescription(/This response is binary/);
+      await expect(tools.getByRole('button', { name: 'Copy' })).toBeEnabled();
     },
   );
 });
@@ -571,15 +583,21 @@ test.describe('Response Panel — Error / Render / Misc', () => {
   );
 
   test(
-    tc(id('Download'), 'response panel exposes a Download button for the body'),
+    tc(id('Download'), 'Save downloads the response body under the name the URL gives it'),
     async ({ app, e2eMock, sidebar }) => {
-      const path = `/anything/rp-dl-${Math.random().toString(36).slice(2, 8)}`;
+      const slug = `rp-dl-${Math.random().toString(36).slice(2, 8)}`;
       await sidebar.createRequest('rp-download');
-      await app.getByLabel('Request URL').fill(e2eMock.url(path));
+      await app.getByLabel('Request URL').fill(e2eMock.url(`/anything/${slug}`));
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible();
-      const dl = app.getByRole('button', { name: /download/i }).first();
-      await expect(dl).toBeVisible({ timeout: 5_000 });
+      const [download] = await Promise.all([
+        app.waitForEvent('download'),
+        app
+          .getByRole('group', { name: 'Response body actions' })
+          .getByRole('button', { name: 'Save' })
+          .click(),
+      ]);
+      expect(download.suggestedFilename()).toBe(`${slug}.json`);
     },
   );
 

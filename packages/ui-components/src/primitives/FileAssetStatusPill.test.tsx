@@ -200,3 +200,36 @@ describe('<FileAssetStatusPill />', () => {
     expect(screen.getByRole('status').getAttribute('title')).toContain('used in 2 places');
   });
 });
+
+describe('FileAssetStatusPill — plain words', () => {
+  it('says what a diverged asset is, and where uploaded bytes wait', () => {
+    const diverged = asset({
+      workingBranchRef: ref('apicircle/wb', 'b1'),
+      baseBranchRef: ref('main', 'b2'),
+    });
+    seedStore(syncedWithAsset(diverged));
+    const { unmount } = render(<FileAssetStatusPill assetId={diverged.id} />);
+    expect(screen.getByRole('status').getAttribute('title')).toContain(
+      'The same path holds a different file on each branch',
+    );
+    unmount();
+
+    const pending = asset();
+    seedStore(syncedWithAsset(pending), {
+      pendingFileUploads: {
+        [pending.id]: {
+          slotId: pending.slotId,
+          filename: pending.filename,
+          mimeType: pending.mimeType,
+          sha256: pending.sha256!,
+          size: pending.size,
+          queuedAt: T,
+        },
+      },
+    });
+    render(<FileAssetStatusPill assetId={pending.id} />);
+    const title = screen.getByRole('status').getAttribute('title');
+    expect(title).toContain('Saved on this device; the next push uploads it.');
+    expect(title).not.toMatch(/IDB|blob/);
+  });
+});

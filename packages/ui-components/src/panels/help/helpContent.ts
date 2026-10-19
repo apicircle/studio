@@ -126,7 +126,7 @@ Existing Studio \`.apicircle\` workspaces remain compatible. Open the same repo 
 
 ## You always have exactly one working branch
 
-The app tracks one working branch at a time — there is no multi-branch switcher. The branch card shows Push, Refresh, Create PR, and **Discard working branch**.
+The app tracks one working branch at a time — there is no multi-branch switcher. The branch card shows **Push to save**, **Pull**, **Sync attachments**, **Create PR**, and **Discard working branch**. Its one solid button is the next step: Push to save while there is something to push, then Create PR once the branch is pushed. A button that cannot be pressed yet says why when you point at it or tab to it — Create PR, for one, waits for a first push.
 
 ## Switching to another branch without losing local data
 
@@ -135,7 +135,7 @@ To move to a different branch, **discard** the current one and **create** a new 
     Branch card        ->  Discard working branch
     Create branch form ->  base branch: release/2.x  ->  Create working branch
 
-Discarding only clears the branch pointer. It does **not** touch your local document — run history, request drafts, decrypted secrets, snapshots, and UI state all survive — and it does not delete the branch on GitHub. So switching branches is safe: nothing local is lost. Whether you then Push your current synced doc to the new branch, or Refresh to pull that branch's \`workspace.json\`, decides the content you work against.
+Discarding only clears the branch pointer. It does **not** touch your local document — run history, request drafts, decrypted secrets, snapshots, and UI state all survive — and it does not delete the branch on GitHub. So switching branches is safe: nothing local is lost. Whether you then Push your current synced doc to the new branch, or Pull that branch's \`workspace.json\`, decides the content you work against.
 
 ## Starting a branch from a workspace that is already on Git
 
@@ -157,7 +157,7 @@ Workspace names travel with a push. Every push writes your workspace's name into
 
 ## What a push leaves out, and what it asks about
 
-A push never writes an auth credential: the passwords, tokens and keys of every auth type are blanked, a custom auth header keeps its name but not its value, and a request URL loses a \`user:password@\`. Your own copy keeps them, and a Refresh never blanks them here.
+A push never writes an auth credential: the passwords, tokens and keys of every auth type are blanked, a custom auth header keeps its name but not its value, and a request URL loses a \`user:password@\`. Your own copy keeps them, and a Pull never blanks them here.
 
 A plain field can't be vouched for that way — a token typed into a header row, \`api_key=…\` in a query row, a session cookie, a plaintext environment variable. Before a push writes anything it looks for values shaped like secrets, and when it finds some it lists where each one sits and why — never the value — and asks:
 
@@ -170,7 +170,7 @@ A workspace that keeps its secrets in \`{{variables}}\` and the Secret Vault pus
 
 When you want to discard local edits and take the remote copy:
 
-- **Refresh** runs a 3-way diff (last-pulled base vs. your local vs. remote). With no conflict it merges automatically. On conflict the resolver opens — choose **Accept theirs** on every entry to take the remote version wholesale.
+- **Pull** runs a 3-way diff (last-pulled base vs. your local vs. remote). With no conflict it merges automatically. On conflict the resolver opens — choose **Accept theirs** on every entry to take the remote version wholesale.
 - **First-pull "Overwrite"** — point a working branch at a branch that already holds a \`workspace.json\` you have never pulled and a banner asks whether to overwrite. Pull (do not overwrite) to adopt the remote content.
 - **Restore a snapshot** — History → Snapshots can roll the synced doc back to any captured state.
 
@@ -180,7 +180,7 @@ The synced half travels through Git; the local half does not. On a second machin
 
     1. Sign in to GitHub (Secret Vault -> Sessions) -- sessions never sync
     2. Connect the same repository
-    3. Create a working branch and Refresh -- workspace.json loads
+    3. Create a working branch and Pull -- workspace.json loads
 
 **Comes back automatically:** every request, folder, environment, mock-server definition, execution plan, and global asset — plus the metadata for your encrypted values.
 
@@ -188,7 +188,7 @@ The synced half travels through Git; the local half does not. On a second machin
 
 ## When a branch ends
 
-If the branch's PR is merged or the branch is deleted on GitHub, Refresh retires it and shows a banner ("PR #12 was merged"). Create a fresh working branch to keep going.
+If the branch's PR is merged or the branch is deleted on GitHub, a Pull retires it and shows a banner ("PR #12 was merged"). Create a fresh working branch to keep going.
 
 If the PR is closed without merging, the branch keeps going: the card says the PR was closed, and **Create PR** is offered again for when you are ready to open a new one.`,
     keywords: [
@@ -333,7 +333,8 @@ A workspace that links yours caches your release history under \`releases.perLin
 
 - **New request / New folder** — from the sidebar header menu, or a folder's row menu to nest inside it.
 - **Search** filters by name or method and keeps matches' ancestors visible.
-- **Row menu (⋮)** — requests offer Rename, Duplicate, Delete; folders add New request, New folder, Set/Edit auth. Deleting a folder needs a typed \`DELETE\` confirmation.
+- **Row menu (⋮)** — requests offer Rename, Duplicate, Move to…, Delete; folders add New request, New folder, Set/Edit auth and Export as JSON. Deleting a folder needs a typed \`DELETE\` confirmation.
+- **Move to…** lists the top level and every folder, with a filter for long trees. Pick one and the request or folder (with everything in it) moves there, and the folders down to it open. A place it cannot go stays in the list with the reason on its row: where it already is, inside itself, or a folder that already has one of that name — names stay unique in a folder, as when renaming.
 
 ## Anatomy of a request
 
@@ -361,7 +362,7 @@ Methods: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. The URL bar composes the 
 
 ## Pre-send validation
 
-With "Validate before sending" on (Settings → Behavior), a pre-send panel lists **blockers** (red — Send is disabled, e.g. a missing URL) and **warnings** (yellow — non-blocking). Studio auto-injects a few headers — \`X-Client-Name\`, \`X-Client-Version\`, the W3C \`traceparent\` — which you override by adding a header of the same name.`,
+With "Validate before sending" on (Settings → Behavior), a pre-send panel lists **blockers** (red — Send is disabled, e.g. a missing URL; pointing at Send says so) and **warnings** (yellow — non-blocking). Studio auto-injects a few headers — \`X-Client-Name\`, \`X-Client-Version\`, the W3C \`traceparent\` — which you override by adding a header of the same name.`,
     keywords: [
       'request',
       'send',
@@ -679,6 +680,16 @@ A colour-coded badge plus timing and size. Green is success, yellow a warning, r
 
 A fullscreen control expands the viewer.
 
+## Copy, Save and Raw
+
+On the Body tab:
+
+- **Copy** puts the body on the clipboard as it is shown, and says "Copied".
+- **Save** downloads the body as it was received, named from the URL: \`/v1/users\` saves as \`users.json\`.
+- **Raw** shows a JSON body exactly as it arrived, instead of formatted. It only appears where the two differ.
+
+Save is off for a binary body, and says why: Studio keeps a body as text, so the file would not match the bytes the server sent.
+
 ## While it sends
 
 The pane shows the API Circle mark with **Sending request…** and how long it has waited. Sending again keeps the last response on screen, dimmed, under a strip that says so, until the new one arrives — so you can keep reading it.
@@ -731,6 +742,10 @@ Every response is also recorded in History, where you can reopen it later.`,
       'transformation',
       'toon',
       'viewer',
+      'copy',
+      'save',
+      'download',
+      'raw',
     ],
   },
   {
@@ -743,7 +758,7 @@ Every response is also recorded in History, where you can reopen it later.`,
 Placeholders resolve in a fixed order; the first match wins:
 
     1. Context variables     (per-request + extracted values)
-    2. The environment layer (the environments in the priority list, in order)
+    2. Environments         (the ones used when sending, top of the list first)
     3. Secret Vault          (encrypted secrets, by label)
 
 A Secret Vault entry that encrypts environment variables is their **encryption key**, not a variable: \`{{LABEL}}\` never resolves to it (see Secret Vault → Encryption keys are not variables).
@@ -753,11 +768,11 @@ Example — \`{{BASE_URL}}\` with a "Staging" and a "Prod" environment:
     Staging   BASE_URL = https://staging.api.example.com
     Prod      BASE_URL = https://api.example.com
 
-Whichever environment sits higher in the priority list wins.
+Both ticked? Whichever sits higher in the list wins.
 
 ## Managing environments
 
-Create environments from the sidebar; rename inline. Each variable is a key/value row, and duplicate keys are flagged. A "Layer position N of M" badge shows where an environment sits in the global priority list. Environments can be duplicated, exported as JSON, and deleted.
+Create environments from the sidebar; rename inline. Each variable is a key/value row, and duplicate keys are flagged. Tick an environment (**Use … when sending**) to use it when sending, and drag it — or use **Move up** / **Move down** in its menu — to change which one is checked first. The editor's badge reads **Used when sending · N of M**, or **Not used when sending**. Environments can be duplicated, exported as JSON, and deleted.
 
 ## Encrypted variables — and how the encryption works
 
@@ -787,6 +802,7 @@ In both cases the passphrase and key are never written to Git and never persiste
       'encrypted',
       'priority',
       'resolver',
+      'used when sending',
       'aes',
       'encryption',
       'passphrase',
@@ -966,14 +982,16 @@ Run history, saved secrets and your Git session are untouched, and whatever you 
 
 Add steps with the step picker — it lists your requests, filterable by name. Each row has an enable/disable checkbox, up/down reorder arrows, a quick-view (the resolved request, read-only), and a remove control.
 
-- **Plan variables** — key/value pairs scoped to the plan, sitting between extracted globals and the environment priority.
-- A **plan-level environment priority** can override the workspace order for this run only.
+- **Plan variables** — key/value pairs scoped to the plan, checked after values captured from responses and before the environments.
+- **Environments for this plan** — the environments the plan uses when sending, in order, in place of the ones ticked in Environments. Leave it empty to use those.
 
 ## Running
 
 - **Run** executes the steps and ignores assertions.
 - **Run with assertions** folds each request's assertion verdicts into a per-step pass/fail flag.
 - **Stop on assertion failure** halts at the first failing step.
+
+On a long plan the Run controls stay at the foot of the panel while the steps scroll under them. While a plan runs its steps are locked, and their controls say so.
 
 The last-run summary reads like:
 
@@ -1398,7 +1416,7 @@ A single source of truth: update the "User" asset once and every request that re
 
 - **Switch panels** — **Ctrl/Cmd + 1** through **Ctrl/Cmd + 9** select the 1st through 9th tab in the top navigation, left to right. Example: **Ctrl/Cmd + 1** jumps to Workspace, the leftmost tab.
 - **Open the Secret Vault** — **Ctrl/Cmd + K** opens the Vault tab in the inspector dock.
-- **Refresh the working branch** — **Ctrl/Cmd + Shift + R**. Plain **Ctrl + R** is the browser's reload — the Shift is what disambiguates them.
+- **Pull the working branch** — **Ctrl/Cmd + Shift + R**. Plain **Ctrl + R** is the browser's reload — the Shift is what disambiguates them.
 
 ## Text size
 
@@ -1422,7 +1440,7 @@ The token was revoked, expired, or had its scopes changed on GitHub. Under the e
 
 ## "Workspace conflicted"
 
-Refresh found edits on both sides. The conflict resolver opens — pick **Accept ours** / **Accept theirs** / **Discard** per entity, then Merge.
+A pull found edits on both sides. The conflict resolver opens — pick **Accept ours** / **Accept theirs** / **Discard** per entity, then Merge.
 
 ## "This branch already has content"
 
@@ -1430,11 +1448,11 @@ The first-pull banner: the branch has a \`workspace.json\` you have never pulled
 
 ## "Branch was retired" / "PR #N was merged"
 
-Refresh found the working branch merged or deleted on GitHub. Create a fresh working branch to continue.
+A pull found the working branch merged or deleted on GitHub. Create a fresh working branch to continue.
 
 ## "PR #N was closed without merging"
 
-Refresh found the branch's pull request closed without being merged. The branch is still yours: push more changes and use **Create PR** to open a new one, or **Dismiss** the notice.
+A pull found the branch's pull request closed without being merged. The branch is still yours: push more changes and use **Create PR** to open a new one, or **Dismiss** the notice.
 
 ## "Attachment too large"
 

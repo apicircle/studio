@@ -119,8 +119,10 @@ describe('ExecutionPanel — plan editor', () => {
     const planId = useWorkspaceStore.getState().addPlan('p');
 
     render(<ExecutionPanel />);
-    // Both env names appear as add-buttons under "Plan-level env priority".
-    expect(screen.getByText(/No plan-level priority/)).toBeInTheDocument();
+    // Both env names appear as add-buttons under "Environments for this plan".
+    expect(
+      screen.getByText(/None picked: the plan uses the environments ticked/),
+    ).toBeInTheDocument();
 
     // The "+ dev" / "+ prod" buttons render an icon + text; the accessible
     // name is just the env name. Match by exact text content.

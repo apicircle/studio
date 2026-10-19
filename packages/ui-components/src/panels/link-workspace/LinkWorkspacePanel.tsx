@@ -41,6 +41,7 @@ import { Modal } from '../../primitives/Modal';
 import { BrandLoader, LoadingState } from '../../primitives/BrandLoader';
 import { cn } from '../../primitives/cn';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 /**
  * The panel has no tab in this build (see `layout/panels.ts`), so this guard is
@@ -93,10 +94,8 @@ function LinkWorkspacePanelBody() {
 
       {linkArray.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
-            Linked workspaces
-          </h2>
-          <p className="-mt-1 flex items-start gap-1 text-[0.6875rem] leading-snug text-text-dim">
+          <SectionHeading>Linked workspaces</SectionHeading>
+          <p className="-mt-1 flex items-start gap-1 text-xs leading-snug text-text-dim">
             <Info size={11} aria-hidden="true" className="mt-0.5 shrink-0 text-text-faint" />
             <span>
               Linking is <strong>one level deep</strong>. If a workspace you link has its own links,
@@ -248,14 +247,14 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
     <>
       <Modal open={open} onClose={onClose} title="Search marketplace" className="max-w-5xl">
         <div className="space-y-3">
-          <p className="text-[0.6875rem] text-text-dim">
+          <p className="text-xs text-text-dim">
             Searches public API Circle workspaces — GitHub repos carrying the <code>apicircle</code>{' '}
             topic. Type category words like <code>payments</code> or <code>graphql</code> and GitHub
             matches them against each repo&apos;s name, description, and topics. Linking uses the
             repo&apos;s default branch.
           </p>
           {!hasSession && (
-            <p className="text-[0.6875rem] text-text-dim">
+            <p className="text-xs text-text-dim">
               Browsing is anonymous. To link a result, connect GitHub in the{' '}
               <button
                 type="button"
@@ -320,10 +319,10 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
                     </button>
                   </div>
                   {repo.description && (
-                    <p className="mt-1 text-[0.6875rem] text-text-muted">{repo.description}</p>
+                    <p className="mt-1 text-xs text-text-muted">{repo.description}</p>
                   )}
                   {repo.topics.length > 0 && (
-                    <p className="mt-1 flex flex-wrap gap-1 text-[0.625rem] text-text-dim">
+                    <p className="mt-1 flex flex-wrap gap-1 text-xs text-text-dim">
                       {repo.topics.map((t) => (
                         <span
                           key={t}
@@ -339,7 +338,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
             </ul>
           )}
           {!searching && results.length === 0 && query && !error && (
-            <p className="text-[0.6875rem] text-text-dim">No results.</p>
+            <p className="text-xs text-text-dim">No results.</p>
           )}
           <div className="flex justify-end pt-1">
             <button
@@ -731,7 +730,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
       <Modal open={open} onClose={onClose} title="Link a private workspace">
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-[0.6875rem] text-text-dim">
+            <p className="text-xs text-text-dim">
               Reads <code>workspace.json</code> from the source branch using your active session for
               that host. The cached release ledger is stored under <code>releases.perLink[id]</code>
               .
@@ -1291,7 +1290,7 @@ function LinkedAttachmentsSection({ link }: { link: LinkedWorkspace }) {
           {error}
         </p>
       )}
-      <p className="mb-2 text-[0.6875rem] text-text-dim">
+      <p className="mb-2 text-xs text-text-dim">
         Execution stops when a required file is missing. Downloads are recorded in local metadata
         for this device.
       </p>
@@ -1314,10 +1313,10 @@ function LinkedAttachmentsSection({ link }: { link: LinkedWorkspace }) {
                     <span className="text-[0.625rem] text-text-dim">{item.mimeType}</span>
                   )}
                 </div>
-                <p className="mt-0.5 text-[0.6875rem] text-text-dim">
+                <p className="mt-0.5 text-xs text-text-dim">
                   Required by {item.requestNames.join(', ')}
                 </p>
-                <p className="mt-0.5 truncate text-[0.625rem] text-text-dim">
+                <p className="mt-0.5 truncate text-xs text-text-dim">
                   Local: {localPath ?? 'not downloaded'}
                 </p>
               </div>
@@ -1491,7 +1490,7 @@ function LinkedChangelogModal({
   return (
     <Modal open={open} onClose={onClose} title={`${link.name} — changelog`} className="max-w-5xl">
       <div className="space-y-2">
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Cached from{' '}
           <code>
             {link.source.repoFullName}@{link.source.branch}
@@ -1499,9 +1498,7 @@ function LinkedChangelogModal({
           at the last refresh. Refresh the ledger to pull newly-published versions.
         </p>
         {sortedEntries.length === 0 ? (
-          <p className="text-[0.6875rem] text-text-dim">
-            No published versions in the cached ledger.
-          </p>
+          <p className="text-xs text-text-dim">No published versions in the cached ledger.</p>
         ) : (
           <ul className="max-h-96 space-y-2 overflow-y-auto">
             {sortedEntries.map((entry) => {
@@ -1533,15 +1530,15 @@ function LinkedChangelogModal({
                     </span>
                   </div>
                   {entry.notes ? (
-                    <p className="mt-1 whitespace-pre-wrap text-[0.6875rem] text-text-muted">
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-text-muted">
                       {entry.notes}
                     </p>
                   ) : (
-                    <p className="mt-1 text-[0.6875rem] text-text-dim italic">no release notes</p>
+                    <p className="mt-1 text-xs text-text-dim italic">no release notes</p>
                   )}
                   {entry.workspaceSnapshot && (
                     <p
-                      className="mt-1 font-mono text-[0.625rem] text-text-dim"
+                      className="mt-1 font-mono text-xs text-text-dim"
                       title={entry.workspaceSnapshot}
                     >
                       snapshot {entry.workspaceSnapshot.slice(0, 12)}…
@@ -1592,7 +1589,7 @@ function LinkStepper({ steps }: { steps: Array<{ key: string; label: string; don
           >
             <span
               className={cn(
-                'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[0.5rem] font-semibold leading-none',
+                'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[0.625rem] font-semibold leading-none',
                 state === 'done'
                   ? 'border-accent bg-accent/15 text-accent'
                   : state === 'current'
@@ -1740,12 +1737,12 @@ function RepoCombobox({
             </ul>
           )}
           {showList && !loading && repos.length === 0 && filter.trim().length > 0 && (
-            <p className="mt-1 text-[0.6875rem] text-text-dim">No repos match.</p>
+            <p className="mt-1 text-xs text-text-dim">No repos match.</p>
           )}
         </div>
       )}
       {error && (
-        <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
+        <p className="mt-1 text-xs text-danger" role="alert">
           {error}
         </p>
       )}
@@ -1776,7 +1773,7 @@ function BranchPicker({
       {loading ? (
         <LoadingState size="sm" title="Loading branches…" className="mt-1" />
       ) : error ? (
-        <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
+        <p className="mt-1 text-xs text-danger" role="alert">
           {error}
         </p>
       ) : branches && branches.length > 0 ? (
@@ -1802,7 +1799,7 @@ function BranchPicker({
           />
         </div>
       ) : (
-        <p className="mt-1 text-[0.6875rem] text-text-dim">No branches found.</p>
+        <p className="mt-1 text-xs text-text-dim">No branches found.</p>
       )}
     </div>
   );
@@ -1833,11 +1830,11 @@ function PinPicker({
   const sortedVersions = useMemo(() => (probe ? sortVersionsDesc(probe.versions) : []), [probe]);
 
   if (loading) {
-    return <p className="text-[0.6875rem] text-text-dim">Probing workspace.json on this branch…</p>;
+    return <p className="text-xs text-text-dim">Probing workspace.json on this branch…</p>;
   }
   if (error) {
     return (
-      <p className="text-[0.6875rem] text-danger" role="alert">
+      <p className="text-xs text-danger" role="alert">
         {error}
       </p>
     );
@@ -1846,7 +1843,7 @@ function PinPicker({
 
   return (
     <div className="rounded-sm border border-border-subtle bg-surface p-2">
-      <p className="mb-1.5 text-[0.6875rem] text-text-dim">
+      <p className="mb-1.5 text-xs text-text-dim">
         Source workspace: <strong className="text-text-primary">{probe.repoFullName}</strong>
         {probe.currentVersion && (
           <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.625rem]">
@@ -1933,7 +1930,7 @@ function RequiredSecretKeysPicker({
           <h4 className="text-[0.6875rem] font-medium text-text-primary">Required secret keys</h4>
           <span className="text-[0.625rem] text-text-dim">none declared by source</span>
         </div>
-        <p className="text-[0.6875rem] leading-snug text-text-dim">
+        <p className="text-xs leading-snug text-text-dim">
           The source workspace.json doesn&apos;t declare any vault slots. If you expected to see one
           here, the source may need to push first (slots aren&apos;t synced until pushed) or the
           slot may have been removed from the source&apos;s vault. You can still add required keys
@@ -1951,7 +1948,7 @@ function RequiredSecretKeysPicker({
           {keys.length} slot{keys.length === 1 ? '' : 's'} declared by source
         </span>
       </div>
-      <p className="mb-2 text-[0.6875rem] text-text-dim">
+      <p className="mb-2 text-xs text-text-dim">
         The source workspace declares these vault slots. Provide values now, or skip and fill in
         later from the link card. Empty values are fine — leave a slot blank if your usage
         doesn&apos;t need it.
@@ -2070,15 +2067,15 @@ function RequiredKeysSection({ link }: { link: LinkedWorkspace }) {
     <section className="mt-3 rounded-sm border border-border-subtle bg-surface p-2">
       <div className="mb-1.5 flex items-center gap-2">
         <Key size={12} className="text-text-dim" aria-hidden="true" />
-        <h3 className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
+        <SectionHeading as="h3" size="sm">
           Required secret keys
-        </h3>
+        </SectionHeading>
         <span className="text-[0.625rem] text-text-dim">
           auto-discovered from source on link / refresh
         </span>
       </div>
       {link.requiredSecretKeyIds.length === 0 ? (
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           The source workspace doesn&apos;t declare any vault slots. If you expected to see one
           here, push the source workspace and click <em>Refresh ledger</em> on this card.
         </p>
@@ -2531,7 +2528,7 @@ function DedicatedTokenForm({
         className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
       />
       {error && (
-        <p className="text-[0.625rem] text-danger" role="alert">
+        <p className="text-xs text-danger" role="alert">
           {error}
         </p>
       )}

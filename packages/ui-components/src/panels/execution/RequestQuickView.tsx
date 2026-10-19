@@ -193,9 +193,7 @@ export function RequestQuickView({
                 )}
               {request.body.type === 'graphql' && request.body.variables && (
                 <>
-                  <p className="mt-2 text-[0.625rem] uppercase tracking-wider text-text-dim">
-                    Variables
-                  </p>
+                  <p className="mt-2 text-xs uppercase tracking-wider text-text-dim">Variables</p>
                   <pre className="max-h-32 overflow-auto rounded-sm border border-border bg-card p-2 font-mono text-[0.625rem] text-text-primary">
                     {request.body.variables}
                   </pre>
@@ -211,7 +209,7 @@ export function RequestQuickView({
                 />
               )}
               {request.body.type === 'binary' && (
-                <p className="text-[0.6875rem] text-text-muted">
+                <p className="text-xs text-text-muted">
                   Binary attachment ({request.body.attachment?.slotId ?? 'none'})
                 </p>
               )}
@@ -277,9 +275,7 @@ function KvList({ rows, label }: { rows: Array<[string, string]>; label?: string
   if (rows.length === 0) return null;
   return (
     <div className="flex flex-col">
-      {label && (
-        <p className="mt-1 text-[0.625rem] uppercase tracking-wider text-text-dim">{label}</p>
-      )}
+      {label && <p className="mt-1 text-xs uppercase tracking-wider text-text-dim">{label}</p>}
       {rows.map(([k, v], i) => (
         <div key={`${k}-${i}`} className={ROW}>
           <span className={KEY}>{k || '(empty)'}</span>

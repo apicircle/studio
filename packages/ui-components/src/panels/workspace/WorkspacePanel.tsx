@@ -60,7 +60,9 @@ import { HOST_BASE_URL_FIELD, isHostBaseUrlMissing } from '../../store/hostBaseU
 import { useHostSelection } from '../../hooks/useHostSelection';
 import { useLazyListWindow } from '../../hooks/useLazyListWindow';
 import { Badge } from '../../primitives/Badge';
+import { Button } from '../../primitives/Button';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
 import { PushSecretsDialog } from './PushSecretsDialog';
@@ -81,6 +83,7 @@ import {
   type BranchChangeSource,
 } from '../../layout/branchChanges';
 import { UnpushedChangesList } from './UnpushedChangesList';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => {
@@ -125,9 +128,7 @@ export function WorkspacePanel() {
       </header>
 
       <section>
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          Identity
-        </h2>
+        <SectionHeading className="mb-2">Identity</SectionHeading>
         <label htmlFor="workspace-name-input" className="block text-xs text-text-muted">
           Workspace name
         </label>
@@ -147,17 +148,13 @@ export function WorkspacePanel() {
         {/* "Git source", not "GitHub Connection": the session below can belong to
             any registered host, and a heading naming GitHub over a Bitbucket
             account told the user their connection was something it was not. */}
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          Git source
-        </h2>
+        <SectionHeading className="mb-2">Git source</SectionHeading>
         {isLocalOnly ? <NoSessionCard /> : <SessionCard />}
       </section>
 
       {!isLocalOnly && (
         <section>
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-            Repo &amp; Working Branch
-          </h2>
+          <SectionHeading className="mb-2">Repo &amp; Working Branch</SectionHeading>
           {connectedRepo ? (
             <RepoCard locked={repoLocked} />
           ) : onlyLockedSessions ? (
@@ -175,9 +172,7 @@ export function WorkspacePanel() {
           gate is the only thing that hides it. */}
       {isWorkspaceSharingEnabled() && (
         <section>
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-            Releases
-          </h2>
+          <SectionHeading className="mb-2">Releases</SectionHeading>
           <ReleasesCard />
         </section>
       )}
@@ -220,16 +215,14 @@ function ReleasesCard() {
           Publish release
         </button>
       </div>
-      <p className="mb-3 text-[0.6875rem] text-text-dim">
+      <p className="mb-3 text-xs text-text-dim">
         Each release is a published version of this workspace that linked consumers can pin to.
         Every entry is fingerprinted with a SHA-256 of the workspace contents at publish time so
         consumers can verify what they&apos;re pulling matches what you released.
       </p>
 
       {sortedVersions.length === 0 ? (
-        <p className="text-[0.6875rem] text-text-dim">
-          No releases yet. Publish v0.1.0 to get started.
-        </p>
+        <p className="text-xs text-text-dim">No releases yet. Publish v0.1.0 to get started.</p>
       ) : (
         <ul className="space-y-1.5">
           {sortedVersions.map((v) => (
@@ -282,9 +275,9 @@ function ReleaseRow({
         </span>
       </div>
       {entry.notes && (
-        <p className="mt-1 whitespace-pre-wrap text-[0.6875rem] text-text-muted">{entry.notes}</p>
+        <p className="mt-1 whitespace-pre-wrap text-xs text-text-muted">{entry.notes}</p>
       )}
-      <p className="mt-1 font-mono text-[0.625rem] text-text-dim" title={entry.workspaceSnapshot}>
+      <p className="mt-1 font-mono text-xs text-text-dim" title={entry.workspaceSnapshot}>
         snapshot {entry.workspaceSnapshot.slice(0, 12)}…
       </p>
       <div className="mt-1.5 flex gap-2">
@@ -469,13 +462,13 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
-          <p className="rounded-sm border border-border-subtle bg-surface p-2 text-[0.6875rem] leading-snug text-text-dim">
+          <p className="rounded-sm border border-border-subtle bg-surface p-2 text-xs leading-snug text-text-dim">
             Publish writes the version + notes to <code>workspace.json</code> and pushes to your
             working branch. To create a Git tag (or a GitHub Release) for this version, merge the PR
             first, then use <strong>Release &amp; topics</strong> on the Repo card — that path tags{' '}
             <code>main</code>&apos;s commit, not the unmerged working branch.
           </p>
-          {validation && <p className="text-[0.6875rem] text-warning">{validation}</p>}
+          {validation && <p className="text-xs text-warning">{validation}</p>}
           {error && (
             <p className="text-xs text-danger" role="alert">
               {error}
@@ -610,7 +603,7 @@ function ConflictResolverModal() {
             </p>
           </div>
         ) : (
-          <p className="text-[0.6875rem] text-text-dim">
+          <p className="text-xs text-text-dim">
             Local and remote both edited the entries below. Pick a side for each one before merging.
             Cancel keeps the local doc untouched.
           </p>
@@ -783,7 +776,7 @@ function NoSessionCard() {
         No Git source connected
       </div>
       <p className="mb-3 text-xs text-text-muted">
-        You&apos;re working in local-only mode. All changes live in IndexedDB and are never pushed
+        You&apos;re working in local-only mode. All changes stay on this device and are never pushed
         anywhere. Connect a Git host to enable push-to-save and pull-request creation.
       </p>
       {multiHost ? (
@@ -883,7 +876,7 @@ function SessionCard() {
       </dl>
       {session.canCreatePullRequests === false &&
         (host === 'github' ? (
-          <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+          <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
             This token can&apos;t create pull requests. Push will work; PR creation from the app
             will fail until the token is updated with the <code>pull_request</code> permission
             (fine-grained PATs) or the full <code>repo</code> scope (classic PATs).
@@ -891,7 +884,7 @@ function SessionCard() {
         ) : (
           // That permission and that scope are GitHub's names. Another host has
           // its own, and the vault lists them beside the session it manages.
-          <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+          <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
             This token can&apos;t create pull requests. Push will work; PR creation from the app
             will fail until the token is updated. Secret Vault → Sessions lists the token scopes{' '}
             {GIT_HOST_LABELS[host]} needs.
@@ -1082,7 +1075,7 @@ function ConnectRepoForm() {
       {otherHostConnectable && hosts.length === 1 && (
         // One session, so no picker — but a multi-host build should still say
         // how to reach the other hosts, or the missing picker reads as a bug.
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Repos are listed through your {GIT_HOST_LABELS[host]} session. To connect a repo on
           another host, connect that host under Secret Vault → Sessions first.
         </p>
@@ -1094,7 +1087,7 @@ function ConnectRepoForm() {
         // only connecting it again can supply it.
         <p
           role="status"
-          className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning"
+          className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning"
         >
           Your {GIT_HOST_LABELS[host]} session has no {missingServer.label} saved, so its repos
           cannot be reached. Disconnect it under Secret Vault → Sessions, then connect again and
@@ -1114,22 +1107,24 @@ function ConnectRepoForm() {
                 if (e.key === 'Enter' && !submitting) void submitManual();
               }}
             />
-            <button
-              type="button"
-              onClick={() => void submitManual()}
-              disabled={submitting || !value.trim()}
-              aria-busy={submitting || undefined}
-              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-            >
-              {submitting && <BrandLoader size="xs" />}
-              {submitting ? 'Verifying…' : 'Connect repo'}
-            </button>
+            <DisabledReason reason={value.trim() ? null : 'Type the repository first.'}>
+              <button
+                type="button"
+                onClick={() => void submitManual()}
+                disabled={submitting || !value.trim()}
+                aria-busy={submitting || undefined}
+                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              >
+                {submitting && <BrandLoader size="xs" />}
+                {submitting ? 'Verifying…' : 'Connect repo'}
+              </button>
+            </DisabledReason>
           </div>
           {REPO_HINT[host] && (
             // Only Azure DevOps has one: it is the sole host where part of the
             // coordinate lives in a DIFFERENT field, which no rejection message
             // can teach you after the fact.
-            <p className="text-[0.6875rem] text-text-muted">{REPO_HINT[host]}</p>
+            <p className="text-xs text-text-muted">{REPO_HINT[host]}</p>
           )}
         </div>
       ) : (
@@ -1205,14 +1200,14 @@ function ConnectRepoForm() {
             !loadingRepos &&
             filteredRepos.length === 0 &&
             filter.trim().length > 0 && (
-              <p className="mt-1 text-[0.6875rem] text-text-dim">No repos match.</p>
+              <p className="mt-1 text-xs text-text-dim">No repos match.</p>
             )}
           {reposError && (
-            <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
+            <p className="mt-1 text-xs text-danger" role="alert">
               {reposError}
             </p>
           )}
-          {submitting && <p className="mt-1 text-[0.6875rem] text-text-dim">Verifying…</p>}
+          {submitting && <p className="mt-1 text-xs text-text-dim">Verifying…</p>}
         </div>
       )}
 
@@ -1221,7 +1216,7 @@ function ConnectRepoForm() {
           {error}
         </p>
       )}
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Pick from your accessible repos, or use Manual entry for repos that don&apos;t show up. We
         read the repo with your stored token to validate access and its default branch. Nothing is
         written.
@@ -1357,7 +1352,7 @@ function RepoCard({ locked }: { locked: boolean }) {
         !repo.pushable &&
         !locked &&
         (repoHost === 'github' ? (
-          <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+          <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
             You don&apos;t have push access to this repo. Working branches can&apos;t be created.
             Reconnect with a token that grants push access (typically the <code>repo</code> scope on
             a token owned by a collaborator).
@@ -1365,7 +1360,7 @@ function RepoCard({ locked }: { locked: boolean }) {
         ) : (
           // The `repo` scope is GitHub's name. Another host has its own, and the
           // vault lists them beside the session it manages.
-          <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+          <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
             You don&apos;t have push access to this repo. Working branches can&apos;t be created.
             Reconnect with a token that grants push access, from an account that can write to this
             repo. Secret Vault → Sessions lists the token scopes {repoHostLabel} needs.
@@ -1505,6 +1500,15 @@ function BranchCard() {
   // during push, etc.). Each individual handler still flips its own flag,
   // but the disabled gate uses the union.
   const anyInFlight = pushing || refreshing || syncing || branchPushInFlight;
+  // Why the card's other buttons wait. The action in flight wears its own
+  // "…ing" label; this is what the rest say while it runs.
+  const busyReason = refreshing
+    ? 'Wait for the pull to finish.'
+    : syncing
+      ? 'Wait for the attachments to finish downloading.'
+      : pushing || branchPushInFlight
+        ? 'Wait for the push to finish.'
+        : null;
 
   const unpushed = useMemo(
     () =>
@@ -1561,7 +1565,7 @@ function BranchCard() {
       const result = await refreshWorkspace();
       switch (result.status) {
         case 'no-remote':
-          setRefreshNotice('No workspace.json on the working branch yet — push first.');
+          setRefreshNotice('Nothing on the working branch to pull yet — push first.');
           break;
         case 'up-to-date':
           setRefreshNotice(UP_TO_DATE_NOTICE);
@@ -1589,7 +1593,7 @@ function BranchCard() {
           break;
       }
     } catch (err) {
-      const view = formatGitError(err, 'Refresh', repoHost);
+      const view = formatGitError(err, 'Pull', repoHost);
       if (view.action.kind === 'request-scopes') {
         surfaceMissingScope(view.action.missingScopes);
       } else {
@@ -1703,6 +1707,15 @@ function BranchCard() {
   // has landed.
   const prCapability = session?.canCreatePullRequests ?? null;
   const canCreatePr = branch.lastPushedSha !== null && !prOpen && prCapability !== false;
+  const prBlocker =
+    branch.lastPushedSha === null
+      ? 'Push to save before opening a pull request.'
+      : prCapability === false
+        ? `This ${GIT_HOST_LABELS[repoHost]} token can’t open pull requests. Update it in the Secret Vault, or open one on ${GIT_HOST_LABELS[repoHost]}.`
+        : busyReason;
+  // One main action on the card: push while there is something to push, then
+  // open the pull request, then nothing — the branch is where it should be.
+  const mainAction = !pushClean ? 'push' : canCreatePr ? 'pr' : null;
 
   return (
     <div className="rounded-sm border border-border bg-card p-3">
@@ -1710,11 +1723,11 @@ function BranchCard() {
         <GitBranch size={12} className="text-accent" aria-hidden="true" />
         <span className="font-mono text-text-primary">{branch.name}</span>
       </div>
-      <p className="text-[0.6875rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Created from <code>{branch.baseBranch}</code> at <code>{branch.headSha.slice(0, 7)}</code>{' '}
         on {new Date(branch.createdAt).toLocaleString()}.
       </p>
-      <p className="mt-1 text-[0.6875rem] text-text-dim">
+      <p className="mt-1 text-xs text-text-dim">
         Last pushed:{' '}
         {branch.lastPushedSha ? (
           <code className="text-text-primary">{branch.lastPushedSha.slice(0, 7)}</code>
@@ -1724,12 +1737,9 @@ function BranchCard() {
         {isClean && branch.lastPushedSha && <span className="ml-1 text-success">· up to date</span>}
       </p>
       {lastPulledAt && (
-        <p
-          className="text-[0.6875rem] text-text-dim"
-          title={new Date(lastPulledAt).toLocaleString()}
-        >
+        <p className="text-xs text-text-dim" title={new Date(lastPulledAt).toLocaleString()}>
           Last pulled: <span className="text-text-primary">{formatRelativeTime(lastPulledAt)}</span>
-          . Refresh to pull remote changes.
+          . Pull to bring in remote changes.
         </p>
       )}
       <UnpushedChangesStrip
@@ -1754,6 +1764,7 @@ function BranchCard() {
           count: branchPushCount,
           busy: pushing || branchPushInFlight,
           disabled: anyInFlight,
+          busyReason,
           message,
           onMessageChange: setMessage,
           onPush: () => {
@@ -1795,30 +1806,30 @@ function BranchCard() {
               className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
             >
               <RefreshCw size={10} aria-hidden="true" />
-              Refresh first
+              Pull first
             </button>
           )}
           {errorView?.action.kind === 'reconnect-token' && (
-            <p className="text-[0.6875rem] text-text-dim">
+            <p className="text-xs text-text-dim">
               Open the {GIT_HOST_LABELS[repoHost]} session card above to reconnect.
             </p>
           )}
           {errorView?.partialWrite && (
-            <p className="text-[0.6875rem] text-warning">
-              The write may have partially landed on the remote. Refresh before retrying so a retry
-              doesn&apos;t double-commit.
+            <p className="text-xs text-warning">
+              The write may have partially landed on the remote. Pull before retrying, so a retry
+              doesn&apos;t commit twice.
             </p>
           )}
         </div>
       )}
       {justPushedSha && !error && !prOpen && (
-        <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-success">
+        <p className="mt-2 inline-flex items-center gap-1 text-xs text-success">
           <CheckCircle2 size={11} aria-hidden="true" />
           Pushed <code>{justPushedSha.slice(0, 7)}</code>
         </p>
       )}
       {refreshNoticeText && !error && (
-        <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
+        <p className="mt-2 inline-flex items-center gap-1 text-xs text-text-muted">
           <RefreshCw size={11} aria-hidden="true" />
           {refreshNoticeText}
         </p>
@@ -1886,59 +1897,52 @@ function BranchCard() {
         </div>
       )}
 
-      <p className="mt-2 text-[0.6875rem] text-text-dim">
-        File assets synced from workspace.json are local to this machine. Sync them here, or Studio
-        will ask to download required files before sending a request or running a plan.
+      <p className="mt-2 text-xs text-text-dim">
+        Files your requests attach are kept on each device. Sync attachments downloads the ones this
+        device is missing; otherwise Studio asks before a send or a run that needs one.
       </p>
 
       <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          type="button"
+        <Button
+          variant={mainAction === 'push' ? 'solid' : 'ghost'}
+          leftIcon={<Upload size={11} aria-hidden="true" />}
+          loading={pushing}
+          disabled={anyInFlight}
+          disabledReason={busyReason}
           onClick={() => void onPush()}
-          disabled={anyInFlight}
-          aria-busy={pushing || undefined}
-          className={
-            pushClean
-              ? 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50'
-              : 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50'
-          }
         >
-          {pushing ? <BrandLoader size="xs" /> : <Upload size={11} />}
           {pushing ? 'Pushing…' : 'Push to save'}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          leftIcon={<RefreshCw size={11} aria-hidden="true" />}
+          loading={refreshing}
+          disabled={anyInFlight}
+          disabledReason={busyReason}
+          title="Pulls the working branch and merges its changes in. A conflict opens the resolver."
           onClick={() => void onRefresh()}
-          disabled={anyInFlight}
-          aria-busy={refreshing || undefined}
-          title="Pulls the working branch and reconciles changes. Conflicts open the resolver."
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
-          {refreshing ? <BrandLoader size="xs" /> : <RefreshCw size={11} />}
-          {refreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
-        <button
-          type="button"
+          {refreshing ? 'Pulling…' : 'Pull'}
+        </Button>
+        <Button
+          leftIcon={<Download size={11} aria-hidden="true" />}
+          loading={syncing}
+          disabled={anyInFlight}
+          disabledReason={busyReason}
+          title="Downloads the files this workspace's requests attach that this device does not have yet."
           onClick={() => void onSyncAttachments()}
-          disabled={anyInFlight}
-          aria-busy={syncing || undefined}
-          title="Downloads any attachment blobs referenced by workspace.json that aren't yet in your local IDB."
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
-          {syncing ? <BrandLoader size="xs" /> : <Download size={11} />}
           {syncing ? 'Syncing…' : 'Sync attachments'}
-        </button>
+        </Button>
         {!prOpen && (
-          <button
-            type="button"
-            onClick={() => setPrModalOpen(true)}
+          <Button
+            variant={mainAction === 'pr' ? 'solid' : 'ghost'}
+            leftIcon={<GitPullRequest size={11} aria-hidden="true" />}
             disabled={!canCreatePr || anyInFlight}
-            title={!branch.lastPushedSha ? 'Push to save before opening a PR' : undefined}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+            disabledReason={prBlocker}
+            onClick={() => setPrModalOpen(true)}
           >
-            <GitPullRequest size={11} />
             Create PR
-          </button>
+          </Button>
         )}
         {!pushClean && (
           <button
@@ -1949,16 +1953,18 @@ function BranchCard() {
             {showMessageField ? 'Hide message' : 'Custom commit message'}
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => setConfirmDiscardOpen(true)}
-          disabled={anyInFlight}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-40"
-          aria-label="Discard working branch"
-        >
-          <X size={10} />
-          Discard branch
-        </button>
+        <DisabledReason reason={busyReason}>
+          <button
+            type="button"
+            onClick={() => setConfirmDiscardOpen(true)}
+            disabled={anyInFlight}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-40"
+            aria-label="Discard working branch"
+          >
+            <X size={10} />
+            Discard branch
+          </button>
+        </DisabledReason>
       </div>
 
       <CreatePrModal open={prModalOpen} onClose={() => setPrModalOpen(false)} />
@@ -2034,7 +2040,7 @@ function UnpushedChangesStrip({
   }
   if (summary.total === 0) {
     return (
-      <p className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-success">
+      <p className="mt-1 inline-flex items-center gap-1 text-xs text-success">
         <CheckCircle2 size={11} aria-hidden="true" />
         No unpushed changes — workspace matches the last pull.
       </p>
@@ -2106,7 +2112,7 @@ function UnpushedChangesModal({
   return (
     <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
       <div className="flex flex-col gap-3">
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Diff against {baseLabel}. Push to save commits these changes to the working branch.
         </p>
         <div className="flex gap-2 text-[0.6875rem]">
@@ -2149,6 +2155,8 @@ interface BranchPreviewPush {
   busy: boolean;
   /** Anything else on the card is running, so a push cannot start. */
   disabled: boolean;
+  /** What is running instead, said on the push button while `disabled`. */
+  busyReason: string | null;
   message: string;
   onMessageChange: (next: string) => void;
   onPush: () => void;
@@ -2189,7 +2197,7 @@ function BranchChangesReview({
   return (
     <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
       <div className="flex flex-col gap-4">
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Choose what the next push sends to <code className="text-text-muted">{branch.name}</code>{' '}
           on <code className="text-text-muted">{branch.repoFullName}</code>, by where it was
           changed. A pull request from this branch carries everything pushed to it.
@@ -2226,7 +2234,7 @@ function BranchChangesReview({
               )}
             </div>
             {part.blockedReason && (
-              <p role="status" className="text-[0.6875rem] text-warning">
+              <p role="status" className="text-xs text-warning">
                 Not pushed for now: {part.blockedReason}
               </p>
             )}
@@ -2257,20 +2265,24 @@ function BranchChangesReview({
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={push.onPush}
-            disabled={push.disabled || push.count === 0}
-            aria-busy={push.busy || undefined}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {push.busy ? <BrandLoader size="xs" /> : <Upload size={11} aria-hidden="true" />}
-            {push.busy
-              ? 'Pushing…'
-              : push.count === 0
-                ? 'Nothing to push'
-                : `Push ${push.count} change${push.count === 1 ? '' : 's'}`}
-          </button>
+          {/* "Nothing to push" and "Pushing…" say why on the label; what is
+              left is another of the card's actions still running. */}
+          <DisabledReason reason={push.busy || push.count === 0 ? null : push.busyReason}>
+            <button
+              type="button"
+              onClick={push.onPush}
+              disabled={push.disabled || push.count === 0}
+              aria-busy={push.busy || undefined}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {push.busy ? <BrandLoader size="xs" /> : <Upload size={11} aria-hidden="true" />}
+              {push.busy
+                ? 'Pushing…'
+                : push.count === 0
+                  ? 'Nothing to push'
+                  : `Push ${push.count} change${push.count === 1 ? '' : 's'}`}
+            </button>
+          </DisabledReason>
         </div>
       </div>
     </Modal>
@@ -2383,7 +2395,7 @@ function PRTitleField({ value, onChange }: { value: string; onChange: (next: str
         )}
       />
       {showReason && !result.ok && (
-        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {result.reason}
         </p>
       )}
@@ -2449,7 +2461,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Modal open={open} onClose={onClose} title="Open pull request">
       <div className="space-y-3">
-        <p className="text-[0.6875rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           From <code className="text-text-muted">{branch.name}</code> →{' '}
           <code className="text-text-muted">{branch.baseBranch}</code> on{' '}
           <code className="text-text-muted">{branch.repoFullName}</code>.
@@ -2689,19 +2701,19 @@ function CreateBranchForm() {
       {loadingBranches ? (
         <LoadingState size="sm" title="Loading branches…" />
       ) : branchesError ? (
-        <p className="text-[0.6875rem] text-danger" role="alert">
+        <p className="text-xs text-danger" role="alert">
           {branchesError}
         </p>
       ) : noBranches ? (
         <div className="space-y-2 rounded-sm border border-warning/30 bg-warning/5 p-2.5">
-          <p className="text-[0.6875rem] text-warning">
+          <p className="text-xs text-warning">
             This repo is empty. Seed an initial commit with a scaffold{' '}
             <code className="font-mono">workspace.json</code> on{' '}
             <code className="font-mono">{repo.defaultBranch}</code> — your local content is
             unchanged and lands on the working branch when you push.
           </p>
           {seedError && (
-            <p className="text-[0.6875rem] text-danger" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {seedError}
             </p>
           )}
@@ -2787,11 +2799,11 @@ function CreateBranchForm() {
           {loadingWorkspaces ? (
             <LoadingState size="sm" title="Loading workspaces…" />
           ) : workspacesError ? (
-            <p className="text-[0.6875rem] text-danger" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {workspacesError}
             </p>
           ) : noBranchWorkspaces ? (
-            <p className="text-[0.6875rem] text-text-muted">
+            <p className="text-xs text-text-muted">
               No workspaces on <code className="font-mono">{baseBranch}</code> yet — there is
               nothing to import. Push this workspace to the branch first, or start from this
               workspace.
@@ -2826,7 +2838,7 @@ function CreateBranchForm() {
           {/* The list comes from the base branch's registry alone, so a workspace
               pushed only to a working branch never shows up here. */}
           {!loadingWorkspaces && !workspacesError && (
-            <p id="import-workspace-hint" className="text-[0.6875rem] text-text-dim">
+            <p id="import-workspace-hint" className="text-xs text-text-dim">
               Only workspaces pushed to <code className="font-mono">{baseBranch}</code> are listed.
               To import one that lives on a working branch, choose that branch as the base.
             </p>
@@ -2869,7 +2881,7 @@ function CreateBranchForm() {
         placeholder="apicircle/wb-feature"
         className="h-7 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
       />
-      {validation && <p className="text-[0.6875rem] text-warning">{validation}</p>}
+      {validation && <p className="text-xs text-warning">{validation}</p>}
       {error && (
         <p className="text-xs text-danger" role="alert">
           {error}

@@ -16,6 +16,7 @@ import { collectVariableSuggestions, type VariableSuggestion } from '@apicircle/
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useActiveVariableScope } from '../../editors/useVariableScope';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
 
@@ -194,12 +195,12 @@ export function VariablesDockPanel() {
               return (
                 <section key={src} className="flex flex-col gap-1.5">
                   <header className="flex items-baseline justify-between gap-2">
-                    <h3 className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+                    <SectionHeading as="h3" size="sm">
                       {SOURCE_LABEL[src]}
-                    </h3>
+                    </SectionHeading>
                     <span className="text-[0.625rem] text-text-faint">{list.length}</span>
                   </header>
-                  <p className="text-[0.625rem] text-text-faint">{SOURCE_HINT[src]}</p>
+                  <p className="text-xs text-text-faint">{SOURCE_HINT[src]}</p>
                   <ul className="flex flex-col gap-0.5">
                     {list.map((s) => (
                       <li key={s.key}>
@@ -218,7 +219,7 @@ export function VariablesDockPanel() {
                           </span>
                           {src === 'extracted' && hasKey(heldContext, s.key) && (
                             <span
-                              className="shrink-0 rounded-sm border border-amber/40 px-1 text-[0.5625rem] text-amber"
+                              className="shrink-0 rounded-sm border border-amber/40 px-1 text-[0.625rem] text-amber"
                               title={`Held in memory only: ${heldContext[s.key].reason}. Studio forgets it when it closes.`}
                             >
                               in memory
@@ -248,10 +249,10 @@ export function VariablesDockPanel() {
           <div className="flex items-start gap-2">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber" />
             <div className="flex-1">
-              <p className="text-[0.6875rem] font-medium text-text-primary">
+              <p className="text-xs font-medium text-text-primary">
                 {unresolved.length} unresolved reference{unresolved.length === 1 ? '' : 's'}
               </p>
-              <p className="mt-0.5 break-words text-[0.625rem] text-text-muted">
+              <p className="mt-0.5 break-words text-xs text-text-muted">
                 {unresolved.slice(0, 6).join(', ')}
                 {unresolved.length > 6 ? `, +${unresolved.length - 6} more` : ''}
               </p>

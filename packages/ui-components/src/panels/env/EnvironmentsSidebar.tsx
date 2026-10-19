@@ -17,6 +17,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { downloadTextFile } from '../../primitives/download';
 // Phase 12: lazy wrapper — see editor/ImportModalLazy.tsx for the
 // rationale (parser bundle defer).
 import { ImportModalLazy as ImportModal } from '../editor/ImportModalLazy';
@@ -205,15 +206,11 @@ export function EnvironmentsSidebar() {
   const onExport = (name: string) => {
     const json = exportEnvironment(name);
     if (!json) return;
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${name.replace(/[^a-z0-9-_]+/gi, '_')}.apicircle-env.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadTextFile(
+      `${name.replace(/[^a-z0-9-_]+/gi, '_')}.apicircle-env.json`,
+      json,
+      'application/json',
+    );
   };
 
   const onDragStart = (key: string) => (e: React.DragEvent<HTMLLIElement>) => {
@@ -343,7 +340,7 @@ export function EnvironmentsSidebar() {
                   // `aria-prohibited-attr`; keep the tooltip via title only.
                   <span
                     className="flex h-4 w-4 cursor-grab items-center justify-center text-text-faint hover:text-text-primary active:cursor-grabbing"
-                    title={`Drag ${displayName} to reorder priority`}
+                    title={`Drag ${displayName} to change which environment is checked first`}
                     aria-hidden="true"
                   >
                     <GripVertical size={12} />
@@ -355,9 +352,10 @@ export function EnvironmentsSidebar() {
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => toggleSelected(row.ref)}
-                  aria-label={`${isSelected ? 'Remove' : 'Add'} ${displayName} ${
-                    row.kind === 'linked' ? `(linked from ${row.linkName}) ` : ''
-                  }from global environment layer`}
+                  // One name whatever the state: a checkbox says checked or not itself.
+                  aria-label={`Use ${displayName}${
+                    row.kind === 'linked' ? ` (linked from ${row.linkName})` : ''
+                  } when sending`}
                   className="h-3 w-3 cursor-pointer"
                   style={{ accentColor: 'rgb(var(--accent))' }}
                 />
@@ -382,7 +380,7 @@ export function EnvironmentsSidebar() {
                   >
                     <Link2 size={10} aria-hidden="true" className="shrink-0 text-text-faint" />
                     <span className="truncate">{row.envName}</span>
-                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[0.5625rem] text-text-dim">
+                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[0.625rem] text-text-dim">
                       {row.linkName}
                     </span>
                   </div>
@@ -401,13 +399,13 @@ export function EnvironmentsSidebar() {
                         ? [
                             {
                               id: 'move-up',
-                              label: 'Move up in priority',
+                              label: 'Move up',
                               icon: <ArrowUp size={12} aria-hidden="true" />,
                               onSelect: () => moveByPosition(key, -1),
                             },
                             {
                               id: 'move-down',
-                              label: 'Move down in priority',
+                              label: 'Move down',
                               icon: <ArrowDown size={12} aria-hidden="true" />,
                               onSelect: () => moveByPosition(key, 1),
                             },
@@ -445,10 +443,11 @@ export function EnvironmentsSidebar() {
         })}
       </ul>
 
-      <p className="mt-auto rounded-sm border border-dashed border-border-subtle p-2 text-[0.6875rem] leading-snug text-text-dim">
-        Tick to include in the global priority layer (resolves <code>{'{{NAME}}'}</code> at send
-        time). Drag the handle to reorder. Click a local env to edit its variables; linked envs edit
-        through their <em>Linked environments</em> section.
+      <p className="mt-auto rounded-sm border border-dashed border-border-subtle p-2 text-xs leading-snug text-text-dim">
+        Tick an environment to use it when sending: its variables fill <code>{'{{NAME}}'}</code> in
+        a request. Where two ticked ones set the same variable, the one higher in the list wins.
+        Drag the handle, or use Move up and Move down, to change the order. Click a name to edit its
+        variables.
       </p>
 
       <ConfirmDialog

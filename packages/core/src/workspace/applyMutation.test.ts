@@ -156,6 +156,63 @@ describe('applyMutation - request', () => {
     expect(out.changedIds).toEqual(['r1']);
   });
 
+  it('a request moved into a folder leaves the root list, and one moved to the top level joins it', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: {
+            id: 'root',
+            type: 'root',
+            children: [
+              { kind: 'folder', id: 'f1' },
+              { kind: 'request', id: 'r1' },
+            ],
+          },
+          requests: { r1: makeRequest('r1'), r2: makeRequest('r2', { folderId: 'f1' }) },
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const into = applyMutation(
+      state,
+      { kind: 'request.update', id: 'r1', patch: { folderId: 'f1' } },
+      { now: T1 },
+    );
+    expect(into.next.synced.collections.requests['r1'].folderId).toBe('f1');
+    expect(into.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
+
+    const out = applyMutation(
+      state,
+      { kind: 'request.update', id: 'r2', patch: { folderId: null } },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.tree.children).toEqual([
+      { kind: 'folder', id: 'f1' },
+      { kind: 'request', id: 'r1' },
+      { kind: 'request', id: 'r2' },
+    ]);
+  });
+
+  it('leaves the root list alone for an update that does not move the request', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: { r1: makeRequest('r1') },
+          folders: {},
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, {
+      kind: 'request.update',
+      id: 'r1',
+      patch: { name: 'renamed', folderId: null },
+    });
+    expect(out.next.synced.collections.tree).toBe(state.synced.collections.tree);
+  });
+
   it('returns same state when updating a missing request', () => {
     const state = { synced: makeSynced(), local: makeLocal() };
     const out = applyMutation(state, {
@@ -298,7 +355,32 @@ describe('applyMutation - folder', () => {
     expect(out.next.synced.collections.folders['parent']).toBeUndefined();
     expect(out.next.synced.collections.folders['child'].parentId).toBeNull();
     expect(out.next.synced.collections.requests['r1'].folderId).toBeNull();
-    expect(out.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'child' }]);
+    // Both land on the top level, so both are in the root list, once each.
+    expect(out.next.synced.collections.tree.children).toEqual([
+      { kind: 'folder', id: 'child' },
+      { kind: 'request', id: 'r1' },
+    ]);
+  });
+
+  it('keeps the children of a deleted nested folder out of the root list', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'top' }] },
+          requests: { r1: makeRequest('r1', { folderId: 'mid' }) },
+          folders: {
+            top: makeFolder('top', null),
+            mid: makeFolder('mid', 'top'),
+            leaf: makeFolder('leaf', 'mid'),
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'folder.delete', id: 'mid' }, { now: T1 });
+    expect(out.next.synced.collections.folders['leaf'].parentId).toBe('top');
+    expect(out.next.synced.collections.requests['r1'].folderId).toBe('top');
+    expect(out.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'top' }]);
   });
 
   it('folder.delete is a no-op for unknown ids', () => {
@@ -328,6 +410,26 @@ describe('applyMutation - folder', () => {
       { now: T1 },
     );
     expect(out.next.synced.collections.folders['c'].parentId).toBe('b');
+  });
+
+  it('a folder moved to the top level joins the root list, and one moved into a folder leaves it', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'a' }] },
+          requests: {},
+          folders: { a: makeFolder('a', null), b: makeFolder('b', 'a') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const up = applyMutation(state, { kind: 'folder.move', id: 'b', newParentId: null });
+    expect(up.next.synced.collections.tree.children).toEqual([
+      { kind: 'folder', id: 'a' },
+      { kind: 'folder', id: 'b' },
+    ]);
+    const down = applyMutation(up.next, { kind: 'folder.move', id: 'a', newParentId: 'b' });
+    expect(down.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'b' }]);
   });
 
   it('folder.move is a no-op when the folder is missing', () => {

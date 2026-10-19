@@ -9,6 +9,7 @@ import { AnchoredPopover } from '../../primitives/AnchoredPopover';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { DisabledReason } from '../../primitives/DisabledReason';
 
 /**
  * Imperative toast push — used for fire-and-forget sync writes that we
@@ -125,20 +126,24 @@ export function EnvironmentsPanel() {
         {layerPos >= 0 ? (
           <span
             className="rounded-sm border border-accent/40 bg-accent/5 px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent"
-            title="Position in the global resolver layer"
+            title="The ticked environments are checked in list order; the first that has a variable wins."
           >
-            Layer position {layerPos + 1} of {layered.length}
+            Used when sending · {layerPos + 1} of {layered.length}
           </span>
         ) : (
-          <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-dim">
-            Not in global layer
+          <span
+            className="rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-dim"
+            title="Tick it in the list to use it when sending."
+          >
+            Not used when sending
           </span>
         )}
       </header>
       <p className="text-xs text-text-muted">
-        The resolver walks <span className="text-text-primary">context vars</span> → the global
-        layer (in sidebar order) → <span className="text-text-primary">vault secrets</span> when
-        expanding <code>{'{{NAME}}'}</code> in a request. First match wins.
+        When a request is sent, each <code>{'{{NAME}}'}</code> is filled from the first of these
+        that has it: the request&apos;s own{' '}
+        <span className="text-text-primary">context variables</span>, then the environments ticked
+        in the list, top first, then the <span className="text-text-primary">Secret Vault</span>.
       </p>
       <VariableTable env={env} />
       <LinkedEnvironmentsSection />
@@ -253,7 +258,7 @@ function VariableTable({ env }: VariableTableProps) {
         <Plus size={12} />
         Add variable
       </button>
-      <p className="mt-2 text-[0.6875rem] text-text-dim">
+      <p className="mt-2 text-xs text-text-dim">
         Encrypted values must be bound to a Secret Vault key. The synced workspace stores only the
         key id + label — the actual value lives in your local vault and (for CLI runs) is supplied
         via <code>APICIRCLE_SECRET_&lt;id&gt;</code> env vars or{' '}
@@ -530,7 +535,7 @@ function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
             className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
           />
           {filtered.length === 0 ? (
-            <p className="px-1 py-2 text-[0.6875rem] text-text-dim">
+            <p className="px-1 py-2 text-xs text-text-dim">
               {list.length === 0 ? 'No secret keys yet — create one below.' : 'No matches.'}
             </p>
           ) : (
@@ -596,16 +601,21 @@ function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={() => void submitCreate()}
-              disabled={!newLabel.trim() || busy}
-              aria-busy={busy || undefined}
-              className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-2 text-[0.6875rem] text-text-primary hover:bg-accent/20 disabled:opacity-50"
+            <DisabledReason
+              reason={newLabel.trim() ? null : 'Give the key a label first.'}
+              className="flex-1"
             >
-              {busy && <BrandLoader size="xs" />}
-              {busy ? 'Creating…' : 'Create & bind'}
-            </button>
+              <button
+                type="button"
+                onClick={() => void submitCreate()}
+                disabled={!newLabel.trim() || busy}
+                aria-busy={busy || undefined}
+                className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-2 text-[0.6875rem] text-text-primary hover:bg-accent/20 disabled:opacity-50"
+              >
+                {busy && <BrandLoader size="xs" />}
+                {busy ? 'Creating…' : 'Create & bind'}
+              </button>
+            </DisabledReason>
           </div>
         </div>
       )}

@@ -204,11 +204,19 @@ function applyRequestUpdate(
     createdAt: existing.createdAt,
     updatedAt: now,
   };
+  // A patch that moves the request keeps the root list in step: it joins the
+  // list when it moves to the top level and leaves it when it moves into a
+  // folder. The sidebars draw the top level from that list.
+  const tree =
+    updated.folderId === existing.folderId
+      ? state.synced.collections.tree
+      : placeInTree(state.synced.collections.tree, { kind: 'request', id }, updated.folderId);
   const synced: WorkspaceSynced = {
     ...state.synced,
     collections: {
       ...state.synced.collections,
       requests: { ...state.synced.collections.requests, [id]: updated },
+      tree,
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -285,13 +293,24 @@ function applyFolderDelete(state: WorkspaceState, id: string, now: string): Appl
       requests[rid] = { ...r, folderId: deleted.parentId };
     }
   }
+  let tree = removeTreeChild(state.synced.collections.tree, { kind: 'folder', id });
+  // Children of a top-level folder land on the top level, so they join the
+  // root list; children of a nested one stay nested, under its parent.
+  if (deleted.parentId === null) {
+    for (const f of Object.values(state.synced.collections.folders)) {
+      if (f.parentId === id) tree = placeInTree(tree, { kind: 'folder', id: f.id }, null);
+    }
+    for (const r of Object.values(state.synced.collections.requests)) {
+      if (r.folderId === id) tree = placeInTree(tree, { kind: 'request', id: r.id }, null);
+    }
+  }
   const synced: WorkspaceSynced = {
     ...state.synced,
     collections: {
       ...state.synced.collections,
       folders: reparented,
       requests,
-      tree: removeTreeChild(state.synced.collections.tree, { kind: 'folder', id }),
+      tree,
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -330,6 +349,8 @@ function applyFolderMove(
         ...state.synced.collections.folders,
         [id]: { ...folder, parentId: newParentId },
       },
+      // Into the root list when it moves to the top level, out of it otherwise.
+      tree: placeInTree(state.synced.collections.tree, { kind: 'folder', id }, newParentId),
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -1282,6 +1303,20 @@ function removeTreeChild(
     ...tree,
     children: tree.children.filter((c) => !(c.kind === child.kind && c.id === child.id)),
   };
+}
+
+/**
+ * The root list with `child` in it exactly once when its parent is the top
+ * level (`null`), and not at all when it sits in a folder. Only the top level
+ * is listed: what is inside a folder is read from `parentId` / `folderId`.
+ */
+function placeInTree(
+  tree: FolderNode,
+  child: { kind: 'folder' | 'request'; id: string },
+  parentId: string | null,
+): FolderNode {
+  const without = removeTreeChild(tree, child);
+  return parentId === null ? pushTreeChild(without, child) : without;
 }
 
 // ---------------------------------------------------------------------------

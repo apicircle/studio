@@ -62,14 +62,14 @@ test.describe('Plan-scoped env priority — C9', () => {
       const noOverrideHit = await e2eMock.findLastByPath((p) => p === path);
       expect(noOverrideHit.query.env).toBe('dev-backend');
 
-      // 5. Add prod to plan-level priority order. The PlanEnvPriorityEditor
+      // 5. Add prod to the plan's own environments. The PlanEnvPriorityEditor
       //    renders unprioritized envs as plain "<name>" buttons (with a
       //    leading + icon, not text) at the bottom of the section; the
       //    accessible name is just the env name. Scope the lookup to the
-      //    Plan-level env priority section so it doesn't collide with the
+      //    "Environments for this plan" section so it doesn't collide with the
       //    sidebar plan rows.
       const prioritySection = app.locator('section', {
-        has: app.getByRole('heading', { name: 'Plan-level env priority' }),
+        has: app.getByRole('heading', { name: 'Environments for this plan' }),
       });
       await prioritySection.getByRole('button', { name: 'prod', exact: true }).click();
       // After clicking, prod is in the override list. Run again.

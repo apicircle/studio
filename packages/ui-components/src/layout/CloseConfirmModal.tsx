@@ -160,7 +160,7 @@ function AskingBody({
         ))}
       </ul>
 
-      <p className="text-[0.6875rem]">
+      <p className="text-xs">
         Cancel to keep API Circle open. Stop &amp; close will gracefully stop each mock, release its
         port, and then quit.
       </p>
@@ -200,7 +200,7 @@ function ProgressBody({ progress }: { progress: ProgressPayload }) {
         <p className="text-sm font-medium text-text-primary">
           {fraction >= 1 ? 'Mock servers stopped' : 'Stopping mock servers…'}
         </p>
-        <p className="text-[0.6875rem]">
+        <p className="text-xs">
           {fraction >= 1
             ? 'Finalising shutdown — the window will close in a moment.'
             : `Releasing port for ${completed} of ${total} ${total === 1 ? 'server' : 'servers'}.`}

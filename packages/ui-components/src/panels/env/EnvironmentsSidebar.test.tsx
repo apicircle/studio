@@ -31,7 +31,7 @@ describe('EnvironmentsSidebar', () => {
     expect(synced.environments.items).toHaveProperty('dev');
   });
 
-  it('checkbox adds/removes an env from the global priority layer', async () => {
+  it('the Use … when sending checkbox adds an env to the list used when sending, and takes it out', async () => {
     await renderWithStore(<EnvironmentsSidebar />);
     act(() => {
       useWorkspaceStore.getState().addEnvironment('dev');
@@ -40,15 +40,15 @@ describe('EnvironmentsSidebar', () => {
       useWorkspaceStore.getState().setPriorityOrder([]);
     });
     const list = screen.getByRole('list', { name: 'Environments' });
-    await userEvent.click(
-      within(list).getByRole('checkbox', { name: /Add dev from global environment layer/i }),
-    );
+    const useDev = within(list).getByRole('checkbox', { name: 'Use dev when sending' });
+    expect(useDev).not.toBeChecked();
+    await userEvent.click(useDev);
     expect(useWorkspaceStore.getState().synced!.environments.priorityOrder).toEqual([
       { kind: 'local', name: 'dev' },
     ]);
-    await userEvent.click(
-      within(list).getByRole('checkbox', { name: /Remove dev from global environment layer/i }),
-    );
+    // Its name stays put; its checked state says which way it is.
+    expect(within(list).getByRole('checkbox', { name: 'Use dev when sending' })).toBeChecked();
+    await userEvent.click(within(list).getByRole('checkbox', { name: 'Use dev when sending' }));
     expect(useWorkspaceStore.getState().synced!.environments.priorityOrder).toEqual([]);
   });
 

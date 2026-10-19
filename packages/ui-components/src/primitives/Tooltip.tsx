@@ -138,7 +138,7 @@ export function Tooltip({
             // only its visibility toggles, and it waits off screen while closed.
             className={cn(
               'pointer-events-none w-max max-w-xs rounded-sm border border-border bg-card px-2 py-1',
-              'text-[0.6875rem] leading-snug text-text-primary shadow-md transition-opacity',
+              'text-xs leading-snug text-text-primary shadow-md transition-opacity',
               FLOATING_Z.tooltip,
               open && !placement.anchorHidden ? 'opacity-100' : 'opacity-0',
             )}

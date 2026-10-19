@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Maximize2, Sparkles } from 'lucide-react';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 
@@ -83,23 +84,25 @@ export function SchemaAssertionEditor({
         </span>
         <div className="flex items-center gap-1.5">
           <SchemaValidityPill validity={validity} />
-          <button
-            type="button"
-            onClick={format}
-            disabled={validity.status !== 'ok'}
-            aria-label={`Format schema for ${descriptor}`}
-            title={
-              validity.status === 'ok'
-                ? 'Format JSON'
-                : validity.status === 'empty'
-                  ? 'Nothing to format yet'
-                  : 'Fix invalid JSON to format'
+          <DisabledReason
+            reason={
+              validity.status === 'empty'
+                ? 'There is nothing to format yet.'
+                : 'Fix the JSON first.'
             }
-            className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Sparkles size={11} aria-hidden="true" />
-            Format
-          </button>
+            <button
+              type="button"
+              onClick={format}
+              disabled={validity.status !== 'ok'}
+              aria-label={`Format schema for ${descriptor}`}
+              title={validity.status === 'ok' ? 'Format JSON' : undefined}
+              className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Sparkles size={11} aria-hidden="true" />
+              Format
+            </button>
+          </DisabledReason>
           <button
             type="button"
             onClick={() => setFullscreen(true)}
@@ -117,12 +120,12 @@ export function SchemaAssertionEditor({
       )}
 
       {validity.status === 'error' && (
-        <p role="alert" className="text-[0.625rem] text-danger">
+        <p role="alert" className="text-xs text-danger">
           Not valid JSON — fix it for this assertion to run.
         </p>
       )}
       {validity.status === 'empty' && (
-        <p className="text-[0.625rem] text-text-dim">
+        <p className="text-xs text-text-dim">
           Empty schema matches anything. Write or paste a JSON Schema to constrain the response.
         </p>
       )}

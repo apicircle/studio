@@ -7,6 +7,8 @@ export { Radio } from './Radio';
 export { Tabs, tabPanelProps, type TabDef } from './Tabs';
 export { SchemaView, describeType, type JsonSchemaNode, type SchemaViewProps } from './SchemaView';
 export { Tooltip } from './Tooltip';
+export { DisabledReason } from './DisabledReason';
+export { SectionHeading } from './SectionHeading';
 export {
   FLOATING_Z,
   Z,

@@ -314,8 +314,7 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(screen.getByText(/^Needs the/).textContent).toBe(
       'Needs the Desktop App or the VS Code extension.',
     );
-    expect(screen.getByRole('button', { name: 'Start' })).toHaveAttribute(
-      'title',
+    expect(screen.getByRole('button', { name: 'Start' })).toHaveAccessibleDescription(
       "Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port",
     );
     const links = screen.getAllByRole('link', { name: /Desktop App/ });

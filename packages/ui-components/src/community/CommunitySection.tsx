@@ -122,9 +122,7 @@ export function CommunitySection() {
         </button>
       </div>
 
-      <p className="px-1.5 text-[0.6875rem] leading-snug text-text-dim">
-        API Circle Studio is open source.
-      </p>
+      <p className="px-1.5 text-xs leading-snug text-text-dim">API Circle Studio is open source.</p>
 
       {/*
         When cache.error is non-null and there's no prior cache, we render
@@ -176,22 +174,19 @@ export function CommunitySection() {
       </div>
 
       {cache.error !== null && (
-        <p
-          className="mt-1 flex items-start gap-1 px-1.5 text-[0.625rem] text-text-dim"
-          role="status"
-        >
+        <p className="mt-1 flex items-start gap-1 px-1.5 text-xs text-text-dim" role="status">
           <AlertCircle size={10} aria-hidden="true" className="mt-0.5 shrink-0" />
           <span>{formatError(cache.error, cache.fetchedAt)}</span>
         </p>
       )}
 
       {stale && cache.error === null && cache.fetchedAt !== null && (
-        <p className="mt-1 px-1.5 text-[0.625rem] italic text-text-dim">
+        <p className="mt-1 px-1.5 text-xs italic text-text-dim">
           Updated {formatRelative(cache.fetchedAt)}.
         </p>
       )}
 
-      <p className="mt-1 px-1.5 text-[0.6875rem] leading-snug text-text-muted">
+      <p className="mt-1 px-1.5 text-xs leading-snug text-text-muted">
         Studio helping you ship?{' '}
         <a
           href={GITHUB_STARGAZERS_URL}

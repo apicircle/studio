@@ -806,8 +806,9 @@ function HydrationErrorScreen() {
         title="Reset workspace?"
         description={
           <p>
-            Wipes the existing IndexedDB records and creates a fresh workspace. Every collection,
-            environment, secret, and run history entry is removed. This cannot be undone.
+            Deletes what this device has saved for the workspace and starts a fresh one. Every
+            collection, environment, secret, and run history entry is removed. This cannot be
+            undone.
           </p>
         }
         confirmLabel="Reset workspace"

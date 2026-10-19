@@ -38,6 +38,10 @@ const config: Config = {
         // which of the two a line is.
         'diff-add': 'rgb(var(--diff-add) / <alpha-value>)',
         'diff-del': 'rgb(var(--diff-del) / <alpha-value>)',
+        // The label and the hover fill of a solid accent button
+        // (`Button variant="solid"`), generated per theme by the same script.
+        'on-accent': 'rgb(var(--on-accent) / <alpha-value>)',
+        'accent-hover': 'rgb(var(--accent-hover) / <alpha-value>)',
         purple: 'rgb(var(--purple) / <alpha-value>)',
         blue: 'rgb(var(--blue) / <alpha-value>)',
         green: 'rgb(var(--green) / <alpha-value>)',

@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   RUN_HIDDEN_VALUE,
   type PlanRun,
@@ -405,5 +405,43 @@ describe('HistoryPanel — tab counters', () => {
     const tabs = screen.getAllByRole('tab');
     expect(within(tabs[0]).getByText('(1)')).toBeInTheDocument();
     expect(within(tabs[1]).getByText('(1)')).toBeInTheDocument();
+  });
+});
+
+describe('HistoryPanel — replaying and opening a run', () => {
+  beforeEach(hydrate);
+
+  it('replays a run and opens its request while the request exists', async () => {
+    const replayRequestRun = vi.fn().mockResolvedValue(undefined);
+    seedHistory({
+      requestNames: { 'req-known': 'Get user' },
+      requestRuns: [makeRun({ id: 'run-1', requestId: 'req-known' })],
+    });
+    act(() => useWorkspaceStore.setState({ replayRequestRun }));
+    renderHistory();
+    const replay = screen.getByRole('button', { name: /^Replay request run from/ });
+    expect(replay).toHaveAttribute('title', expect.stringMatching(/^Replay this request/));
+    await userEvent.click(replay);
+    expect(replayRequestRun).toHaveBeenCalledWith('run-1');
+
+    const open = screen.getByRole('button', { name: 'Open source request in Editor' });
+    expect(open).toHaveAttribute('title', 'Open Get user in the Editor');
+    await userEvent.click(open);
+    expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+    expect(useWorkspaceStore.getState().local!.ui.activeRequestId).toBe('req-known');
+  });
+
+  it('says why a run whose request was deleted can be neither replayed nor opened', () => {
+    seedHistory({ requestRuns: [makeRun({ id: 'run-2', requestId: 'gone' })] });
+    renderHistory();
+    const replay = screen.getByRole('button', { name: /^Replay request run from/ });
+    expect(replay).toBeDisabled();
+    expect(replay).toHaveAccessibleDescription(
+      'The request this run came from was deleted, so it cannot be sent again.',
+    );
+    expect(replay).not.toHaveAttribute('title');
+    const open = screen.getByRole('button', { name: 'Open source request in Editor' });
+    expect(open).toBeDisabled();
+    expect(open).toHaveAccessibleDescription('The request this run came from was deleted.');
   });
 });

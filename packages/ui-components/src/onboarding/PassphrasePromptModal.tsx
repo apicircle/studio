@@ -19,6 +19,7 @@
 import { useState } from 'react';
 import { KeyRound, Lock, ShieldCheck } from 'lucide-react';
 import { BrandLoader } from '../primitives/BrandLoader';
+import { DisabledReason } from '../primitives/DisabledReason';
 import { Modal } from '../primitives/Modal';
 import { cn } from '../primitives/cn';
 
@@ -63,6 +64,18 @@ export function PassphrasePromptModal({
   const minOk = !isSetup || passphrase.length >= 12;
   const matchOk = !isSetup || passphrase === confirm;
   const canSubmit = passphrase.length > 0 && minOk && matchOk && !submitting;
+  // What the button waits for, said on it (the hints under the fields only
+  // show once something has been typed there).
+  const blocker =
+    passphrase.length === 0
+      ? 'Enter the passphrase first.'
+      : !minOk
+        ? 'Use at least 12 characters.'
+        : !matchOk
+          ? confirm.length === 0
+            ? 'Type the passphrase again to confirm it.'
+            : 'The two passphrases do not match.'
+          : null;
 
   const submit = async () => {
     setSubmitting(true);
@@ -140,7 +153,7 @@ export function PassphrasePromptModal({
             className={cn(inputClass, 'mt-1')}
           />
           {isSetup && passphrase.length > 0 && !minOk && (
-            <p className="mt-1 text-[0.625rem] text-warning">Use at least 12 characters.</p>
+            <p className="mt-1 text-xs text-warning">Use at least 12 characters.</p>
           )}
         </div>
 
@@ -165,7 +178,7 @@ export function PassphrasePromptModal({
               className={cn(inputClass, 'mt-1')}
             />
             {confirm.length > 0 && !matchOk && (
-              <p className="mt-1 text-[0.625rem] text-danger">Passphrases do not match.</p>
+              <p className="mt-1 text-xs text-danger">Passphrases do not match.</p>
             )}
           </div>
         )}
@@ -186,22 +199,24 @@ export function PassphrasePromptModal({
               Cancel
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!canSubmit}
-            aria-busy={submitting || undefined}
-            className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            {submitting ? <BrandLoader size="xs" /> : <KeyRound size={12} aria-hidden="true" />}
-            {submitting
-              ? isSetup
-                ? 'Setting passphrase…'
-                : 'Unlocking…'
-              : isSetup
-                ? 'Set passphrase'
-                : 'Unlock'}
-          </button>
+          <DisabledReason reason={blocker}>
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!canSubmit}
+              aria-busy={submitting || undefined}
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              {submitting ? <BrandLoader size="xs" /> : <KeyRound size={12} aria-hidden="true" />}
+              {submitting
+                ? isSetup
+                  ? 'Setting passphrase…'
+                  : 'Unlocking…'
+                : isSetup
+                  ? 'Set passphrase'
+                  : 'Unlock'}
+            </button>
+          </DisabledReason>
         </div>
       </div>
     </Modal>

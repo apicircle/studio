@@ -25,13 +25,14 @@ describe('PassphrasePromptModal', () => {
       fireEvent.change(passInput, { target: { value: 'short' } });
       fireEvent.change(confirmInput, { target: { value: 'short' } });
       expect(submit).toBeDisabled();
-      expect(screen.getByText(/at least 12 characters/i)).toBeInTheDocument();
+      // The hint under the field (the button's reason says the same).
+      expect(screen.getByText(/at least 12 characters/i, { selector: 'p' })).toBeInTheDocument();
 
       // Long enough but mismatched confirm → still disabled
       fireEvent.change(passInput, { target: { value: 'long-enough-passphrase' } });
       fireEvent.change(confirmInput, { target: { value: 'different-value-here' } });
       expect(submit).toBeDisabled();
-      expect(screen.getByText(/do not match/i)).toBeInTheDocument();
+      expect(screen.getByText(/do not match/i, { selector: 'p' })).toBeInTheDocument();
 
       // Match → enabled
       fireEvent.change(confirmInput, { target: { value: 'long-enough-passphrase' } });

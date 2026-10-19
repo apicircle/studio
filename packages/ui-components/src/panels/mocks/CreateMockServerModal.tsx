@@ -4,6 +4,7 @@ import type { MockServerSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { BrandLoader } from '../../primitives/BrandLoader';
+import { DisabledReason } from '../../primitives/DisabledReason';
 
 // Standalone "Create mock server" modal. Driven by `mocksCreateModalOpen`
 // in the store so the sidebar's CTA + the empty-state CTA + any other
@@ -152,7 +153,7 @@ export function CreateMockServerModal() {
           </div>
           {result.warnings.length > 0 && (
             <div>
-              <p className="mb-1 text-[0.6875rem] font-medium text-text-muted">
+              <p className="mb-1 text-xs font-medium text-text-muted">
                 {result.warnings.length} warning{result.warnings.length === 1 ? '' : 's'}
               </p>
               <ul className="max-h-48 space-y-1 overflow-y-auto rounded-sm border border-border-subtle bg-card p-2">
@@ -219,7 +220,7 @@ export function CreateMockServerModal() {
           </div>
 
           {tab === 'manual' ? (
-            <p className="text-[0.6875rem] text-text-dim">
+            <p className="text-xs text-text-dim">
               Creates an empty mock server. After it&rsquo;s created, click the{' '}
               <strong className="text-text-primary">+</strong> next to the server in the sidebar to
               add endpoints — you can edit method, path, response body, headers, and rules per
@@ -227,7 +228,7 @@ export function CreateMockServerModal() {
             </p>
           ) : tab === 'asset' ? (
             <div className="space-y-2">
-              <p className="text-[0.6875rem] text-text-dim">
+              <p className="text-xs text-text-dim">
                 Import a spec you&rsquo;ve uploaded to Global Assets as editable endpoints you can
                 modify — re-import from the spec anytime. To run a contract{' '}
                 <strong className="text-text-primary">live</strong> (read-only, always in sync), use{' '}
@@ -241,7 +242,7 @@ export function CreateMockServerModal() {
                     className="mt-0.5 shrink-0 text-warning"
                     aria-hidden="true"
                   />
-                  <p className="text-[0.6875rem] text-text-dim">
+                  <p className="text-xs text-text-dim">
                     No spec assets yet. Upload an OpenAPI/Swagger file under Assets &rarr; Files,
                     then return here.
                   </p>
@@ -266,7 +267,7 @@ export function CreateMockServerModal() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-[0.625rem] text-text-faint">
+                  <p className="text-xs text-text-faint">
                     Endpoints are parsed into an editable table you can modify after creating.
                   </p>
                 </>
@@ -274,14 +275,14 @@ export function CreateMockServerModal() {
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-[0.6875rem] text-text-dim">
+              <p className="text-xs text-text-dim">
                 Paste the spec verbatim. Endpoints are parsed and added to the mock as soon as you
                 create it.
               </p>
               {specKind === 'openapi' && (
                 <div className="flex items-start gap-2 rounded-sm border border-border-subtle bg-card p-2">
                   <Info size={12} className="mt-0.5 shrink-0 text-text-muted" aria-hidden="true" />
-                  <p className="text-[0.6875rem] text-text-dim">
+                  <p className="text-xs text-text-dim">
                     Spec parsing resolves in-document <code className="font-mono">$ref</code>s only,
                     on every surface. A reference to another file or URL is reported as a warning
                     and left unresolved — inline the definition into this document to mock it.
@@ -338,16 +339,26 @@ export function CreateMockServerModal() {
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={() => void onSubmit()}
-              disabled={submitting || !name.trim() || (tab === 'asset' && !assetId)}
-              aria-busy={submitting || undefined}
-              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            <DisabledReason
+              reason={
+                !name.trim()
+                  ? 'Name the mock server first.'
+                  : tab === 'asset' && !assetId
+                    ? 'Pick a spec asset first.'
+                    : null
+              }
             >
-              {submitting ? <BrandLoader size="xs" /> : <Plus size={11} aria-hidden="true" />}
-              {submitting ? 'Creating…' : 'Create mock server'}
-            </button>
+              <button
+                type="button"
+                onClick={() => void onSubmit()}
+                disabled={submitting || !name.trim() || (tab === 'asset' && !assetId)}
+                aria-busy={submitting || undefined}
+                className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              >
+                {submitting ? <BrandLoader size="xs" /> : <Plus size={11} aria-hidden="true" />}
+                {submitting ? 'Creating…' : 'Create mock server'}
+              </button>
+            </DisabledReason>
           </div>
         </div>
       )}

@@ -72,22 +72,22 @@ function ReleaseNoteEntry({ version }: { version: ReleaseVersion }) {
         <span className="font-mono text-sm font-medium text-text-primary">v{version.version}</span>
         <span className="text-text-dim">{formatTimestamp(version.publishedAt)}</span>
         {version.yanked && (
-          <span className="rounded-sm border border-danger/40 bg-danger/5 px-1.5 py-0 text-[0.5625rem] uppercase tracking-wider text-danger">
+          <span className="rounded-sm border border-danger/40 bg-danger/5 px-1.5 py-0 text-[0.625rem] uppercase tracking-wider text-danger">
             yanked
           </span>
         )}
         {version.deprecated && !version.yanked && (
-          <span className="rounded-sm border border-warning/40 bg-warning/5 px-1.5 py-0 text-[0.5625rem] uppercase tracking-wider text-warning">
+          <span className="rounded-sm border border-warning/40 bg-warning/5 px-1.5 py-0 text-[0.625rem] uppercase tracking-wider text-warning">
             deprecated
           </span>
         )}
       </header>
       {version.notes?.trim() ? (
-        <p className="whitespace-pre-wrap rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] leading-relaxed text-text-muted">
+        <p className="whitespace-pre-wrap rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-xs leading-relaxed text-text-muted">
           {version.notes}
         </p>
       ) : (
-        <p className="text-[0.6875rem] italic text-text-dim">No release notes provided.</p>
+        <p className="text-xs italic text-text-dim">No release notes provided.</p>
       )}
     </article>
   );

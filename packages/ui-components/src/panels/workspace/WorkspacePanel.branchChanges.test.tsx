@@ -442,7 +442,7 @@ describe('working-branch card with edition changes', () => {
     await waitFor(() => expect(surfaceMissingScope).toHaveBeenCalledWith(['repo']));
   });
 
-  it("re-reads the sources on Refresh, and one that can't refresh never blocks it", async () => {
+  it("re-reads the sources on Pull, and one that can't refresh never blocks it", async () => {
     const { source } = lensSource(TWO);
     const silent = { ...lensSource(TWO).source, id: 'silent', refresh: undefined };
     await renderCard([source, silent]);
@@ -451,7 +451,7 @@ describe('working-branch card with edition changes', () => {
         refreshWorkspace: vi.fn().mockResolvedValue({ status: 'merged' }),
       }),
     );
-    await userEvent.click(screen.getByRole('button', { name: /^Refresh$/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Pull$/ }));
     expect(source.refresh).toHaveBeenCalledOnce();
   });
 

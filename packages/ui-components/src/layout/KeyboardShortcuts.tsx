@@ -14,7 +14,7 @@ import { useVisibleTabs } from './visibleTabs';
  *   Ctrl/Cmd + 1..9             → Switch to the Nth tab in the top nav, left to right
  *                                 (the tabs on screen: the active mode's, in an edition)
  *   Ctrl/Cmd + K                → Open the Vault tab in the workspace inspector dock
- *   Ctrl/Cmd + Shift + R        → Refresh the working branch (plain Ctrl+R is the browser's reload)
+ *   Ctrl/Cmd + Shift + R        → Pull the working branch (plain Ctrl+R is the browser's reload)
  *   Ctrl/Cmd + N                → New request (only when the Editor panel is active)
  *   Ctrl/Cmd + Shift + = / +    → Increase UI text size by one step
  *   Ctrl/Cmd + Shift + -        → Decrease UI text size by one step
@@ -89,7 +89,7 @@ export function KeyboardShortcuts() {
         return;
       }
 
-      // Refresh the working branch (Ctrl+Shift+R disambiguates from the
+      // Pull the working branch (Ctrl+Shift+R disambiguates from the
       // browser's plain Ctrl+R reload).
       if (e.shiftKey && e.key.toLowerCase() === 'r') {
         e.preventDefault();

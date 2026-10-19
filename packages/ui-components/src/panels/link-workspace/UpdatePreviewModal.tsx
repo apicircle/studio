@@ -177,7 +177,7 @@ function UpdatePreviewModalBody() {
                   {link.pinnedVersion ? <code>v{link.pinnedVersion}</code> : <em>unpinned</em>} and{' '}
                   <code>v{active.preview.toVersion}</code>.
                 </p>
-                <p className="mt-1 text-[0.6875rem] text-text-muted">
+                <p className="mt-1 text-xs text-text-muted">
                   Your cached snapshot already matches the source — likely because you refreshed the
                   link after the version bump. Apply moves the pin to{' '}
                   <code>v{active.preview.toVersion}</code> with no merge needed.
@@ -198,7 +198,7 @@ function UpdatePreviewModalBody() {
                 won't — `local-only` rows keep your override; `both-changed`
                 rows default to keeping your override and let you flip to
                 the source's value per row if you want. */}
-            <p className="text-[0.6875rem] leading-snug text-text-muted">
+            <p className="text-xs leading-snug text-text-muted">
               Your local edits are kept by default. Rows tagged
               <span className="mx-1 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.625rem] text-accent">
                 Your local mods · keep
@@ -253,7 +253,7 @@ function UpdatePreviewModalBody() {
             role="alert"
           >
             <p>{error}</p>
-            <p className="text-[0.6875rem] text-text-muted">
+            <p className="text-xs text-text-muted">
               The store auto-captured a <code>pre-linked-update</code> snapshot before the apply
               started — your workspace can be restored to its prior state from there.
             </p>
@@ -415,7 +415,7 @@ function PreviewRow({
             onClick={() => setShowDiff((v) => !v)}
             aria-expanded={showDiff}
             aria-label={showDiff ? `Hide diff for ${entry.label}` : `Show diff for ${entry.label}`}
-            className="inline-flex h-6 items-center gap-0.5 rounded-sm border border-border bg-card px-1 text-[0.5625rem] text-text-muted hover:border-accent hover:text-accent"
+            className="inline-flex h-6 items-center gap-0.5 rounded-sm border border-border bg-card px-1 text-[0.625rem] text-text-muted hover:border-accent hover:text-accent"
           >
             {showDiff ? (
               <ChevronDown size={9} aria-hidden="true" />
@@ -503,7 +503,7 @@ function DiffSide({
   }, [value]);
   return (
     <div className={`rounded-sm border bg-card p-1.5 ${colorClass}`}>
-      <div className={`mb-1 text-[0.5625rem] font-medium uppercase tracking-wider ${labelColor}`}>
+      <div className={`mb-1 text-[0.625rem] font-medium uppercase tracking-wider ${labelColor}`}>
         {label}
       </div>
       <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-[0.625rem] text-text-primary">

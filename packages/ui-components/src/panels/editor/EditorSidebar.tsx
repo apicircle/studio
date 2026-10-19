@@ -7,6 +7,7 @@ import {
   FileJson,
   FilePlus2,
   Folder as FolderIcon,
+  FolderInput,
   FolderOpen,
   FolderPlus,
   Pencil,
@@ -17,7 +18,7 @@ import {
 import type { KebabMenuItem } from '../../primitives/KebabMenu';
 import type { Folder, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { isNameAvailableInFolder } from '../../store/editorActions';
+import { isNameAvailableInFolder, type CollectionNodeRef } from '../../store/editorActions';
 import { cn } from '../../primitives/cn';
 import { KebabMenu } from '../../primitives/KebabMenu';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
@@ -28,6 +29,7 @@ import { FolderAuthModal } from './FolderAuthModal';
 import { ImportModalLazy as ImportModal } from './ImportModalLazy';
 import { ExportFolderModal } from './ExportFolderModal';
 import { LinkedWorkspaceTreeSection } from './LinkedWorkspaceTreeSection';
+import { MoveToFolderDialog } from './MoveToFolderDialog';
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-http-get',
@@ -57,6 +59,9 @@ export function EditorSidebar() {
   const renameFolder = useWorkspaceStore((s) => s.renameFolder);
   const duplicateRequest = useWorkspaceStore((s) => s.duplicateRequest);
   const duplicateFolder = useWorkspaceStore((s) => s.duplicateFolder);
+  const moveRequest = useWorkspaceStore((s) => s.moveRequest);
+  const moveFolder = useWorkspaceStore((s) => s.moveFolder);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
   const setActiveRequestId = useWorkspaceStore((s) => s.setActiveRequestId);
   const importOpen = useWorkspaceStore((s) => s.importModalOpen);
   const closeImport = useWorkspaceStore((s) => s.closeImportModal);
@@ -64,6 +69,8 @@ export function EditorSidebar() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [authModalFolderId, setAuthModalFolderId] = useState<string | null>(null);
   const [exportFolderId, setExportFolderId] = useState<string | null>(null);
+  // The request or folder whose "Move to…" dialog is open.
+  const [moving, setMoving] = useState<CollectionNodeRef | null>(null);
   // Tracks which node is currently being renamed inline. Keyed as
   // `folder:<id>` or `request:<id>` so a folder and request with the same id
   // (impossible today, but cheap to be explicit) can't collide.
@@ -113,6 +120,29 @@ export function EditorSidebar() {
     if (pendingCreate.kind === 'folder') addFolder(pendingCreate.parentId, trimmed);
     else addRequest(pendingCreate.parentId, trimmed);
     setPendingCreate(null);
+  };
+
+  const commitMove = (node: CollectionNodeRef, destination: string | null) => {
+    const moved =
+      node.kind === 'folder' ? moveFolder(node.id, destination) : moveRequest(node.id, destination);
+    setMoving(null);
+    if (!moved) return;
+    // A move goes through only for a node and a destination that exist, and
+    // these maps are this render's, from before it.
+    const { name } = node.kind === 'folder' ? folders[node.id] : requests[node.id];
+    // Open the way down to where it went, so it is in view.
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      for (let p = destination; p; p = folders[p]?.parentId ?? null) next.add(p);
+      return next;
+    });
+    pushToast({
+      tone: 'success',
+      title:
+        destination === null
+          ? `Moved “${name}” to the top level`
+          : `Moved “${name}” to “${folders[destination].name}”`,
+    });
   };
 
   const toggleFolder = (id: string) => {
@@ -231,7 +261,7 @@ export function EditorSidebar() {
       </div>
 
       {topLevel.length === 0 && !pendingCreate && (
-        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
           {searchQuery ? 'No matching requests.' : 'No requests yet. Create one to start.'}
         </p>
       )}
@@ -267,6 +297,7 @@ export function EditorSidebar() {
             onDuplicateFolder={duplicateFolder}
             onEditFolderAuth={setAuthModalFolderId}
             onExportFolder={setExportFolderId}
+            onMove={setMoving}
             renamingKey={renamingKey}
             onStartRename={setRenamingKey}
             onRenameFolder={(id, name) => {
@@ -308,6 +339,15 @@ export function EditorSidebar() {
       )}
 
       <ExportFolderModal folderId={exportFolderId} onClose={() => setExportFolderId(null)} />
+
+      {synced && (
+        <MoveToFolderDialog
+          synced={synced}
+          node={moving}
+          onClose={() => setMoving(null)}
+          onMove={commitMove}
+        />
+      )}
 
       <ConfirmDialog
         open={pendingRequestDelete !== null}
@@ -417,6 +457,8 @@ interface TreeNodeProps {
   onEditFolderAuth: (folderId: string) => void;
   /** Open the "Export as JSON" modal for the folder. */
   onExportFolder: (folderId: string) => void;
+  /** Open the "Move to…" dialog for a request or a folder. */
+  onMove: (node: CollectionNodeRef) => void;
   renamingKey: string | null;
   onStartRename: (key: string | null) => void;
   onRenameFolder: (id: string, name: string) => void;
@@ -454,6 +496,7 @@ function TreeNode(props: TreeNodeProps) {
     onDuplicateFolder,
     onEditFolderAuth,
     onExportFolder,
+    onMove,
     renamingKey,
     onStartRename,
     onRenameFolder,
@@ -579,6 +622,12 @@ function TreeNode(props: TreeNodeProps) {
                   onSelect: () => onDuplicateFolder(folder.id),
                 },
                 {
+                  id: 'move',
+                  label: 'Move to…',
+                  icon: <FolderInput size={12} aria-hidden="true" />,
+                  onSelect: () => onMove({ kind: 'folder', id: folder.id }),
+                },
+                {
                   id: 'export',
                   label: 'Export as JSON',
                   icon: <FileJson size={12} aria-hidden="true" />,
@@ -691,6 +740,12 @@ function TreeNode(props: TreeNodeProps) {
                 label: 'Duplicate',
                 icon: <Copy size={12} aria-hidden="true" />,
                 onSelect: () => onDuplicateRequest(request.id),
+              },
+              {
+                id: 'move',
+                label: 'Move to…',
+                icon: <FolderInput size={12} aria-hidden="true" />,
+                onSelect: () => onMove({ kind: 'request', id: request.id }),
               },
               {
                 id: 'delete',

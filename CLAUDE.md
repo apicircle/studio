@@ -513,6 +513,13 @@ All 17 `RequestAuth` types are end-to-end functional. Signing primitives
   action in flight (in-flight label plus `aria-busy`). No spinning icons,
   `Loader2`, or bare "Loading…" text. A panel with nothing to show uses
   `EmptyState` with the buttons that fill it.
+- **Buttons, reasons and type:** one `Button variant="solid"` per screen for
+  its main action (its `on-accent` label and `accent-hover` fill are generated
+  per theme by `scripts/gen-status-fg.mjs`); every disabled action says why
+  (`DisabledReason`, or `Button disabledReason`), on hover and keyboard focus,
+  not in a mouse-only `title`; a section's title is `SectionHeading`; a
+  sentence is never under 12px (`text-xs`) — `src/typeScale.test.ts` holds it.
+  See [`docs/architecture/design-system.md`](docs/architecture/design-system.md).
 - **IDs:** `generateId()` from `@apicircle/shared` — never hand-roll IDs.
 - **Tests are co-located:** `foo.ts` ↔ `foo.test.ts` (Vitest). Accessibility is
   covered by axe assertions in the Playwright suite — keep them green.

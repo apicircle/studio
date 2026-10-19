@@ -1,9 +1,10 @@
 import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { BrandLoader } from './BrandLoader';
+import { DisabledReason } from './DisabledReason';
 import { cn } from './cn';
 
-type Variant = 'primary' | 'ghost' | 'danger' | 'subtle';
+type Variant = 'solid' | 'primary' | 'ghost' | 'danger' | 'subtle';
 type Size = 'xs' | 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -18,6 +19,14 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * in-flight wording ("Sending…") as the children while it is set.
    */
   loading?: boolean;
+  /**
+   * Why the button is disabled, shown on hover and on keyboard focus while it
+   * is (`DisabledReason`). `null` while no reason applies. Not shown while
+   * `loading`: the in-flight label already says what is happening.
+   */
+  disabledReason?: string | null;
+  /** Classes for the wrapper `disabledReason` adds, when the button takes part in its row's layout. */
+  reasonClassName?: string;
 }
 
 /**
@@ -25,8 +34,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * deepens on hover. This matches how buttons are actually written across the
  * panels, so a hand-rolled button can be swapped for `<Button>` without the
  * surrounding screen shifting.
+ *
+ * `solid` is the exception, and there is at most one on a screen: the main
+ * action (Send, Run, Push). A fill of the accent itself, labelled in the
+ * theme's `on-accent` and hovering to `accent-hover`, both generated per theme
+ * so the label reads at AA on every one (`scripts/gen-status-fg.mjs`).
  */
 const VARIANT: Record<Variant, string> = {
+  solid:
+    'border border-accent bg-accent text-on-accent hover:border-accent-hover hover:bg-accent-hover',
   primary: 'border border-accent/40 bg-accent/15 text-accent-fg hover:bg-accent/25',
   danger: 'border border-danger/40 bg-danger/15 text-danger-fg hover:bg-danger/25',
   ghost:
@@ -55,12 +71,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     rightIcon,
     loading = false,
     disabled,
+    disabledReason,
+    reasonClassName,
     children,
     ...rest
   },
   ref,
 ) {
-  return (
+  // The brand mark is drawn in the theme's own colours, which a fill of the
+  // accent would swallow: a busy solid button wears the tinted look instead,
+  // which also reads as "working" at a glance.
+  const look = loading && variant === 'solid' ? 'primary' : variant;
+  const button = (
     <button
       // Default to a non-submitting button: inside a <form>, the HTML default of
       // type="submit" silently submits. Callers can still pass type explicitly.
@@ -72,7 +94,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         // A busy button is disabled, but it is not unavailable: keep it at full
         // strength so the loader and the in-flight label stay readable.
         loading && 'disabled:cursor-progress disabled:opacity-100',
-        VARIANT[variant],
+        VARIANT[look],
         SIZE[size],
         className,
       )}
@@ -84,5 +106,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {children}
       {rightIcon}
     </button>
+  );
+  if (disabledReason === undefined) return button;
+  return (
+    <DisabledReason reason={loading ? null : disabledReason} className={reasonClassName}>
+      {button}
+    </DisabledReason>
   );
 });

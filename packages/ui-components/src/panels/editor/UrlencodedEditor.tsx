@@ -32,7 +32,7 @@ export function UrlencodedEditor({ request }: { request: ApiRequest }) {
         keyPlaceholder="Field key"
         valuePlaceholder="Field value"
       />
-      <p className="text-[0.625rem] text-text-dim">
+      <p className="text-xs text-text-dim">
         Sent as <code>application/x-www-form-urlencoded</code> — keys and values are percent-encoded
         automatically. Disabled rows are skipped at send time.
       </p>

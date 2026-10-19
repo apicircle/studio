@@ -22,6 +22,7 @@ import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { MockReadOnlyContext } from './mockReadOnly';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
 import { cn } from '../../primitives/cn';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
 import { Select } from '../../primitives/Select';
 
@@ -322,25 +323,25 @@ function BodyTypePicker({
               : `Status ${status} doesn't support a body.`
             : undefined;
           return (
-            <button
-              key={bt.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              aria-disabled={!enabled}
-              disabled={!enabled}
-              title={tooltip}
-              onClick={() => enabled && onTypeChange(bt.id)}
-              className={
-                !enabled
-                  ? 'rounded-sm border border-border-subtle bg-card px-2 py-0.5 text-[0.625rem] text-text-faint opacity-50 cursor-not-allowed'
-                  : active
-                    ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[0.625rem] font-medium text-accent'
-                    : 'rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary'
-              }
-            >
-              {bt.label}
-            </button>
+            <DisabledReason key={bt.id} reason={tooltip}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-disabled={!enabled}
+                disabled={!enabled}
+                onClick={() => enabled && onTypeChange(bt.id)}
+                className={
+                  !enabled
+                    ? 'rounded-sm border border-border-subtle bg-card px-2 py-0.5 text-[0.625rem] text-text-faint opacity-50 cursor-not-allowed'
+                    : active
+                      ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[0.625rem] font-medium text-accent'
+                      : 'rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary'
+                }
+              >
+                {bt.label}
+              </button>
+            </DisabledReason>
           );
         })}
       </div>
@@ -366,7 +367,7 @@ function BodyContentEditor({
   const readOnly = useContext(MockReadOnlyContext);
   if (body.type === 'none') {
     return (
-      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[0.6875rem] text-text-dim">
+      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-xs text-text-dim">
         No body — runtime returns Content-Length: 0.
       </p>
     );
@@ -423,7 +424,7 @@ function BinaryBodyEditor({
 
   if (!attachmentSlot) {
     return (
-      <p className="rounded-sm border border-dashed border-warning/40 px-2 py-3 text-center text-[0.625rem] text-warning">
+      <p className="rounded-sm border border-dashed border-warning/40 px-2 py-3 text-center text-xs text-warning">
         File uploads aren&rsquo;t supported in this response context yet — only on the
         endpoint&rsquo;s Default Response.
       </p>
@@ -676,7 +677,7 @@ function MultipliersEditor({
       </summary>
       <div className="mt-2 space-y-2">
         {multipliers.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
             No multipliers — server returns the body as-authored.
             {!readOnly &&
               ' Add one to repeat an array inside the response body based on a request value.'}
@@ -778,7 +779,7 @@ function MultipliersEditor({
                   />
                 </div>
                 {m.min !== undefined && m.max !== undefined && m.min > m.max && (
-                  <p className="mt-1 rounded-sm border border-warning/30 bg-warning/5 px-2 py-1 text-[0.625rem] text-warning">
+                  <p className="mt-1 rounded-sm border border-warning/30 bg-warning/5 px-2 py-1 text-xs text-warning">
                     Min ({m.min}) is greater than Max ({m.max}). At runtime, max wins after the min
                     clamp — adjust to avoid surprise.
                   </p>
@@ -789,7 +790,7 @@ function MultipliersEditor({
         )}
         {atCap
           ? multipliers.length > 0 && (
-              <p className="text-[0.625rem] text-text-faint">
+              <p className="text-xs text-text-faint">
                 Limit reached ({MAX_RESPONSE_MULTIPLIERS}). Multiple multipliers are coming soon.
               </p>
             )

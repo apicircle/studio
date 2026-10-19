@@ -394,23 +394,26 @@ export function EditorPanel() {
               Cancel
             </button>
           ) : (
-            <button
-              type="button"
+            // The editor's one main action, so the one solid button on it.
+            <Button
+              variant="solid"
+              size="lg"
               data-tour="send-request"
+              className="text-xs"
+              leftIcon={<Send size={14} aria-hidden="true" />}
               onClick={() =>
                 void (isLinked ? executeLinkedActiveRequest() : executeActiveRequest())
               }
               disabled={sendBlocked}
+              disabledReason="Fix the problems listed below the address before sending."
               title={
                 sendBlocked
-                  ? 'Resolve the validation blockers above before sending.'
+                  ? undefined
                   : 'Sends with the active environment + secrets resolved (Ctrl/Cmd+Enter).'
               }
-              className="inline-flex h-9 items-center gap-2 rounded-sm border border-accent/40 bg-accent/15 px-4 text-xs font-medium text-accent-strong transition-colors hover:bg-accent/25 disabled:opacity-50"
             >
-              <Send size={14} />
               Send
-            </button>
+            </Button>
           )}
         </div>
         {view?.source === 'linked' && <LinkedSourceBanner view={view} />}
@@ -788,11 +791,11 @@ function RequestNameInput({ requestId, initial }: { requestId: string; initial: 
         )}
       />
       {duplicate ? (
-        <p id={noteId} role="alert" className="mt-0.5 px-2 text-[0.6875rem] text-danger">
+        <p id={noteId} role="alert" className="mt-0.5 px-2 text-xs text-danger">
           A request named “{trimmed}” is already in this folder.
         </p>
       ) : kept ? (
-        <p id={noteId} role="status" className="mt-0.5 px-2 text-[0.6875rem] text-text-muted">
+        <p id={noteId} role="status" className="mt-0.5 px-2 text-xs text-text-muted">
           {kept}
         </p>
       ) : null}

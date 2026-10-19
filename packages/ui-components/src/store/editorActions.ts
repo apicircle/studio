@@ -9,6 +9,7 @@ import type {
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
+import type { WorkspacePatch } from '@apicircle/core';
 
 // Pure helpers — no IDB / Zustand dependencies. Each returns a new
 // `WorkspaceSynced` snapshot so callers can wrap them in a single store
@@ -568,6 +569,54 @@ function cloneRequestAuth(auth: RequestAuth): RequestAuth {
   // and copies every field by value. The `as RequestAuth` cast is safe
   // because TS narrows the spread of a union back to the same union.
   return { ...auth };
+}
+
+// --- moving between folders --------------------------------------------------
+
+/** A request or a folder of the collection tree. */
+export interface CollectionNodeRef {
+  kind: 'folder' | 'request';
+  id: string;
+}
+
+/**
+ * Why `node` cannot be moved into `destination` (a folder id, or `null` for the
+ * top level), as a sentence for the row that offers it — or `null` when it can.
+ * The same rules a rename keeps: no two folders, and no two requests, of one
+ * name in one place.
+ */
+export function moveRefusal(
+  synced: WorkspaceSynced,
+  node: CollectionNodeRef,
+  destination: string | null,
+): string | null {
+  const { folders, requests } = synced.collections;
+  const entity = node.kind === 'folder' ? folders[node.id] : requests[node.id];
+  if (!entity) return `This ${node.kind} no longer exists.`;
+  const here =
+    node.kind === 'folder' ? (entity as Folder).parentId : (entity as ApiRequest).folderId;
+  if (here === destination) return `The ${node.kind} is here now.`;
+  if (destination !== null && !folders[destination]) return 'That folder no longer exists.';
+  if (node.kind === 'folder') {
+    // The destination, or any folder above it, is the folder being moved.
+    // Bounded by the folder count so a malformed loop of parents ends.
+    let cursor: string | null = destination;
+    for (let steps = 0; cursor !== null && steps <= Object.keys(folders).length; steps += 1) {
+      if (cursor === node.id) return 'A folder can’t go inside itself.';
+      cursor = folders[cursor]?.parentId ?? null;
+    }
+  }
+  if (!isNameAvailableInFolder(synced, destination, node.kind, entity.name, node.id)) {
+    return `A ${node.kind} named “${entity.name}” is already there.`;
+  }
+  return null;
+}
+
+/** The workspace patch that moves `node` into `destination`, for `applyMutation`. */
+export function movePatch(node: CollectionNodeRef, destination: string | null): WorkspacePatch {
+  return node.kind === 'request'
+    ? { kind: 'request.update', id: node.id, patch: { folderId: destination } }
+    : { kind: 'folder.move', id: node.id, newParentId: destination };
 }
 
 // --- internal helpers --------------------------------------------------------

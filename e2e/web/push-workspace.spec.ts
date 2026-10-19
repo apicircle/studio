@@ -351,7 +351,7 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
         app.getByRole('button', { name: /Show unpushed changes preview/ }),
       ).toBeVisible();
 
-      await app.getByRole('button', { name: /^Refresh$/ }).click();
+      await app.getByRole('button', { name: /^Pull$/ }).click();
       // The remote matches, so the refresh makes it the last-pulled baseline
       // and nothing is left unpushed. The notice counts after the refresh, so
       // it agrees with the strip. The refresh path resolves several mocked
@@ -400,7 +400,7 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
       });
       await mockWorkspaceFetch(app, 'me/api', remoteSynced);
 
-      await app.getByRole('button', { name: /^Refresh$/ }).click();
+      await app.getByRole('button', { name: /^Pull$/ }).click();
       // Conflict resolver opens.
       const resolver = app.getByRole('dialog', { name: /Resolve conflicts/ });
       await expect(resolver).toBeVisible();

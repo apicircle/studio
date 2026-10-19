@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Download,
   ExternalLink,
   EyeOff,
   Layers,
@@ -17,9 +16,11 @@ import { requestRunToExecutionResult } from '@apicircle/core';
 import { useWorkspaceStore, type HistoryUiState } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { cn } from '../../primitives/cn';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { ResponseViewer } from '../editor/ResponseViewer';
 import { SnapshotsTimeline } from './SnapshotsTimeline';
 import { useState } from 'react';
+import { SectionHeading } from '../../primitives/SectionHeading';
 
 type StatusBucket = 'ok' | '4xx' | '5xx' | 'error';
 
@@ -124,7 +125,7 @@ export function HistoryPanel() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-border-subtle px-6 py-3">
           <h1 className="text-lg font-medium text-text-primary">History</h1>
-          <p className="text-[0.6875rem] text-text-dim">Local-only — never pushed to Git.</p>
+          <p className="text-xs text-text-dim">Local-only — never pushed to Git.</p>
           <div className="ml-auto">
             {
               tab === 'requests' ? (
@@ -374,7 +375,7 @@ function RequestRunList({
               // the chip's bounding box.
               className="flex items-center gap-2 py-2"
             >
-              <span className="inline-flex items-center rounded-sm border border-border bg-card px-2 py-0.5 text-[0.5625rem] font-medium uppercase tracking-wider text-text-muted">
+              <span className="inline-flex items-center rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] font-medium uppercase tracking-wider text-text-muted">
                 {item.label}
               </span>
               <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
@@ -441,38 +442,40 @@ function RequestRunList({
                   {new Date(run.startedAt).toLocaleTimeString()}
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => void replayRequestRun(run.id)}
-                disabled={!r}
-                aria-label={`Replay request run from ${new Date(run.startedAt).toLocaleString()}`}
-                title={
-                  r
-                    ? 'Replay this request — re-fires the source request as it exists today'
-                    : 'Source request deleted — cannot replay'
-                }
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-dim"
+              <DisabledReason
+                reason={'The request this run came from was deleted, so it cannot be sent again.'}
               >
-                <RotateCw size={11} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!r) return;
-                  setActiveRequestId(run.requestId);
-                  setActivePanel('editor');
-                }}
-                disabled={!r}
-                aria-label="Open source request in Editor"
-                title={
-                  r
-                    ? `Open ${r.name ?? 'source request'} in the Editor`
-                    : 'Source request deleted — cannot open in Editor'
-                }
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-dim"
-              >
-                <ExternalLink size={11} aria-hidden="true" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => void replayRequestRun(run.id)}
+                  disabled={!r}
+                  aria-label={`Replay request run from ${new Date(run.startedAt).toLocaleString()}`}
+                  title={
+                    r
+                      ? 'Replay this request — re-fires the source request as it exists today'
+                      : undefined
+                  }
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-dim"
+                >
+                  <RotateCw size={11} aria-hidden="true" />
+                </button>
+              </DisabledReason>
+              <DisabledReason reason={'The request this run came from was deleted.'}>
+                <button
+                  type="button"
+                  // Disabled while the request is gone (`!r`), so it can only run with one.
+                  onClick={() => {
+                    setActiveRequestId(run.requestId);
+                    setActivePanel('editor');
+                  }}
+                  disabled={!r}
+                  aria-label="Open source request in Editor"
+                  title={r ? `Open ${r.name} in the Editor` : undefined}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-dim"
+                >
+                  <ExternalLink size={11} aria-hidden="true" />
+                </button>
+              </DisabledReason>
               <button
                 type="button"
                 onClick={() => setPendingDelete(run)}
@@ -547,10 +550,8 @@ function RequestRunDetail({ run }: { run: RequestRun }) {
             {run.requestBodyPreview && <BodyPreview text={run.requestBodyPreview} />}
           </DetailColumnBody>
         </DetailColumn>
+        {/* The viewer's own Copy / Save / Raw act on the stored body. */}
         <DetailColumn title={`Response${run.responseTruncated ? ' (body truncated)' : ''}`}>
-          <div className="flex justify-end">
-            {run.responseBodyPreview && <DownloadResponseButton run={run} />}
-          </div>
           <div className="h-96">
             <ResponseViewer
               result={requestRunToExecutionResult(run)}
@@ -580,9 +581,9 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 function DetailColumn({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2 rounded-sm border border-border-subtle bg-card p-3">
-      <h3 className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+      <SectionHeading as="h3" size="sm">
         {title}
-      </h3>
+      </SectionHeading>
       {children}
     </section>
   );
@@ -602,11 +603,11 @@ function DetailColumnBody({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <p className="text-[0.625rem] uppercase tracking-wider text-text-dim">{label}</p>
+        <p className="text-xs uppercase tracking-wider text-text-dim">{label}</p>
         {actions}
       </div>
       {empty ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-[0.6875rem] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-xs text-text-dim">
           (empty)
         </p>
       ) : (
@@ -614,58 +615,6 @@ function DetailColumnBody({
       )}
     </div>
   );
-}
-
-function DownloadResponseButton({ run }: { run: RequestRun }) {
-  const onClick = () => {
-    // Pick a best-effort filename + extension from the bodyKind + the
-    // Content-Type header. A fallback to `.txt` keeps the file readable.
-    const extension = pickExtension(run.responseBodyKind, run.responseHeaders);
-    const safeStamp = run.startedAt.replace(/[:.]/g, '-');
-    const filename = `apicircle-${run.method.toLowerCase()}-${safeStamp}.${extension}`;
-    const blob = new Blob([run.responseBodyPreview], {
-      type: run.responseHeaders['content-type'] ?? 'text/plain',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={
-        run.responseTruncated
-          ? 'Body was truncated for storage — download what we kept'
-          : 'Download the response body to a file'
-      }
-      aria-label="Download response body"
-      className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
-    >
-      <Download size={10} />
-      Download
-    </button>
-  );
-}
-
-function pickExtension(
-  kind: RequestRun['responseBodyKind'],
-  headers: Record<string, string>,
-): string {
-  if (kind === 'json') return 'json';
-  if (kind === 'binary') return 'bin';
-  const ct = headers['content-type'] ?? '';
-  if (ct.includes('xml')) return 'xml';
-  if (ct.includes('html')) return 'html';
-  if (ct.includes('csv')) return 'csv';
-  if (ct.includes('javascript')) return 'js';
-  if (ct.includes('yaml')) return 'yaml';
-  return 'txt';
 }
 
 /**
@@ -677,7 +626,7 @@ function HiddenSecretsNote({ className }: { className?: string }) {
     <p
       role="note"
       className={cn(
-        'flex items-start gap-1.5 rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted',
+        'flex items-start gap-1.5 rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-xs text-text-muted',
         className,
       )}
     >
@@ -782,7 +731,7 @@ function PlanRunList({
               // the chip's bounding box.
               className="flex items-center gap-2 py-2"
             >
-              <span className="inline-flex items-center rounded-sm border border-border bg-card px-2 py-0.5 text-[0.5625rem] font-medium uppercase tracking-wider text-text-muted">
+              <span className="inline-flex items-center rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] font-medium uppercase tracking-wider text-text-muted">
                 {item.label}
               </span>
               <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
@@ -931,9 +880,9 @@ function PlanRunRow({
       </div>
       {isOpen && (
         <div className="border-t border-border-subtle bg-surface p-3 text-xs">
-          <h4 className="mb-1.5 text-[0.625rem] uppercase tracking-wider text-text-dim">
+          <SectionHeading as="h4" size="sm" className="mb-1.5">
             Per-step results ({total})
-          </h4>
+          </SectionHeading>
           <ul className="flex flex-col gap-1.5">
             {run.steps.map((step, i) => {
               const childRun = runsById.get(step.requestRunId);

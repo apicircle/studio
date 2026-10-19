@@ -8,6 +8,7 @@ import { JsonPathPicker } from './JsonPathPicker';
 import { SchemaAssertionEditor } from './SchemaAssertionEditor';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
+import { DisabledReason } from '../../primitives/DisabledReason';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
 import { JSON_TYPES, opChangePatch, kindChangePatch } from './assertionOps';
 
@@ -144,22 +145,28 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
               className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs"
             />
             {a.kind === 'json-path' && (
-              <button
-                type="button"
-                onClick={() => setPickerForAssertionId(a.id)}
-                disabled={!lastRunBody || lastRunBodyKind !== 'json'}
-                aria-label={`Pick JSON path for assertion ${i + 1}`}
-                title={
+              <DisabledReason
+                reason={
                   !lastRunBody
-                    ? 'Send the request first to capture a response'
-                    : lastRunBodyKind !== 'json'
-                      ? 'Last response is not JSON'
-                      : 'Pick a JSON path from the last response'
+                    ? 'Send the request first to capture a response.'
+                    : 'The last response is not JSON.'
                 }
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
               >
-                <Crosshair size={12} />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setPickerForAssertionId(a.id)}
+                  disabled={!lastRunBody || lastRunBodyKind !== 'json'}
+                  aria-label={`Pick JSON path for assertion ${i + 1}`}
+                  title={
+                    !lastRunBody || lastRunBodyKind !== 'json'
+                      ? undefined
+                      : 'Pick a JSON path from the last response'
+                  }
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+                >
+                  <Crosshair size={12} />
+                </button>
+              </DisabledReason>
             )}
           </div>
         ) : null;
@@ -370,7 +377,7 @@ function ExpectedInput({
         )}
       />
       {(error || targetError) && (
-        <p role="alert" className="mt-0.5 text-[0.625rem] text-danger">
+        <p role="alert" className="mt-0.5 text-xs text-danger">
           {error ?? targetError}
         </p>
       )}

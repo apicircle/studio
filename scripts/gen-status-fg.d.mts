@@ -15,6 +15,10 @@ export const DIFF_TINT_FLOOR: number;
 export const DIFF_TINT_TARGET: number;
 export const DIFF_CODE_MIN_CONTRAST: number;
 export const DIFF_NUMBER_MIN_CONTRAST: number;
+export const ON_ACCENT_MIN_CONTRAST: number;
+export const ACCENT_HOVER_FLOOR: number;
+export const ACCENT_HOVER_CEILING: number;
+export const ACCENT_HOVER_TARGET: number;
 export function contrast(a: readonly number[], b: readonly number[]): number;
 export function composite(fg: readonly number[], bg: readonly number[], alpha: number): number[];
 export function difference(a: readonly number[], b: readonly number[]): number;
@@ -29,4 +33,10 @@ export function solveDiffTint(
   code: readonly number[],
   number: readonly number[],
 ): number[];
+export function solveOnAccent(
+  accent: readonly number[],
+  surface: readonly number[],
+  text: readonly number[],
+): number[];
+export function solveAccentHover(accent: readonly number[], onAccent: readonly number[]): number[];
 export function generate(css: string): string;
