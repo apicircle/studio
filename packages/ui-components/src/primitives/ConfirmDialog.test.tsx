@@ -127,6 +127,95 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalled();
   });
 
+  describe('while the action runs', () => {
+    it('stays up, busy, until the promise onConfirm returns settles', async () => {
+      let finish!: () => void;
+      const onConfirm = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const onCancel = vi.fn();
+      render(
+        <ConfirmDialog
+          open={true}
+          title="Delete it?"
+          confirmLabel="Delete"
+          busyLabel="Deleting…"
+          tone="danger"
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      const busy = screen.getByRole('button', { name: 'Deleting…' });
+      expect(busy).toBeDisabled();
+      expect(busy).toHaveAttribute('aria-busy', 'true');
+      expect(busy.querySelector('svg[data-brand-loader="compact"]')).not.toBeNull();
+      // Nothing to cancel mid-action: Cancel, Escape and the backdrop all do nothing.
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+      await userEvent.keyboard('{Escape}');
+      expect(onCancel).not.toHaveBeenCalled();
+      finish();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled());
+      expect(screen.getByRole('button', { name: 'Delete' })).not.toHaveAttribute('aria-busy');
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    });
+
+    it('says "Working…" when the caller names no busy label', async () => {
+      let finish!: () => void;
+      render(
+        <ConfirmDialog
+          open={true}
+          title="Go?"
+          onConfirm={() =>
+            new Promise<void>((resolve) => {
+              finish = resolve;
+            })
+          }
+          onCancel={() => undefined}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+      expect(screen.getByRole('button', { name: 'Working…' })).toBeDisabled();
+      finish();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled());
+    });
+
+    it('is held busy by its caller for work that finishes elsewhere', async () => {
+      const onCancel = vi.fn();
+      const { rerender } = render(
+        <ConfirmDialog
+          open={true}
+          title="Reset?"
+          confirmLabel="Reset"
+          busyLabel="Resetting…"
+          busy
+          onConfirm={() => undefined}
+          onCancel={onCancel}
+        />,
+      );
+      expect(screen.getByRole('button', { name: 'Resetting…' })).toBeDisabled();
+      await userEvent.keyboard('{Escape}');
+      expect(onCancel).not.toHaveBeenCalled();
+      rerender(
+        <ConfirmDialog
+          open={true}
+          title="Reset?"
+          confirmLabel="Reset"
+          busyLabel="Resetting…"
+          busy={false}
+          onConfirm={() => undefined}
+          onCancel={onCancel}
+        />,
+      );
+      expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled();
+      await userEvent.keyboard('{Escape}');
+      expect(onCancel).toHaveBeenCalledOnce();
+    });
+  });
+
   it('clicking cancel does not invoke onConfirm', async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();

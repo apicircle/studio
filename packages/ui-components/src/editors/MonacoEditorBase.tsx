@@ -28,6 +28,7 @@ import { useApplyMonacoLanguage } from './useMonacoLanguage';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { getMonacoThemeId, registerMonacoThemes } from '../theme/monacoThemes';
 import { getRenderedFontSizePercent } from '../theme/applyFontSize';
+import { LoadingState } from '../primitives/BrandLoader';
 
 const MONACO_BASE_FONT_SIZE_PX = 12;
 
@@ -391,11 +392,7 @@ function MonacoEditorBaseComponent({
         saveViewState
         width="100%"
         height="100%"
-        loading={
-          <div className="px-2 py-1 text-xs text-text-muted" role="status">
-            Loading editor…
-          </div>
-        }
+        loading={<LoadingState size="sm" title="Loading editor…" className="px-2 py-1" />}
       />
     </div>
   );

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, FileArchive, Loader2, X } from 'lucide-react';
+import { Download, FileArchive, X } from 'lucide-react';
 import { formatBytes } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { BrandLoader } from '../primitives/BrandLoader';
 import { Modal } from '../primitives/Modal';
 
 export function AttachmentDownloadPromptModal() {
@@ -130,14 +131,11 @@ export function AttachmentDownloadPromptModal() {
           type="button"
           onClick={() => void downloadAndContinue()}
           disabled={downloading}
+          aria-busy={downloading || undefined}
           className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
         >
-          {downloading ? (
-            <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Download size={12} aria-hidden="true" />
-          )}
-          {downloading ? 'Downloading...' : 'Download and continue'}
+          {downloading ? <BrandLoader size="xs" /> : <Download size={12} aria-hidden="true" />}
+          {downloading ? 'Downloading…' : 'Download and continue'}
         </button>
       </div>
     </Modal>

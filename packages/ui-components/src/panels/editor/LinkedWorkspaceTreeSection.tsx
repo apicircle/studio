@@ -18,6 +18,7 @@ import type {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+import { BrandLoader } from '../../primitives/BrandLoader';
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-http-get',
@@ -441,9 +442,10 @@ function RefreshLinkInline({ linkId }: { linkId: string }) {
         type="button"
         onClick={() => void onClick()}
         disabled={refreshing}
+        aria-busy={refreshing || undefined}
         className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-1.5 text-[0.625rem] text-accent hover:bg-accent/20 disabled:opacity-50"
       >
-        <RefreshCw size={9} aria-hidden="true" />
+        {refreshing ? <BrandLoader size="xs" /> : <RefreshCw size={9} aria-hidden="true" />}
         {refreshing ? 'Refreshing…' : 'Refresh link'}
       </button>
     </div>

@@ -212,3 +212,56 @@ describe('LinkedWorkspaceTreeSection', () => {
     expect(screen.getByText(/1 mod/)).toBeInTheDocument();
   });
 });
+
+describe('LinkedWorkspaceTreeSection — Refresh link busy state', () => {
+  beforeEach(hydrate);
+
+  it('shows the brand loader and is marked busy while the link refreshes, then returns to idle', async () => {
+    let finish!: () => void;
+    const refreshLinkedWorkspace = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    const synced = useWorkspaceStore.getState().synced!;
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        linkedWorkspaces: { 'lw-1': makeLink('lw-1', { name: 'Payments' }) },
+      },
+      refreshLinkedWorkspace,
+    });
+    render(<LinkedWorkspaceTreeSection />);
+    await userEvent.click(screen.getByRole('button', { name: /Expand linked workspace Payments/ }));
+
+    // Idle: the refresh icon, no loader, not busy.
+    const idle = screen.getByRole('button', { name: 'Refresh link' });
+    expect(idle).toBeEnabled();
+    expect(idle).not.toHaveAttribute('aria-busy');
+    expect(idle.querySelector('svg[data-brand-loader]')).toBeNull();
+    expect(idle.querySelector('svg')).not.toBeNull();
+
+    await userEvent.click(idle);
+    expect(refreshLinkedWorkspace).toHaveBeenCalledWith('lw-1');
+
+    // In flight: the label says so, the button is disabled and busy, and the
+    // brand loader stands in for the icon.
+    const busy = screen.getByRole('button', { name: 'Refreshing…' });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(busy.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    expect(busy.querySelectorAll('svg')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Refresh link' })).toBeNull();
+
+    await act(async () => {
+      finish();
+    });
+
+    const after = screen.getByRole('button', { name: 'Refresh link' });
+    expect(after).toBeEnabled();
+    expect(after).not.toHaveAttribute('aria-busy');
+    expect(after.querySelector('svg[data-brand-loader]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refreshing…' })).toBeNull();
+  });
+});

@@ -15,6 +15,7 @@ import type {
   LinkedUpdateStatus,
 } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { BrandLoader } from '../../primitives/BrandLoader';
 import { Modal } from '../../primitives/Modal';
 import { LinkedReleaseNotes } from './LinkedReleaseNotes';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
@@ -316,10 +317,11 @@ function UpdatePreviewModalBody() {
                 type="button"
                 onClick={() => void onApply()}
                 disabled={applyDisabled}
+                aria-busy={applying || undefined}
                 aria-label={pinOnly ? 'Update pin' : 'Apply update'}
                 className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
               >
-                <ArrowDown size={12} />
+                {applying ? <BrandLoader size="xs" /> : <ArrowDown size={12} />}
                 {label}
               </button>
             );

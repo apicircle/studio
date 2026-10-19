@@ -129,6 +129,48 @@
 
 ### Fixed
 
+- **An OpenAPI import says when it fails, and keeps the spec.** The import
+  closed the dialog at once and created the collection in the background with
+  no `.catch`: a spec the parser could not read failed silently, and the
+  pasted text was gone. The dialog now stays up while the spec is read —
+  Import shows the brand loader and reads "Importing…", Cancel, Escape and the
+  backdrop wait — then closes with "Imported 3 requests from Petstore" (an
+  info toast carrying the parser's notices when it had any). A failure keeps
+  the dialog and the text, and says why under it: "Couldn’t import the spec.
+  <reason>"; "No workspace is open." when there was none to import into.
+- **Every import says what it imported.** A Postman or Insomnia collection
+  ("Imported 4 requests from "Pets""), a Postman environment ("Imported
+  environment "Staging""), a cURL command ("Added a request from the cURL
+  command", with any flag the parser skipped) and an API Circle folder
+  ("Imported "Auth"") landed with no word at all; only API Circle environments
+  and folders with files to re-attach said anything.
+- **Escape in the request's name field no longer saves the edit.** Escape put
+  the old name back and left the field, and leaving the field committed the
+  draft it still held — so the edit Escape was meant to throw away was saved.
+- **Renaming a request in the editor header to a name its folder already has
+  says so.** The store refused the rename, but the field kept showing the
+  refused name as if it had been saved. The name is now checked as it is typed
+  (the same rule as the sidebar's: case-insensitive, within the folder):
+  "A request named “Users” is already in this folder." under the field, which
+  is marked invalid; Enter keeps the field open to fix it; leaving the field
+  puts the saved name back and says "Kept “List users”: a request named
+  “Users” is already in this folder."
+- **The screen after a failed load says what is really still saved.** It read
+  only the registry, assumed both of the workspace's records were there, and
+  printed "0 requests · 0 envs" for any workspace. `probeWorkspaceRecords` now
+  reads the open workspace's two records and counts them; the screen says
+  "Still saved on this device for “My API”: Collections and environments:
+  saved — 12 requests, 2 environments · History, vault and settings: missing",
+  and never prints a count it does not know. Retry, Recover and Reset each
+  show they are running ("Retrying…", "Recovering…", "Resetting…" in the
+  confirm, which stays up until the reset is done); a Retry that still fails
+  says "Tried again — it still didn’t load.", and a Recover or Reset that
+  throws says why instead of failing silently.
+- **Escape no longer skips an import's secret bindings mid-bind.** On the
+  "Provide secret values" step, Escape or the backdrop while Bind was running
+  reported the bindings as skipped and closed the dialog, then the bind
+  finished and closed it again. The step now waits.
+
 - **Deleting a Secret Vault entry that encrypts environment variables asks
   first, and says it clears them.** The Vault's "where used" index counted
   `{{LABEL}}` references and linked-workspace inputs, but not the variables an
@@ -504,6 +546,45 @@
 
 ### Added
 
+- **The API Circle mark is Studio's loader.** `BrandLoader` (primitives,
+  exported from `@apicircle/ui-components`) draws the logo — the violet hub
+  with its chevron and six services on a ring — and sets it in motion: a pulse
+  runs out along one spoke, its node lights, the next one clockwise follows,
+  while the dashed orbit turns. Under 24px it draws a compact ring of six dots,
+  for buttons and status lines. The nodes wear the theme's
+  purple/green/blue/amber/red/info, so it reads on every theme; under
+  `prefers-reduced-motion` nothing moves, the nodes only brighten in turn. It
+  is always `aria-hidden`: the words beside it are what gets announced. Its
+  stylesheet is put in the page once, by the component, and is byte for byte
+  the one API Circle Lens draws its own copy with, so the two can share a page.
+  `LoadingState` is a wait the user is looking at: the mark with a title and
+  an optional detail, as a polite status, at three sizes (`sm` one line, `md`
+  a section, `lg` a page). `AppIcon` draws from the same geometry
+  (`primitives/brandMark.ts`) and gives its glow gradient an id of its own
+  (`useId`), so two icons on a page no longer share one.
+- **`Button` takes `loading`.** The loader takes the left icon's place, the
+  button is disabled and `aria-busy`, and it stays at full strength rather
+  than greying out. **`ConfirmDialog` has a busy state**: while the promise
+  `onConfirm` returns is pending (or while the new `busy` prop is set) the
+  confirm button shows the loader and `busyLabel` (default "Working…"), and
+  Cancel, Escape and the backdrop wait.
+- **Every wait in Studio shows the mark.** The boot screen ("Loading
+  workspace…"), the response pane, the plan Run buttons, the mock server's
+  Start and Stop, the workspace and link panels' loading lines ("Loading
+  branches…", "Loading workspaces…", "Loading releases on main…", "Loading
+  topics…"), the editor's "Loading editor…", the indeterminate phase of
+  closing over running mocks, the theme and font preview, and every button
+  that had swapped its label for an "…ing" one (Push, Refresh, Sync
+  attachments, Connect, Save, Verify, Test connection, Create, Seed, Pull
+  first, Apply merge, Apply update, Bind, Download, Search, Restart to
+  install, …). They replace six kinds of wait: plain text, spinning icons,
+  `Loader2`, `LoaderCircle`, a spun progress ring and bare label swaps.
+  Each busy button is also marked `aria-busy`.
+- **`EmptyState`** (primitives, exported): what is missing, a line on how to
+  fill it, and the buttons that do. The editor with no request open uses it —
+  "No request open · Pick one in the sidebar, or start a new one." — with
+  **New request** (created and opened at once) and **Import…**.
+
 - **An edition can say what it resets when the workspace's repository is
   disconnected: the `repoDisconnectNotice` seam.** An optional `App` prop
   (`ReactNode`, `layout/repoDisconnectNotice.ts`). An edition can keep records
@@ -642,6 +723,36 @@
   it is. Studio registers no sections, so its strip is unchanged.
 
 ### Changed
+
+- **A send keeps the last response up, and shows how long it has waited.**
+  The response pane used to blank to a bare "Sending…". A first send now waits
+  on the brand mark with "Sending request…" and a running time ("1.2 s",
+  "1 min 05 s"; the time is not announced, the status once). A re-send keeps
+  the last response on screen, dimmed and marked `aria-busy`, under a strip
+  that says "Sending request…" with the time and "The last response stays
+  here until the new one arrives."
+- **A failed send shows its message first.** The status badge says **No
+  response** (or **Not sent** for a request Studio refused to send) instead of
+  a bare "ERR", followed by the message and the time it took — a refused
+  request shows no time, since it took none. The error card leads with the
+  label, then the message verbatim, then the hint; the message is no longer
+  folded away under Details, which is now "Request details" (method, URL,
+  duration). The generic "See the message below…" hint is gone.
+- **The response gets the larger share of the editor**: request 45, response
+  55, where it was 75/25 (a new layout key, so the new split applies once).
+- **A mock server's run controls are at the top of its card**, under the name:
+  "Stopped" with **Start**, or "Running" with its address
+  (`http://127.0.0.1:<port>`), a **Copy** that says "Copied" (or "Couldn’t
+  copy"), and **Stop**. They were at the bottom, below the port and CORS
+  sections, with the port only as "running · port 4040".
+- **The import dialog's upload takes YAML.** "Upload .json" is **Upload file**
+  and accepts `.yaml` / `.yml` (and their media types) beside `.json`,
+  `.har` and `.txt` — an OpenAPI spec is as often YAML. The paste
+  placeholder names OpenAPI too.
+- **A plan's two Run buttons say which one is running**: "Running…" or
+  "Running with assertions…", with the loader, on the one pressed; the other
+  is held back. The passphrase prompt says "Setting passphrase…" or
+  "Unlocking…" instead of "Working…".
 
 - **The desktop app needs macOS 13 (Ventura) or later.** Electron 44 no longer
   runs on macOS 12. Windows (x64) and Linux builds are unchanged.

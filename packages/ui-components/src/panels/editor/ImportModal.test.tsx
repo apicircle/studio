@@ -244,7 +244,7 @@ describe('ImportModal — auto-detect', () => {
     expect(toasts[0].detail).toMatch(/re-attach/i);
   });
 
-  it('does not push a re-attach toast when no file assets are embedded', async () => {
+  it('confirms a folder import with a plain success toast when no file assets are embedded', async () => {
     const envelope = {
       format: 'apicircle.folder/v1',
       exportedAt: '2026-06-02T00:00:00.000Z',
@@ -258,7 +258,10 @@ describe('ImportModal — auto-detect', () => {
     pasteInto(screen.getByLabelText('Import source'), JSON.stringify(envelope));
     expect(await screen.findByText(/API Circle\)/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Import' }));
-    expect(useWorkspaceStore.getState().toasts).toHaveLength(0);
+    const toasts = useWorkspaceStore.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]).toMatchObject({ tone: 'success', title: 'Imported "Plain"' });
+    expect(toasts[0].detail).toBeUndefined();
   });
 
   it('routes the "API Circle exchange" source to the env parser when the doc is an env export', async () => {
@@ -448,5 +451,301 @@ describe('ImportModal — auto-detect', () => {
       (r) => r.folderId === folder?.id,
     );
     expect(requests.map((r) => r.name)).toEqual(['POST /login']);
+  });
+});
+
+const toasts = () => useWorkspaceStore.getState().toasts;
+
+describe('ImportModal — what an import says when it lands', () => {
+  beforeEach(hydrate);
+
+  it('closes an OpenAPI import once it lands and says how many requests it made', async () => {
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Petstore', version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    );
+    await screen.findByText(/OpenAPI 3\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(toasts()).toEqual([
+      expect.objectContaining({ tone: 'success', title: 'Imported 1 request from Petstore' }),
+    ]);
+  });
+
+  it('stays up and busy while the spec is read, with nothing else to press', async () => {
+    type Landed = { folderId: string | null; requests: number; warnings: string[] };
+    let land!: (v: Landed) => void;
+    useWorkspaceStore.setState({
+      importOpenApiToCollection: vi.fn(
+        () =>
+          new Promise<Landed>((resolve) => {
+            land = resolve;
+          }),
+      ),
+    });
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Petstore', version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    );
+    await screen.findByText(/OpenAPI 3\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    const busy = screen.getByRole('button', { name: 'Importing…' });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(busy.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    // Escape does not close it mid-import either.
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      land({ folderId: 'f1', requests: 3, warnings: ['Skipped a $ref it could not follow'] });
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // A spec the parser had notices about lands as info, with the notices.
+    expect(toasts()).toEqual([
+      expect.objectContaining({
+        tone: 'info',
+        title: 'Imported 3 requests from Petstore',
+        detail: 'Skipped a $ref it could not follow',
+      }),
+    ]);
+  });
+
+  it('keeps the pasted spec and says why when the import fails', async () => {
+    useWorkspaceStore.setState({
+      importOpenApiToCollection: vi.fn().mockRejectedValue(new Error('Unresolvable $ref #/x')),
+    });
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    const source = screen.getByLabelText('Import source');
+    pasteInto(
+      source,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Petstore', version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    );
+    await screen.findByText(/OpenAPI 3\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t import the spec. Unresolvable $ref #/x',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect((source as HTMLTextAreaElement).value).toContain('Petstore');
+    expect(screen.getByRole('button', { name: 'Import' })).toBeEnabled();
+    expect(toasts()).toHaveLength(0);
+    // Editing the source clears the failure.
+    pasteInto(
+      source,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Petstore', version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }).replace('Petstore', 'Petstore 2'),
+    );
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('says so when there is no workspace to import the spec into', async () => {
+    useWorkspaceStore.setState({
+      importOpenApiToCollection: vi.fn().mockResolvedValue({
+        folderId: null,
+        requests: 0,
+        warnings: [],
+      }),
+    });
+    render(<ImportModal open onClose={() => {}} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Petstore', version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    );
+    await screen.findByText(/OpenAPI 3\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t import the spec. No workspace is open.',
+    );
+  });
+
+  it('names "the spec" when the spec has no title', async () => {
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    );
+    await screen.findByText(/OpenAPI 3\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(toasts()[0]).toMatchObject({ title: 'Imported 1 request from the spec' });
+  });
+
+  it('reports a failure that is not an Error in words too', async () => {
+    useWorkspaceStore.setState({
+      importOpenApiToCollection: vi.fn().mockRejectedValue('parser crashed'),
+    });
+    render(<ImportModal open onClose={() => {}} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Petstore', version: '1.0' },
+        paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    );
+    await screen.findByText(/OpenAPI 3\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t import the spec. parser crashed',
+    );
+  });
+
+  it('confirms a Postman collection with the number of requests and its name', async () => {
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    pasteInto(screen.getByLabelText('Import source'), POSTMAN_DOC);
+    await screen.findByText(/Postman\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(toasts()).toEqual([
+      expect.objectContaining({ tone: 'success', title: 'Imported 1 request from "Test API"' }),
+    ]);
+  });
+
+  it('confirms an Insomnia export the same way', async () => {
+    render(<ImportModal open onClose={() => {}} />);
+    pasteInto(screen.getByLabelText('Import source'), INSOMNIA_DOC);
+    await screen.findByText(/Insomnia\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(toasts()[0]).toMatchObject({ tone: 'success' });
+    expect(toasts()[0].title).toMatch(/^Imported 1 request from "/);
+  });
+
+  it('confirms a Postman environment by the name it was given', async () => {
+    render(<ImportModal open onClose={() => {}} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        name: 'Staging',
+        values: [{ key: 'BASE_URL', value: 'https://staging.example.test', enabled: true }],
+        _postman_variable_scope: 'environment',
+      }),
+    );
+    await screen.findByText(/\(Postman environment\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(toasts()).toEqual([
+      expect.objectContaining({ tone: 'success', title: 'Imported environment "Staging"' }),
+    ]);
+  });
+
+  it('says nothing about an environment when there was no workspace to put it in', async () => {
+    useWorkspaceStore.setState({ importPostmanEnvironment: vi.fn(() => null) });
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({ name: 'Staging', values: [], _postman_variable_scope: 'environment' }),
+    );
+    await screen.findByText(/\(Postman environment\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(toasts()).toHaveLength(0);
+  });
+
+  it('confirms a cURL import, with what the parser skipped', async () => {
+    render(<ImportModal open onClose={() => {}} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      'curl https://api.example.test/users --frobnicate',
+    );
+    await screen.findByText(/cURL\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(toasts()).toEqual([
+      expect.objectContaining({
+        tone: 'info',
+        title: 'Added a request from the cURL command',
+        detail: expect.stringContaining('--frobnicate'),
+      }),
+    ]);
+  });
+
+  it('says nothing for a folder import that had no workspace to land in', async () => {
+    useWorkspaceStore.setState({ importApicircleFolder: vi.fn(() => null) });
+    render(<ImportModal open onClose={() => {}} />);
+    pasteInto(
+      screen.getByLabelText('Import source'),
+      JSON.stringify({
+        format: 'apicircle.folder/v1',
+        exportedAt: '2026-06-02T00:00:00.000Z',
+        appVersion: '1',
+        source: { workspaceId: 'ws', folderId: 'f-root', folderName: 'Plain' },
+        folder: { name: 'Plain', subfolders: [], requests: [] },
+        dependencies: { schemas: [], graphql: [], files: [] },
+      }),
+    );
+    await screen.findByText(/API Circle\)/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(toasts()).toHaveLength(0);
+  });
+});
+
+describe('ImportModal — uploading a file', () => {
+  beforeEach(hydrate);
+
+  it('takes YAML as well as JSON, since an OpenAPI spec is as often YAML', () => {
+    render(<ImportModal open onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Upload file' })).toBeInTheDocument();
+    const accept = screen.getByLabelText('Upload a file to import').getAttribute('accept')!;
+    for (const kind of ['.json', '.yaml', '.yml', 'application/yaml', '.har']) {
+      expect(accept.split(',')).toContain(kind);
+    }
+  });
+
+  it('reads an uploaded YAML spec and imports it', async () => {
+    const onClose = vi.fn();
+    render(<ImportModal open onClose={onClose} />);
+    const yaml = [
+      'openapi: 3.0.0',
+      'info:',
+      '  title: Yaml Pets',
+      '  version: "1.0"',
+      'paths:',
+      '  /pets:',
+      '    get:',
+      '      responses:',
+      '        "200":',
+      '          description: ok',
+    ].join('\n');
+    await userEvent.upload(
+      screen.getByLabelText('Upload a file to import'),
+      // jsdom's File has no text(); the browser's does.
+      Object.assign(new File([yaml], 'pets.yaml', { type: 'application/yaml' }), {
+        text: () => Promise.resolve(yaml),
+      }),
+    );
+    await screen.findByText(/^Yaml Pets · 1 operation/);
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(toasts()[0]).toMatchObject({ title: 'Imported 1 request from Yaml Pets' });
   });
 });

@@ -5,6 +5,7 @@ import { GIT_HOST_LABELS } from '@apicircle/shared';
 import { supportsGitMethod } from '@apicircle/git';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+import { BrandLoader, LoadingState } from '../../primitives/BrandLoader';
 
 /**
  * "Release & topics" modal — the dedicated path for cutting a Git tag
@@ -219,7 +220,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
           </p>
 
           {loadingTag ? (
-            <p className="text-[0.6875rem] text-text-muted">Loading releases on main…</p>
+            <LoadingState size="sm" title="Loading releases on main…" />
           ) : tagLoadError ? (
             <p className="text-[0.6875rem] text-danger" role="alert">
               {tagLoadError}
@@ -313,9 +314,10 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
                   type="button"
                   onClick={() => void onCreateTag()}
                   disabled={tagSubmitting || Boolean(tagSuccess)}
+                  aria-busy={tagSubmitting || undefined}
                   className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
                 >
-                  <Tag size={11} aria-hidden="true" />
+                  {tagSubmitting ? <BrandLoader size="xs" /> : <Tag size={11} aria-hidden="true" />}
                   {tagSubmitting ? 'Tagging…' : `Create tag v${latest.version}`}
                 </button>
               </div>
@@ -345,7 +347,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
           )}
 
           {loadingTopics ? (
-            <p className="text-[0.6875rem] text-text-muted">Loading topics…</p>
+            <LoadingState size="sm" title="Loading topics…" />
           ) : topicsLoadError ? (
             <p className="text-[0.6875rem] text-danger" role="alert">
               {topicsLoadError}
@@ -431,8 +433,10 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
                     type="button"
                     onClick={() => void onSaveTopics()}
                     disabled={!topicsDirty || topicsSubmitting}
-                    className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+                    aria-busy={topicsSubmitting || undefined}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
                   >
+                    {topicsSubmitting && <BrandLoader size="xs" />}
                     {topicsSubmitting ? 'Saving…' : 'Save topics'}
                   </button>
                 </div>

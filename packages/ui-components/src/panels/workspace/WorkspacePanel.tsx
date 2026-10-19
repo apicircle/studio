@@ -64,6 +64,7 @@ import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
 import { PushSecretsDialog } from './PushSecretsDialog';
+import { BrandLoader, LoadingState } from '../../primitives/BrandLoader';
 import { cn } from '../../primitives/cn';
 import { formatRelativeTime } from '../../primitives/relativeTime';
 import { formatGitError, type GitErrorView } from './gitErrorMessage';
@@ -493,9 +494,10 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               type="button"
               onClick={onSubmit}
               disabled={!!validation || submitting}
+              aria-busy={submitting || undefined}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
-              <Tag size={11} />
+              {submitting ? <BrandLoader size="xs" /> : <Tag size={11} />}
               {submitting ? 'Publishing…' : 'Review & publish'}
             </button>
           </div>
@@ -640,9 +642,10 @@ function ConflictResolverModal() {
             type="button"
             onClick={() => void onCommit()}
             disabled={submitting || (conflicts.length > 0 && !allResolved)}
+            aria-busy={submitting || undefined}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
-            <GitMerge size={11} />
+            {submitting ? <BrandLoader size="xs" /> : <GitMerge size={11} />}
             {submitting ? 'Merging…' : 'Apply merge'}
           </button>
         </div>
@@ -1115,8 +1118,10 @@ function ConnectRepoForm() {
               type="button"
               onClick={() => void submitManual()}
               disabled={submitting || !value.trim()}
-              className="inline-flex h-8 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              aria-busy={submitting || undefined}
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
+              {submitting && <BrandLoader size="xs" />}
               {submitting ? 'Verifying…' : 'Connect repo'}
             </button>
           </div>
@@ -1891,33 +1896,36 @@ function BranchCard() {
           type="button"
           onClick={() => void onPush()}
           disabled={anyInFlight}
+          aria-busy={pushing || undefined}
           className={
             pushClean
               ? 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50'
               : 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50'
           }
         >
-          <Upload size={11} />
+          {pushing ? <BrandLoader size="xs" /> : <Upload size={11} />}
           {pushing ? 'Pushing…' : 'Push to save'}
         </button>
         <button
           type="button"
           onClick={() => void onRefresh()}
           disabled={anyInFlight}
+          aria-busy={refreshing || undefined}
           title="Pulls the working branch and reconciles changes. Conflicts open the resolver."
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
-          <RefreshCw size={11} className={refreshing ? 'animate-spin' : undefined} />
+          {refreshing ? <BrandLoader size="xs" /> : <RefreshCw size={11} />}
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
         <button
           type="button"
           onClick={() => void onSyncAttachments()}
           disabled={anyInFlight}
+          aria-busy={syncing || undefined}
           title="Downloads any attachment blobs referenced by workspace.json that aren't yet in your local IDB."
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
-          <Download size={11} className={syncing ? 'animate-spin' : undefined} />
+          {syncing ? <BrandLoader size="xs" /> : <Download size={11} />}
           {syncing ? 'Syncing…' : 'Sync attachments'}
         </button>
         {!prOpen && (
@@ -2253,9 +2261,10 @@ function BranchChangesReview({
             type="button"
             onClick={push.onPush}
             disabled={push.disabled || push.count === 0}
+            aria-busy={push.busy || undefined}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Upload size={11} aria-hidden="true" />
+            {push.busy ? <BrandLoader size="xs" /> : <Upload size={11} aria-hidden="true" />}
             {push.busy
               ? 'Pushing…'
               : push.count === 0
@@ -2678,7 +2687,7 @@ function CreateBranchForm() {
         Base branch
       </label>
       {loadingBranches ? (
-        <p className="text-[0.6875rem] text-text-dim">Loading branches…</p>
+        <LoadingState size="sm" title="Loading branches…" />
       ) : branchesError ? (
         <p className="text-[0.6875rem] text-danger" role="alert">
           {branchesError}
@@ -2700,9 +2709,10 @@ function CreateBranchForm() {
             type="button"
             onClick={() => void onSeed()}
             disabled={seeding}
+            aria-busy={seeding || undefined}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
           >
-            <Plus size={11} />
+            {seeding ? <BrandLoader size="xs" /> : <Plus size={11} />}
             {seeding ? 'Seeding…' : `Seed ${repo.defaultBranch}`}
           </button>
         </div>
@@ -2775,7 +2785,7 @@ function CreateBranchForm() {
             Workspace on <code className="font-mono">{baseBranch}</code>
           </label>
           {loadingWorkspaces ? (
-            <p className="text-[0.6875rem] text-text-dim">Loading workspaces…</p>
+            <LoadingState size="sm" title="Loading workspaces…" />
           ) : workspacesError ? (
             <p className="text-[0.6875rem] text-danger" role="alert">
               {workspacesError}
@@ -2877,9 +2887,10 @@ function CreateBranchForm() {
             !baseBranch ||
             importBlocked
           }
+          aria-busy={submitting || undefined}
           className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
         >
-          <Plus size={12} />
+          {submitting ? <BrandLoader size="xs" /> : <Plus size={12} />}
           {submitting
             ? importing
               ? 'Importing…'
@@ -2980,9 +2991,10 @@ function RetiredBranchBanner() {
             type="button"
             onClick={() => void onRecheck()}
             disabled={rechecking}
+            aria-busy={rechecking || undefined}
             className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
           >
-            <RefreshCw size={10} aria-hidden="true" />
+            {rechecking ? <BrandLoader size="xs" /> : <RefreshCw size={10} aria-hidden="true" />}
             {rechecking ? 'Re-checking…' : 'Re-check branch state'}
           </button>
         </div>
@@ -3067,9 +3079,10 @@ function FirstPullPromptBanner() {
           type="button"
           onClick={() => void onPull()}
           disabled={pulling}
+          aria-busy={pulling || undefined}
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
         >
-          <Download size={11} />
+          {pulling ? <BrandLoader size="xs" /> : <Download size={11} />}
           {pulling ? 'Pulling…' : 'Pull first'}
         </button>
       </div>

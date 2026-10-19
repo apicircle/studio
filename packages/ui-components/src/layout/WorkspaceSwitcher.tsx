@@ -5,6 +5,7 @@ import { Modal } from '../primitives/Modal';
 import { ConfirmDialog } from '../primitives/ConfirmDialog';
 import { WorkspaceLockedNotice } from './WorkspaceLockedNotice';
 import { canCreateWorkspace, unlockedWorkspaceIds, useWorkspaceAccess } from './workspaceAccess';
+import { BrandLoader } from '../primitives/BrandLoader';
 
 // B.6 — Top-bar workspace switcher. Replaces the static `/ <name>` chip
 // with a dropdown that lists all registered workspaces, lets the user
@@ -339,9 +340,10 @@ function NewWorkspaceModal({
             type="button"
             onClick={() => void onSubmit()}
             disabled={submitting || !name.trim()}
+            aria-busy={submitting || undefined}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
-            <Plus size={11} aria-hidden="true" />
+            {submitting ? <BrandLoader size="xs" /> : <Plus size={11} aria-hidden="true" />}
             {submitting ? 'Creating…' : 'Create workspace'}
           </button>
         </div>

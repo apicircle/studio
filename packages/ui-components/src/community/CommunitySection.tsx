@@ -24,6 +24,7 @@ import {
   Star,
   Users,
 } from 'lucide-react';
+import { BrandLoader } from '../primitives/BrandLoader';
 import { cn } from '../primitives/cn';
 import {
   GITHUB_CONTRIBUTORS_URL,
@@ -108,6 +109,7 @@ export function CommunitySection() {
           type="button"
           onClick={() => void refresh()}
           disabled={loading}
+          aria-busy={loading || undefined}
           aria-label="Refresh community stats"
           title="Refresh"
           className={cn(
@@ -116,7 +118,7 @@ export function CommunitySection() {
             'disabled:cursor-not-allowed disabled:opacity-50',
           )}
         >
-          <RotateCw size={10} aria-hidden="true" className={cn(loading && 'animate-spin')} />
+          {loading ? <BrandLoader size="xs" /> : <RotateCw size={10} aria-hidden="true" />}
         </button>
       </div>
 

@@ -101,4 +101,43 @@ describe('Button', () => {
     render(<Button type="submit">Send</Button>);
     expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('type', 'submit');
   });
+
+  describe('loading', () => {
+    it('shows the brand loader in the icon’s place, says it is busy, and cannot be pressed again', async () => {
+      const onClick = vi.fn();
+      render(
+        <Button loading leftIcon={<span data-testid="icon" />} onClick={onClick}>
+          Sending…
+        </Button>,
+      );
+      const btn = screen.getByRole('button', { name: 'Sending…' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('aria-busy', 'true');
+      expect(btn.querySelector('svg[data-brand-loader="compact"]')).not.toBeNull();
+      expect(screen.queryByTestId('icon')).toBeNull();
+      // Busy is not unavailable: the label stays at full strength.
+      expect(btn).toHaveClass('disabled:opacity-100', 'disabled:cursor-progress');
+      expect(btn).not.toHaveClass('disabled:opacity-50');
+      await userEvent.click(btn);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('is an ordinary button again once it is done', () => {
+      render(
+        <Button loading={false} leftIcon={<span data-testid="icon" />}>
+          Send
+        </Button>,
+      );
+      const btn = screen.getByRole('button', { name: 'Send' });
+      expect(btn).toBeEnabled();
+      expect(btn).not.toHaveAttribute('aria-busy');
+      expect(btn.querySelector('svg[data-brand-loader]')).toBeNull();
+      expect(screen.getByTestId('icon')).toBeInTheDocument();
+    });
+
+    it('stays disabled when the caller disables it, loading or not', () => {
+      render(<Button disabled>Send</Button>);
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    });
+  });
 });

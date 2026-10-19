@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
 import type {
+  GitHubSession,
   LinkedSnapshot,
   LinkedWorkspace,
   ReleaseHistory,
@@ -942,5 +943,208 @@ describe('LinkWorkspacePanel — per-link session UX', () => {
     // Scrolling the listbox is the pointer path to the same window growth.
     fireEvent.scroll(listbox, { target: { scrollTop: 10_000 } });
     expect(within(listbox).getAllByRole('option')).toHaveLength(70);
+  });
+});
+
+describe('LinkWorkspacePanel — link card buttons show the brand loader while busy', () => {
+  beforeEach(async () => {
+    await hydrate();
+    seedSession();
+  });
+
+  // A ledger whose source has moved past the pin, so the card offers
+  // "Review update" beside "Refresh ledger".
+  const LAGGING_LEDGER: ReleaseHistory = {
+    versions: [
+      {
+        version: '0.1.0',
+        publishedAt: '2026-04-27T00:00:00.000Z',
+        notes: '',
+        workspaceSnapshot: 'a'.repeat(64),
+        deprecated: false,
+        yanked: false,
+      },
+      {
+        version: '0.2.0',
+        publishedAt: '2026-04-28T00:00:00.000Z',
+        notes: '',
+        workspaceSnapshot: 'b'.repeat(64),
+        deprecated: false,
+        yanked: false,
+      },
+    ],
+    currentVersion: '0.2.0',
+  };
+
+  function expectBusy(button: HTMLElement): void {
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button.querySelector('svg[data-brand-loader]')).not.toBeNull();
+  }
+
+  function expectIdle(button: HTMLElement): void {
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute('aria-busy');
+    expect(button.querySelector('svg[data-brand-loader]')).toBeNull();
+  }
+
+  it('Review update shows "Loading preview…" with the loader while the preview loads', async () => {
+    let finish!: () => void;
+    const previewLinkedUpdateForLink = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    seedLink({ id: 'lw-up', name: 'API', pinnedVersion: '0.1.0', ledger: LAGGING_LEDGER });
+    useWorkspaceStore.setState({ previewLinkedUpdateForLink });
+    const user = userEvent.setup();
+    render(<LinkWorkspacePanel />);
+
+    // The aria-label names the target version in both states; the visible
+    // text is what flips.
+    const review = screen.getByRole('button', { name: 'Review update to v0.2.0' });
+    expectIdle(review);
+    expect(review).toHaveTextContent('Review update → v0.2.0');
+    expect(review.querySelector('svg')).not.toBeNull();
+
+    await user.click(review);
+    expect(previewLinkedUpdateForLink).toHaveBeenCalledWith('lw-up');
+    expectBusy(review);
+    expect(review).toHaveTextContent('Loading preview…');
+    expect(review.querySelectorAll('svg')).toHaveLength(1);
+    // Only the preview is in flight: the ledger refresh beside it stays idle.
+    expectIdle(screen.getByRole('button', { name: 'Refresh ledger' }));
+
+    await act(async () => {
+      finish();
+    });
+
+    expectIdle(review);
+    expect(review).toHaveTextContent('Review update → v0.2.0');
+  });
+
+  it('Refresh ledger shows "Refreshing…" with the loader while the ledger refreshes', async () => {
+    let finish!: () => void;
+    const refreshLinkedWorkspace = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    seedLink({ id: 'lw-ref', name: 'API', pinnedVersion: '0.1.0', ledger: LAGGING_LEDGER });
+    useWorkspaceStore.setState({ refreshLinkedWorkspace });
+    const user = userEvent.setup();
+    render(<LinkWorkspacePanel />);
+
+    const refresh = screen.getByRole('button', { name: 'Refresh ledger' });
+    expectIdle(refresh);
+    expect(refresh.querySelector('svg')).not.toBeNull();
+
+    await user.click(refresh);
+    expect(refreshLinkedWorkspace).toHaveBeenCalledWith('lw-ref');
+    const busy = screen.getByRole('button', { name: 'Refreshing…' });
+    expectBusy(busy);
+    expect(busy.querySelectorAll('svg')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Refresh ledger' })).toBeNull();
+    // The preview button beside it is not busy.
+    expectIdle(screen.getByRole('button', { name: 'Review update to v0.2.0' }));
+
+    await act(async () => {
+      finish();
+    });
+
+    expectIdle(screen.getByRole('button', { name: 'Refresh ledger' }));
+    expect(screen.queryByRole('button', { name: 'Refreshing…' })).toBeNull();
+  });
+
+  describe('dedicated-session token form', () => {
+    const DEDICATED_SESSION: GitHubSession = {
+      accountLogin: 'acme-bot',
+      tokenSecretId: 'tok-dedicated',
+      grantedScopes: ['repo'],
+      addedAt: '2026-04-27T00:00:00.000Z',
+      lastVerifiedAt: '2026-04-27T00:00:00.000Z',
+      canCreatePullRequests: true,
+    };
+
+    it('Save token shows "Verifying…" with the loader while the token is checked, then closes the form', async () => {
+      let land!: (session: GitHubSession) => void;
+      const addLinkSession = vi.fn(
+        () =>
+          new Promise<GitHubSession>((resolve) => {
+            land = resolve;
+          }),
+      );
+      seedLink({ id: 'lw-ded', name: 'Payments' });
+      useWorkspaceStore.setState({ addLinkSession });
+      const user = userEvent.setup();
+      render(<LinkWorkspacePanel />);
+
+      // A healthy workspace-mode link opens the form from "Switch to
+      // dedicated session".
+      await user.click(screen.getByRole('button', { name: 'Switch to dedicated session' }));
+      const save = screen.getByRole('button', { name: 'Save token' });
+      // Nothing typed yet: disabled, but not busy and no loader.
+      expect(save).toBeDisabled();
+      expect(save).not.toHaveAttribute('aria-busy');
+      expect(save.querySelector('svg')).toBeNull();
+
+      await user.type(screen.getByLabelText('Dedicated linking session PAT'), 'ghp_test_dedicated');
+      expect(save).toBeEnabled();
+      await user.click(save);
+      expect(addLinkSession).toHaveBeenCalledWith('lw-ded', 'ghp_test_dedicated');
+
+      const busy = screen.getByRole('button', { name: 'Verifying…' });
+      expect(busy).toBeDisabled();
+      expect(busy).toHaveAttribute('aria-busy', 'true');
+      expect(busy.querySelector('svg[data-brand-loader]')).not.toBeNull();
+      expect(screen.queryByRole('button', { name: 'Save token' })).toBeNull();
+
+      await act(async () => {
+        land(DEDICATED_SESSION);
+      });
+
+      // A saved token closes the form and the card offers the switch again.
+      expect(screen.queryByRole('button', { name: 'Verifying…' })).toBeNull();
+      expect(screen.queryByLabelText('Dedicated linking session PAT')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Switch to dedicated session' })).toBeVisible();
+    });
+
+    it('Save token drops the busy state and keeps the form open when the token is refused', async () => {
+      let refuse!: (err: Error) => void;
+      const addLinkSession = vi.fn(
+        () =>
+          new Promise<GitHubSession>((_resolve, reject) => {
+            refuse = reject;
+          }),
+      );
+      seedLink({ id: 'lw-ded-bad', name: 'Payments' });
+      useWorkspaceStore.setState({ addLinkSession });
+      const user = userEvent.setup();
+      render(<LinkWorkspacePanel />);
+
+      await user.click(screen.getByRole('button', { name: 'Switch to dedicated session' }));
+      await user.type(screen.getByLabelText('Dedicated linking session PAT'), 'ghp_test_refused');
+      await user.click(screen.getByRole('button', { name: 'Save token' }));
+
+      const busy = screen.getByRole('button', { name: 'Verifying…' });
+      expect(busy).toBeDisabled();
+      expect(busy).toHaveAttribute('aria-busy', 'true');
+      expect(busy.querySelector('svg[data-brand-loader]')).not.toBeNull();
+
+      await act(async () => {
+        refuse(new Error('Bad credentials'));
+      });
+
+      const save = screen.getByRole('button', { name: 'Save token' });
+      expect(save).toBeEnabled();
+      expect(save).not.toHaveAttribute('aria-busy');
+      expect(save.querySelector('svg[data-brand-loader]')).toBeNull();
+      expect(screen.getByRole('alert')).toHaveTextContent('Bad credentials');
+      expect(screen.getByLabelText('Dedicated linking session PAT')).toHaveValue(
+        'ghp_test_refused',
+      );
+    });
   });
 });

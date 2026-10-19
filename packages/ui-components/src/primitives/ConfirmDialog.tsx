@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { BrandLoader } from './BrandLoader';
 import { Modal } from './Modal';
 import { cn } from './cn';
 
@@ -11,6 +12,14 @@ interface BaseProps {
   cancelLabel?: string;
   /** "danger" recolors the confirm button red — used for destructive actions. */
   tone?: 'normal' | 'danger';
+  /**
+   * What the confirm button says while the action runs ("Resetting…"). It is
+   * busy for as long as the promise `onConfirm` returns is pending, and for as
+   * long as `busy` is set — for a caller that closes nothing until work it
+   * started elsewhere has finished.
+   */
+  busyLabel?: string;
+  busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
 }
@@ -45,6 +54,8 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     confirmLabel = 'Confirm',
     cancelLabel = 'Cancel',
     tone = 'normal',
+    busyLabel = 'Working…',
+    busy: busyProp = false,
     onCancel,
     onConfirm,
   } = props;
@@ -72,7 +83,8 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     }
   }, [open, typed]);
 
-  const canConfirm = !submitting && (typed === undefined || text === typed);
+  const busy = submitting || busyProp;
+  const canConfirm = !busy && (typed === undefined || text === typed);
 
   const submit = async () => {
     if (!canConfirm) return;
@@ -85,7 +97,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   };
 
   return (
-    <Modal open={open} onClose={onCancel} title={title} className="max-w-md">
+    // While the action runs there is nothing to cancel: Escape and the backdrop
+    // leave the dialog up, so the user sees it finish instead of losing track of
+    // an action that is still going.
+    <Modal open={open} onClose={busy ? () => {} : onCancel} title={title} className="max-w-md">
       <div className="space-y-3 text-xs text-text-muted">
         {description && <div>{description}</div>}
         {typed !== undefined && (
@@ -108,7 +123,8 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+            disabled={busy}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
           >
             {cancelLabel}
           </button>
@@ -116,14 +132,17 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             type="button"
             onClick={() => void submit()}
             disabled={!canConfirm}
+            aria-busy={busy || undefined}
             className={cn(
-              'inline-flex h-7 items-center rounded-sm border px-3 text-xs disabled:opacity-50',
+              'inline-flex h-7 items-center gap-1.5 rounded-sm border px-3 text-xs disabled:opacity-50',
+              busy && 'disabled:cursor-progress disabled:opacity-100',
               tone === 'danger'
                 ? 'border-danger/50 bg-danger/10 text-danger hover:bg-danger/20'
                 : 'border-accent/40 bg-accent/10 text-accent hover:bg-accent/20',
             )}
           >
-            {submitting ? 'Working…' : confirmLabel}
+            {busy && <BrandLoader size="xs" />}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>

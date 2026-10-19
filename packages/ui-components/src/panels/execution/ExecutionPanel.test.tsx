@@ -426,3 +426,98 @@ describe('ExecutionSidebar', () => {
     expect(surviving).toHaveAttribute('aria-current', 'true');
   });
 });
+
+describe('ExecutionPanel — a run in flight', () => {
+  beforeEach(hydrate);
+
+  function planWithOneStep(): string {
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const r1 = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore.getState().addPlanStep(planId, r1);
+    return planId;
+  }
+
+  function holdRun() {
+    let finish!: () => void;
+    const runPlan = vi.fn(
+      () =>
+        new Promise<never>((_, reject) => {
+          finish = () => reject(new Error('stopped'));
+        }),
+    );
+    useWorkspaceStore.setState({ runPlan });
+    return { runPlan, finish: () => finish() };
+  }
+
+  it.each([
+    ['Run', 'Running…', false],
+    ['Run with assertions', 'Running with assertions…', true],
+  ] as const)(
+    'the %s button wears the loader for its own run',
+    async (label, busyLabel, withAssertions) => {
+      planWithOneStep();
+      const { runPlan, finish } = holdRun();
+      render(<ExecutionPanel />);
+      await userEvent.click(screen.getByRole('button', { name: label }));
+      expect(runPlan).toHaveBeenCalledWith(expect.any(String), { withAssertions });
+      const busy = screen.getByRole('button', { name: busyLabel });
+      expect(busy).toBeDisabled();
+      expect(busy).toHaveAttribute('aria-busy', 'true');
+      expect(busy.querySelector('svg[data-brand-loader]')).not.toBeNull();
+      // The other run button is held back, but it is not the one running.
+      const other = label === 'Run' ? 'Run with assertions' : 'Run';
+      const otherButton = screen.getByRole('button', { name: other });
+      expect(otherButton).toBeDisabled();
+      expect(otherButton).not.toHaveAttribute('aria-busy');
+      expect(screen.getByRole('button', { name: 'Cancel running plan' })).toBeInTheDocument();
+      await act(async () => finish());
+      expect(screen.getByRole('button', { name: label })).toBeEnabled();
+    },
+  );
+
+  it('shows a step retry running on that step’s button only', async () => {
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const step = (name: string) => ({
+      requestName: name,
+      requestMethod: 'GET' as const,
+      passed: true,
+      assertionResults: [],
+      result: {
+        startedAt: 't',
+        durationMs: 1,
+        status: 200,
+        ok: true,
+        statusText: 'OK',
+        headers: {},
+        body: '',
+        bodyKind: 'empty' as const,
+        url: 'https://api.test/x',
+        method: 'GET' as const,
+        authWarnings: [],
+      },
+    });
+    let finish!: () => void;
+    useWorkspaceStore.setState({
+      activePlanId: planId,
+      lastPlanResults: { [planId]: [step('First'), step('Second')] },
+      retryPlanStep: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    render(<ExecutionPanel />);
+    const retrySecond = screen.getByRole('button', { name: 'Retry step 2: Second' });
+    await userEvent.click(retrySecond);
+    expect(retrySecond).toBeDisabled();
+    expect(retrySecond).toHaveAttribute('aria-busy', 'true');
+    expect(retrySecond.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    const retryFirst = screen.getByRole('button', { name: 'Retry step 1: First' });
+    expect(retryFirst).toBeEnabled();
+    expect(retryFirst.querySelector('svg[data-brand-loader]')).toBeNull();
+    await act(async () => finish());
+    expect(retrySecond).toBeEnabled();
+    expect(retrySecond).not.toHaveAttribute('aria-busy');
+  });
+});

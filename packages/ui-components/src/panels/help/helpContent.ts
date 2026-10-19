@@ -619,6 +619,14 @@ The Editor sidebar's Import action opens a modal that takes pasted text or an up
 
 Pasting a command that begins with \`curl \` straight into the URL bar also offers a one-step import. The modal previews the folder structure and request count before you confirm.
 
+**Upload file** takes \`.json\`, \`.yaml\` / \`.yml\`, \`.har\` and \`.txt\` — an OpenAPI spec can be either JSON or YAML. Every import says what it brought in once it lands, for example:
+
+    Imported 12 requests from Petstore
+    Imported environment "Staging"
+    Added a request from the cURL command
+
+An OpenAPI spec is read before anything is created, so the dialog stays open with **Importing…** until it is done. If the spec cannot be imported the dialog keeps your text and says why underneath ("Couldn't import the spec. …"); anything the parser had to skip arrives as a notice with the result.
+
 ## Import on the command line
 
 \`apicircle import <type> <input>\` writes one request per operation into a workspace folder's \`workspace.json\`:
@@ -670,6 +678,18 @@ A colour-coded badge plus timing and size. Green is success, yellow a warning, r
     500 Server Error   2.1 s   4.0 KB
 
 A fullscreen control expands the viewer.
+
+## While it sends
+
+The pane shows the API Circle mark with **Sending request…** and how long it has waited. Sending again keeps the last response on screen, dimmed, under a strip that says so, until the new one arrives — so you can keep reading it.
+
+## When no response came back
+
+The badge says **No response** (or **Not sent**, for a request Studio refused to send), followed by the message itself:
+
+    No response   TypeError: Failed to fetch   12 ms
+
+The Body tab leads with what kind of failure it was (Network error, Timeout, TLS error, Aborted), then the message as it came, then what usually causes it. **Request details** holds the method, URL and duration, and **Retry** sends it again.
 
 ## Response tabs
 
@@ -1109,14 +1129,15 @@ Validation and response rules can be disabled without deleting them; a rule's co
 
 ## Default port
 
-Each server has a **Default port** field on its summary card. Set it to a 1024–65535 integer to always bind that port, or leave blank to let the runtime pick a free port at each Start. The input is disabled while a mock is running — stop it first to change. A busy port surfaces a clear error: \`Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.\` Same field appears in the VS Code \`.mock.yaml\` and the \`apicircle.setMockPort\` command.
+Each server has a **Default port** field on its summary card. Set it to a 1024–65535 integer to always bind that port, or leave blank to let the runtime pick a free port at each Start. You can change it while a mock is running; the new port applies at the next Start. A busy port surfaces a clear error: \`Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.\` Same field appears in the VS Code \`.mock.yaml\` and the \`apicircle.setMockPort\` command.
 
 ## The web limitation, and how to run a mock
 
 The **web app cannot run a mock server** — a browser tab cannot open a listening TCP socket. It can fully create and edit mock definitions; a banner reminds you to run them elsewhere. Two ways to actually run one:
 
-    Desktop app   Start/Stop on the Mocks panel; it prints the port:
-                  Started "Payments mock" on http://127.0.0.1:4100
+    Desktop app   Start/Stop at the top of the server's card; while it
+                  runs the card shows its address, with Copy:
+                  Running  http://127.0.0.1:4100  [Copy]  [Stop]
 
     VS Code       Start/Stop on a mock in the API Circle Mock view
                   (F6 / Shift+F6); its port shows in the status bar
@@ -1438,6 +1459,16 @@ No layer resolved it. Check the variable exists in an active environment, the co
 ## A request fails with a network or CORS error
 
 The target server is unreachable, or a browser CORS policy blocked it. Try the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the CLI (no browser CORS), and confirm the URL and that the host is up.
+
+## "Couldn't load your workspace"
+
+Studio could not read the workspace this browser (or the desktop app) last had open. The screen says what is still saved on this device for it — "Collections and environments: saved — 12 requests, 2 environments" and "History, vault and settings: saved" or "missing" — before you choose:
+
+- **Retry** — read it again. If it still won't load, the screen says so.
+- **Recover existing data** — shown when one half is missing or the two halves disagree. Keeps your collections, environments and folders and rebuilds the rest with a fresh vault and history.
+- **Reset workspace** — starts over with an empty workspace. You type RESET to confirm; it cannot be undone.
+
+A workspace pushed to Git is safe there whichever you pick: connect the repository again to pull it back.
 
 ## A mock server will not start
 

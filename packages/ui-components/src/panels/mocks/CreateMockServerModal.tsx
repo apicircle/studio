@@ -3,6 +3,7 @@ import { AlertTriangle, FileCode, Info, Plus } from 'lucide-react';
 import type { MockServerSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
+import { BrandLoader } from '../../primitives/BrandLoader';
 
 // Standalone "Create mock server" modal. Driven by `mocksCreateModalOpen`
 // in the store so the sidebar's CTA + the empty-state CTA + any other
@@ -341,9 +342,10 @@ export function CreateMockServerModal() {
               type="button"
               onClick={() => void onSubmit()}
               disabled={submitting || !name.trim() || (tab === 'asset' && !assetId)}
+              aria-busy={submitting || undefined}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
-              <Plus size={11} aria-hidden="true" />
+              {submitting ? <BrandLoader size="xs" /> : <Plus size={11} aria-hidden="true" />}
               {submitting ? 'Creating…' : 'Create mock server'}
             </button>
           </div>

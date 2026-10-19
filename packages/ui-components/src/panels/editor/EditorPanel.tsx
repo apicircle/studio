@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cookie, GitBranch, Link2, RotateCcw, Send, ShieldAlert, Square, X } from 'lucide-react';
+import {
+  Cookie,
+  Download,
+  FilePlus2,
+  GitBranch,
+  Link2,
+  RotateCcw,
+  Send,
+  ShieldAlert,
+  Square,
+  X,
+} from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type {
   HttpMethod,
@@ -19,7 +30,10 @@ import {
 } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { Button } from '../../primitives/Button';
+import { EmptyState } from '../../primitives/EmptyState';
 import { Select } from '../../primitives/Select';
+import { isNameAvailableInFolder } from '../../store/editorActions';
 import { Tabs } from '../../primitives/Tabs';
 import { ParamsTab } from './ParamsTab';
 import { HeadersTab } from './HeadersTab';
@@ -306,17 +320,13 @@ export function EditorPanel() {
   }, [request?.id]);
 
   if (!request) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-text-muted">
-        Select a request from the sidebar, or create a new one.
-      </div>
-    );
+    return <NoRequestOpen />;
   }
 
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-col gap-2 border-b border-border-subtle p-3">
-        <RequestNameInput requestId={request.id} initial={request.name} />
+        <RequestNameInput key={request.id} requestId={request.id} initial={request.name} />
         <div className="flex items-center gap-2">
           <Select
             size="lg"
@@ -477,8 +487,8 @@ export function EditorPanel() {
             {tab === 'assertions' && <AssertionsTab request={request} />}
           </div>
         ) : (
-          <PanelGroup direction="vertical" autoSaveId="apicircle:editor:request-response:v3">
-            <Panel defaultSize={75} minSize={20} className="min-h-0">
+          <PanelGroup direction="vertical" autoSaveId="apicircle:editor:request-response:v4">
+            <Panel defaultSize={45} minSize={20} className="min-h-0">
               <div
                 className={cn(
                   'flex h-full min-h-0 flex-col p-3',
@@ -499,7 +509,7 @@ export function EditorPanel() {
             >
               <span className="h-0.5 w-8 rounded-full bg-border group-hover:bg-accent" />
             </PanelResizeHandle>
-            <Panel defaultSize={25} minSize={15}>
+            <Panel defaultSize={55} minSize={15}>
               <div className="h-full overflow-hidden">
                 <ResponseViewer
                   result={lastRun}
@@ -653,15 +663,57 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
 }
 
 /**
+ * The editor with no request open: what to do about it, and the two ways to
+ * get one — a new request (created and opened at once) or an import.
+ */
+function NoRequestOpen() {
+  const addRequest = useWorkspaceStore((s) => s.addRequest);
+  const openImportModal = useWorkspaceStore((s) => s.openImportModal);
+  return (
+    <EmptyState
+      icon={<FilePlus2 size={18} />}
+      title="No request open"
+      description="Pick one in the sidebar, or start a new one."
+      actions={
+        <>
+          <Button
+            variant="primary"
+            size="md"
+            leftIcon={<FilePlus2 size={12} aria-hidden="true" />}
+            onClick={() => addRequest(null)}
+          >
+            New request
+          </Button>
+          <Button
+            size="md"
+            leftIcon={<Download size={12} aria-hidden="true" />}
+            onClick={openImportModal}
+          >
+            Import…
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
+/**
  * Buffered request-name input. Live-typing keeps a local draft so the rename
  * action's duplicate-name guard doesn't reject intermediate strings (which
  * would yank the controlled value back during typing). Commits on blur or
- * Enter; if the rename is rejected (duplicate or empty), reverts to the
- * persisted name.
+ * Enter. A name another request in the same folder already has is flagged
+ * while it is typed and never committed; leaving the field with one puts the
+ * saved name back and says so, rather than showing a name that was not saved.
  */
 function RequestNameInput({ requestId, initial }: { requestId: string; initial: string }) {
   const renameRequest = useWorkspaceStore((s) => s.renameRequest);
+  const synced = useWorkspaceStore((s) => s.synced);
   const [draft, setDraft] = useState(initial);
+  const [kept, setKept] = useState<string | null>(null);
+  // Escape blurs the field to leave it; that blur must not commit the draft it
+  // has just thrown away (the closure still holds it until the next render).
+  const discarding = useRef(false);
+  const noteId = `request-name-note-${requestId}`;
   // Keep the draft in sync when the store-side name changes from outside
   // (e.g. another tab, or reverted after a rejected commit).
   const lastSeen = useRef(initial);
@@ -672,36 +724,78 @@ function RequestNameInput({ requestId, initial }: { requestId: string; initial: 
     }
   }, [initial]);
 
+  const trimmed = draft.trim();
+  // Only a request of this workspace's own collections can collide: a linked
+  // one's name is an override and lives outside them.
+  const own = synced?.collections.requests[requestId];
+  const duplicate =
+    own !== undefined &&
+    trimmed !== '' &&
+    trimmed !== initial &&
+    // `own` came out of `synced`, so it is there.
+    !isNameAvailableInFolder(synced!, own.folderId, 'request', trimmed, requestId);
+
   const commit = () => {
-    const trimmed = draft.trim();
+    if (discarding.current) {
+      discarding.current = false;
+      return;
+    }
     if (!trimmed || trimmed === initial) {
       setDraft(initial);
       return;
     }
+    if (duplicate) {
+      setKept(`Kept “${initial}”: a request named “${trimmed}” is already in this folder.`);
+      setDraft(initial);
+      return;
+    }
     renameRequest(requestId, trimmed);
-    // The store will reject on duplicate/empty; the effect above pulls us
-    // back to `initial` on the next render either way.
   };
 
   return (
-    <input
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          commit();
-          (e.target as HTMLInputElement).blur();
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          setDraft(initial);
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      aria-label="Request name"
-      className="w-full rounded-sm border border-transparent bg-transparent px-2 py-1 text-base font-medium text-text-primary hover:border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-    />
+    <div>
+      <input
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setKept(null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            // Stay in the field to fix a taken name rather than lose the edit.
+            if (duplicate) return;
+            commit();
+            (e.target as HTMLInputElement).blur();
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            setDraft(initial);
+            setKept(null);
+            discarding.current = true;
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        aria-label="Request name"
+        aria-invalid={duplicate || undefined}
+        aria-describedby={duplicate || kept ? noteId : undefined}
+        className={cn(
+          'w-full rounded-sm border bg-transparent px-2 py-1 text-base font-medium text-text-primary focus:outline-none focus:ring-1',
+          duplicate
+            ? 'border-danger focus:border-danger focus:ring-danger/40'
+            : 'border-transparent hover:border-border focus:border-accent focus:ring-accent/30',
+        )}
+      />
+      {duplicate ? (
+        <p id={noteId} role="alert" className="mt-0.5 px-2 text-[0.6875rem] text-danger">
+          A request named “{trimmed}” is already in this folder.
+        </p>
+      ) : kept ? (
+        <p id={noteId} role="status" className="mt-0.5 px-2 text-[0.6875rem] text-text-muted">
+          {kept}
+        </p>
+      ) : null}
+    </div>
   );
 }

@@ -1,6 +1,6 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { renderWithStore } from '../../test/renderWithStore';
@@ -228,5 +228,120 @@ describe('WorkspaceSwitcher access policy', () => {
   it('renders every row unlocked when the policy is unlimited', async () => {
     await openWith(Infinity, 'ws-a', 'ws-b', 'ws-c');
     expect(screen.queryByText('locked')).not.toBeInTheDocument();
+  });
+});
+
+describe('WorkspaceSwitcher new-workspace busy state', () => {
+  // While `createNewWorkspace` runs, Create workspace shows the brand loader in
+  // place of its icon, reads "Creating…", and is disabled and `aria-busy`. The
+  // tests hold that promise open to look at the busy render, then settle it.
+
+  type CreateNewWorkspace = (name: string, maxWorkspaces?: number) => Promise<string>;
+
+  function held(): {
+    create: ReturnType<typeof vi.fn<CreateNewWorkspace>>;
+    resolve: (id: string) => void;
+    reject: (reason: Error) => void;
+  } {
+    let resolve!: (id: string) => void;
+    let reject!: (reason: Error) => void;
+    const promise = new Promise<string>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { create: vi.fn<CreateNewWorkspace>(() => promise), resolve, reject };
+  }
+
+  /** Opens New workspace from the switcher, with `createNewWorkspace` swapped. */
+  async function openNewWorkspace(createNewWorkspace: CreateNewWorkspace): Promise<HTMLElement> {
+    await renderWithStore(<Unlimited />);
+    useWorkspaceStore.setState({
+      createNewWorkspace,
+      workspaceRegistry: {
+        schemaVersion: 1,
+        activeWorkspaceId: 'ws-alpha',
+        workspaces: [{ id: 'ws-alpha', name: 'Alpha', createdAt: T0, lastOpenedAt: T0 }],
+      },
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /Switch workspace/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'New workspace' }));
+    return screen.findByRole('dialog', { name: 'New workspace' });
+  }
+
+  function expectBusy(button: HTMLElement): void {
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    expect(button.querySelector('svg:not([data-brand-loader])')).toBeNull();
+  }
+
+  function expectIdle(button: HTMLElement): void {
+    expect(button).not.toHaveAttribute('aria-busy');
+    expect(button.querySelector('svg[data-brand-loader]')).toBeNull();
+    expect(button.querySelector('svg:not([data-brand-loader])')).not.toBeNull();
+  }
+
+  it('is idle, and disabled until a name is typed', async () => {
+    const { create } = held();
+    const dialog = await openNewWorkspace(create);
+    const button = within(dialog).getByRole('button', { name: 'Create workspace' });
+    expectIdle(button);
+    expect(button).toBeDisabled();
+
+    await userEvent.type(within(dialog).getByLabelText('New workspace name'), 'Payments API');
+    expectIdle(button);
+    expect(button).toBeEnabled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('shows Creating… with the loader while the workspace is created, then closes', async () => {
+    const { create, resolve } = held();
+    const dialog = await openNewWorkspace(create);
+    const input = within(dialog).getByLabelText('New workspace name');
+    await userEvent.type(input, 'Payments API');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create workspace' }));
+
+    const creating = within(dialog).getByRole('button', { name: 'Creating…' });
+    expectBusy(creating);
+    expect(
+      within(dialog).queryByRole('button', { name: 'Create workspace' }),
+    ).not.toBeInTheDocument();
+    expect(create).toHaveBeenCalledWith('Payments API', Infinity);
+    // Neither a second click nor Enter in the name field starts another create.
+    await userEvent.click(creating);
+    await userEvent.type(input, '{Enter}');
+    expect(create).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolve('ws-payments'));
+
+    expect(screen.queryByRole('dialog', { name: 'New workspace' })).not.toBeInTheDocument();
+
+    // Opened again, the modal starts over: an empty name and an idle button.
+    await userEvent.click(screen.getByRole('button', { name: /Switch workspace/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'New workspace' }));
+    const reopened = await screen.findByRole('dialog', { name: 'New workspace' });
+    expect(within(reopened).getByLabelText('New workspace name')).toHaveValue('');
+    const button = within(reopened).getByRole('button', { name: 'Create workspace' });
+    expectIdle(button);
+    expect(button).toBeDisabled();
+  });
+
+  it('returns to an enabled, idle Create workspace with the error when creating fails', async () => {
+    const { create, reject } = held();
+    const dialog = await openNewWorkspace(create);
+    await userEvent.type(within(dialog).getByLabelText('New workspace name'), 'Alpha{Enter}');
+    expect(create).toHaveBeenCalledWith('Alpha', Infinity);
+    expectBusy(within(dialog).getByRole('button', { name: 'Creating…' }));
+
+    await act(async () => reject(new Error('A workspace named "Alpha" already exists')));
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'A workspace named "Alpha" already exists',
+    );
+    const button = within(dialog).getByRole('button', { name: 'Create workspace' });
+    expectIdle(button);
+    // The name is kept, so the user can fix it and try again.
+    expect(button).toBeEnabled();
+    expect(within(dialog).getByLabelText('New workspace name')).toHaveValue('Alpha');
   });
 });

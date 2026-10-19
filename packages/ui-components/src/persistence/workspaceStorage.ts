@@ -913,11 +913,55 @@ export async function resetWorkspace(): Promise<{
   return { synced: fresh.synced, local: fresh.local, registry };
 }
 
+/**
+ * What the open workspace's two records hold, as the recovery screen reports
+ * it after a failed load. Read raw: they may be the very thing that would not
+ * load, so nothing about their shape is assumed.
+ */
+export interface ActiveWorkspaceProbe {
+  id: string;
+  name: string;
+  /**
+   * The Git-tracked side — collections and environments — or null when it is
+   * missing. A count is null when the record is there but that part of it is
+   * not something that can be counted.
+   */
+  synced: { requests: number | null; environments: number | null } | null;
+  /** Whether the device-local side (history, vault, settings) is there. */
+  local: boolean;
+}
+
+function countEntries(value: unknown): number | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Object.keys(value).length
+    : null;
+}
+
 export async function probeWorkspaceRecords(): Promise<{
   registry: WorkspaceRegistry | null;
+  active: ActiveWorkspaceProbe | null;
 }> {
   const registry = await readRegistry();
-  return { registry };
+  const entry = registry?.workspaces.find((w) => w.id === registry.activeWorkspaceId);
+  if (!entry) return { registry, active: null };
+  const [synced, local] = await Promise.all([
+    readRecord<Partial<WorkspaceSynced>>(SYNCED_STORE, entry.id),
+    readRecord<WorkspaceLocal>(LOCAL_STORE, entry.id),
+  ]);
+  return {
+    registry,
+    active: {
+      id: entry.id,
+      name: entry.name,
+      synced: synced
+        ? {
+            requests: countEntries(synced.collections?.requests),
+            environments: countEntries(synced.environments?.items),
+          }
+        : null,
+      local: Boolean(local),
+    },
+  };
 }
 
 /**

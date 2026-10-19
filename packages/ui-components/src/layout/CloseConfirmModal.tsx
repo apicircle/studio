@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Loader2, Server, X } from 'lucide-react';
+import { AlertTriangle, Server, X } from 'lucide-react';
+import { BrandLoader } from '../primitives/BrandLoader';
 import { Modal } from '../primitives/Modal';
-import { cn } from '../primitives/cn';
 
 // =============================================================================
 // CloseConfirmModal — pops when the user tries to quit the app while one or
@@ -222,7 +222,20 @@ function ProgressRing({ fraction, label }: { fraction: number; label: string }) 
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(1, fraction));
   const offset = circumference * (1 - clamped);
-  const indeterminate = label === '';
+  if (label === '') {
+    // Nothing to count yet (or nothing left to): an indeterminate wait, which
+    // is the brand mark rather than a ring spun round with no progress on it.
+    return (
+      <div
+        role="progressbar"
+        aria-label="Stopping mock servers"
+        className="flex items-center justify-center"
+        style={{ width: size, height: size }}
+      >
+        <BrandLoader size={64} />
+      </div>
+    );
+  }
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg
@@ -230,10 +243,10 @@ function ProgressRing({ fraction, label }: { fraction: number; label: string }) 
         height={size}
         viewBox={`0 0 ${size} ${size}`}
         role="progressbar"
+        aria-label="Stopping mock servers"
         aria-valuemin={0}
         aria-valuemax={1}
         aria-valuenow={clamped}
-        className={cn(indeterminate && 'animate-spin')}
       >
         <circle
           cx={size / 2}
@@ -260,11 +273,7 @@ function ProgressRing({ fraction, label }: { fraction: number; label: string }) 
         />
       </svg>
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        {label ? (
-          <span className="text-sm font-medium tabular-nums text-text-primary">{label}</span>
-        ) : (
-          <Loader2 size={20} className="animate-spin text-accent" aria-hidden="true" />
-        )}
+        <span className="text-sm font-medium tabular-nums text-text-primary">{label}</span>
       </div>
     </div>
   );

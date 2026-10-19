@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpCircle, ExternalLink, X } from 'lucide-react';
 import { cn } from './cn';
+import { BrandLoader } from './BrandLoader';
 
 interface UpdateAvailablePayload {
   version: string;
@@ -77,8 +78,10 @@ export function UpdateAvailableBanner() {
               void bridge.applyUpdate().catch(() => setApplying(false));
             }}
             disabled={applying}
+            aria-busy={applying || undefined}
             className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/50 bg-accent/20 px-2 text-[0.6875rem] text-accent hover:bg-accent/30 disabled:opacity-50"
           >
+            {applying && <BrandLoader size="xs" />}
             {applying ? 'Restarting…' : 'Restart to install'}
           </button>
           {pending.releaseNotesUrl && (

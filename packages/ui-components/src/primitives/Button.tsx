@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { BrandLoader } from './BrandLoader';
 import { cn } from './cn';
 
 type Variant = 'primary' | 'ghost' | 'danger' | 'subtle';
@@ -10,6 +11,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
+  /**
+   * The action this button started is still running: the brand loader takes
+   * the left icon's place, the button is disabled so it cannot be pressed
+   * twice, and it is marked `aria-busy`. The label is the caller's — pass the
+   * in-flight wording ("Sending…") as the children while it is set.
+   */
+  loading?: boolean;
 }
 
 /**
@@ -39,7 +47,17 @@ const SIZE: Record<Size, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'ghost', size = 'sm', className, leftIcon, rightIcon, children, ...rest },
+  {
+    variant = 'ghost',
+    size = 'sm',
+    className,
+    leftIcon,
+    rightIcon,
+    loading = false,
+    disabled,
+    children,
+    ...rest
+  },
   ref,
 ) {
   return (
@@ -51,13 +69,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(
         'inline-flex items-center justify-center rounded-sm font-medium transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-50',
+        // A busy button is disabled, but it is not unavailable: keep it at full
+        // strength so the loader and the in-flight label stay readable.
+        loading && 'disabled:cursor-progress disabled:opacity-100',
         VARIANT[variant],
         SIZE[size],
         className,
       )}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...rest}
     >
-      {leftIcon}
+      {loading ? <BrandLoader size="xs" /> : leftIcon}
       {children}
       {rightIcon}
     </button>

@@ -51,6 +51,7 @@ import {
 import { Modal } from '../../primitives/Modal';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
+import { BrandLoader } from '../../primitives/BrandLoader';
 
 type SourceFormat =
   | 'auto'
@@ -109,6 +110,12 @@ export function ImportModal({
   const [format, setFormat] = useState<SourceFormat>(initialFormat);
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
+  // An OpenAPI import parses the spec before it creates anything, so it is the
+  // one kind that takes a moment and can fail after Import is pressed. The
+  // modal stays up, busy, until it lands; a failure keeps the pasted text and
+  // says why next to it.
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Two-step state — `detect` is the default paste/upload screen; `bind`
@@ -145,31 +152,61 @@ export function ImportModal({
 
   if (!open) return null;
 
+  /** Success, or — when the parser dropped or guessed at something — the notices. */
+  const toastImported = (title: string, warnings: readonly string[]) => {
+    pushToast({
+      tone: warnings.length > 0 ? 'info' : 'success',
+      title,
+      detail: warnings.length > 0 ? warnings.join(' · ') : undefined,
+      ttlMs: warnings.length > 0 ? 12000 : 6000,
+    });
+  };
+
+  const onImportOpenApi = async (summary: SpecSummary) => {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await importOpenApiToCollection({
+        spec: text,
+        format: summary.format,
+        parentFolderId,
+        title: summary.title,
+      });
+      // No folder means there was no open workspace to put it in.
+      if (!res.folderId) throw new Error('No workspace is open.');
+      toastImported(
+        `Imported ${countOf(res.requests, 'request')} from ${summary.title ?? 'the spec'}`,
+        res.warnings,
+      );
+      setText('');
+      onClose();
+    } catch (err) {
+      setImportError(
+        `Couldn’t import the spec. ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const onImport = () => {
     if (!result.detected) return;
     const d = result.detected;
     if (d.kind === 'postman-collection' || d.kind === 'insomnia-collection') {
-      importPostmanCollection(d.parsed, parentFolderId);
+      const counts = importPostmanCollection(d.parsed, parentFolderId);
+      toastImported(
+        `Imported ${countOf(counts.requests, 'request')} from "${d.parsed.collectionName}"`,
+        d.parsed.warnings,
+      );
     } else if (d.kind === 'postman-environment') {
-      importPostmanEnvironment(d.parsed);
+      const name = importPostmanEnvironment(d.parsed);
+      if (name) toastImported(`Imported environment "${name}"`, []);
     } else if (d.kind === 'curl') {
-      addRequestFromCurl(text, parentFolderId);
+      const { warnings } = addRequestFromCurl(text, parentFolderId);
+      toastImported('Added a request from the cURL command', warnings);
     } else if (d.kind === 'openapi') {
-      // Async parse + create; the modal closes immediately (fire-and-forget),
-      // surfacing the outcome via a toast when it lands.
-      void importOpenApiToCollection({
-        spec: text,
-        format: d.summary.format,
-        parentFolderId,
-        title: d.summary.title,
-      }).then((res) => {
-        pushToast({
-          tone: res.warnings.length > 0 ? 'info' : 'success',
-          title: `Imported ${res.requests} request${res.requests === 1 ? '' : 's'} from ${d.summary.title ?? 'the spec'}`,
-          detail: res.warnings.length > 0 ? res.warnings.join(' · ') : undefined,
-          ttlMs: res.warnings.length > 0 ? 12000 : 6000,
-        });
-      });
+      void onImportOpenApi(d.summary);
+      return;
     } else if (d.kind === 'apicircle-folder') {
       const result = importApicircleFolder(d.parsed, parentFolderId);
       if (result && result.filesRequiringReattachment.length > 0) {
@@ -180,6 +217,8 @@ export function ImportModal({
           detail: `${count} file asset${count === 1 ? '' : 's'} landed without bytes. Open Global Assets → Global Files to re-attach.`,
           ttlMs: 12000,
         });
+      } else if (result) {
+        toastImported(`Imported "${result.rootFolderName}"`, []);
       }
     } else if (d.kind === 'apicircle-environment') {
       const result = importApicircleEnvironment(d.parsed);
@@ -312,6 +351,7 @@ export function ImportModal({
   const onUpload = (file: File) => {
     setReading(true);
     setReadError(null);
+    setImportError(null);
     file
       .text()
       .then((c) => {
@@ -328,7 +368,9 @@ export function ImportModal({
 
   if (step === 'bind') {
     return (
-      <Modal open onClose={onSkipBindings} title="Provide secret values">
+      // Mid-bind there is nothing to skip: the values are already on their way
+      // into the vault, so Escape and the backdrop leave the step up.
+      <Modal open onClose={binding ? () => {} : onSkipBindings} title="Provide secret values">
         <BindStep
           bindings={pendingBindings}
           values={bindValues}
@@ -347,7 +389,7 @@ export function ImportModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Import">
+    <Modal open onClose={importing ? () => {} : onClose} title="Import">
       <div className="flex w-full flex-col gap-4 text-xs">
         <div className="flex items-center gap-2">
           <label
@@ -371,15 +413,18 @@ export function ImportModal({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={reading}
+            aria-busy={reading || undefined}
             className="ml-auto inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
           >
-            <FileJson size={11} />
-            {reading ? 'Reading…' : 'Upload .json'}
+            {reading ? <BrandLoader size="xs" /> : <FileJson size={11} />}
+            {reading ? 'Reading…' : 'Upload file'}
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/json,.json,.har,.txt"
+            aria-label="Upload a file to import"
+            // OpenAPI specs are as often YAML as JSON, and the parser reads both.
+            accept="application/json,.json,.yaml,.yml,application/yaml,text/yaml,.har,.txt"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -392,8 +437,11 @@ export function ImportModal({
         <div className="flex flex-col gap-1.5">
           <textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder='Paste Postman / Insomnia / API Circle JSON, or a "curl …" command'
+            onChange={(e) => {
+              setText(e.target.value);
+              setImportError(null);
+            }}
+            placeholder='Paste Postman / Insomnia / API Circle JSON, an OpenAPI spec (JSON or YAML), or a "curl …" command'
             spellCheck={false}
             aria-label="Import source"
             className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
@@ -436,32 +484,48 @@ export function ImportModal({
           </div>
         )}
 
+        {importError && (
+          <p
+            role="alert"
+            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[0.6875rem] text-danger"
+          >
+            {importError}
+          </p>
+        )}
+
         <footer className="flex items-center justify-end gap-2 border-t border-border-subtle pt-3">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
+            disabled={importing}
+            className="inline-flex h-8 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onImport}
-            disabled={!result.detected}
+            disabled={!result.detected || importing}
+            aria-busy={importing || undefined}
             className={cn(
-              'inline-flex h-8 items-center rounded-sm border px-3 text-[0.6875rem]',
+              'inline-flex h-8 items-center gap-1 rounded-sm border px-3 text-[0.6875rem]',
               result.detected
                 ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
                 : 'border-border bg-surface text-text-faint',
+              importing && 'cursor-progress',
             )}
           >
-            <Send size={11} className="mr-1" />
-            Import
+            {importing ? <BrandLoader size="xs" /> : <Send size={11} />}
+            {importing ? 'Importing…' : 'Import'}
           </button>
         </footer>
       </div>
     </Modal>
   );
+}
+
+function countOf(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
 function detect(text: string, format: SourceFormat): DetectedKind {
@@ -713,14 +777,15 @@ function BindStep({
           type="button"
           onClick={onBindFinish}
           disabled={!canBind}
+          aria-busy={binding || undefined}
           className={cn(
-            'inline-flex h-8 items-center rounded-sm border px-3 text-[0.6875rem]',
+            'inline-flex h-8 items-center gap-1 rounded-sm border px-3 text-[0.6875rem]',
             canBind
               ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
               : 'border-border bg-surface text-text-faint',
           )}
         >
-          <KeyRound size={11} className="mr-1" />
+          {binding ? <BrandLoader size="xs" /> : <KeyRound size={11} />}
           {binding
             ? 'Binding…'
             : filledCount === 0

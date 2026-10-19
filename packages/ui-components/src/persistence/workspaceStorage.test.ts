@@ -19,6 +19,7 @@ import {
   LOCAL_STORE,
   SYNCED_STORE,
   clearAll,
+  deleteWorkspaceRecords,
   readRecord,
   readRegistry,
   type WorkspaceRegistry,
@@ -297,6 +298,62 @@ describe('workspaceStorage — probeWorkspaceRecords', () => {
     await clearAll();
     const probe = await probeWorkspaceRecords();
     expect(probe.registry).toBeNull();
+    expect(probe.active).toBeNull();
+  });
+
+  it('counts what the open workspace still holds, by name', async () => {
+    const { workspaceId } = await freshState();
+    const { synced } = await loadWorkspace();
+    await saveSynced({
+      ...synced,
+      environments: {
+        ...synced.environments,
+        items: {
+          Dev: { name: 'Dev', variables: [] },
+          Prod: { name: 'Prod', variables: [] },
+        },
+      },
+    });
+    const probe = await probeWorkspaceRecords();
+    expect(probe.active).toEqual({
+      id: workspaceId,
+      name: probe.registry!.workspaces[0].name,
+      // The new-workspace sample request, and the two environments above.
+      synced: { requests: 1, environments: 2 },
+      local: true,
+    });
+  });
+
+  it('reports a missing half as missing', async () => {
+    const { workspaceId } = await freshState();
+    const local = await readRecord<WorkspaceLocal>(LOCAL_STORE, workspaceId);
+    await deleteWorkspaceRecords(workspaceId);
+    await writeRecord(LOCAL_STORE, local!);
+    const probe = await probeWorkspaceRecords();
+    expect(probe.active).toMatchObject({ id: workspaceId, synced: null, local: true });
+  });
+
+  it('never invents a count for a record whose shape it cannot read', async () => {
+    const { workspaceId } = await freshState();
+    await deleteWorkspaceRecords(workspaceId);
+    await writeRecord(SYNCED_STORE, {
+      workspaceId,
+      collections: { requests: ['not', 'a', 'map'] },
+      environments: 'broken',
+    });
+    const probe = await probeWorkspaceRecords();
+    expect(probe.active).toMatchObject({
+      synced: { requests: null, environments: null },
+      local: false,
+    });
+  });
+
+  it('has nothing to say about a registry whose open workspace is not in it', async () => {
+    const { registry } = await freshState();
+    await writeRegistry({ ...registry, activeWorkspaceId: 'gone' });
+    const probe = await probeWorkspaceRecords();
+    expect(probe.registry).not.toBeNull();
+    expect(probe.active).toBeNull();
   });
 });
 

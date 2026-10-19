@@ -19,7 +19,8 @@
  */
 
 import { useRef, useState } from 'react';
-import { CheckCircle2, Copy, KeyRound, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, KeyRound, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import { BrandLoader } from '../../primitives/BrandLoader';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { refreshToken as runRefreshToken } from '@apicircle/core';
 import { safeExternalHref } from '@apicircle/shared';
@@ -195,10 +196,11 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
           type="button"
           onClick={() => void runFlow()}
           disabled={state.status === 'running' || state.status === 'device-pending'}
+          aria-busy={state.status === 'running' || undefined}
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           {state.status === 'running' ? (
-            <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+            <BrandLoader size="xs" />
           ) : (
             <KeyRound size={11} aria-hidden="true" />
           )}

@@ -61,6 +61,7 @@ import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { isWebBuild } from './webBuild';
 import { isGitHubDeviceFlowAvailable } from './githubDeviceFlow';
 import { isWorkspaceSharingEnabled } from '../workspaceSharing';
+import { BrandLoader } from '../../primitives/BrandLoader';
 
 // Frozen empty, so the folded selector keeps a stable identity across renders.
 const NO_LINKED_WORKSPACES: Record<string, LinkedWorkspace> = Object.freeze({});
@@ -366,8 +367,10 @@ function VaultTab() {
               type="button"
               onClick={() => void submit()}
               disabled={submitting}
-              className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              aria-busy={submitting || undefined}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
+              {submitting && <BrandLoader size="xs" />}
               {submitting ? 'Saving…' : 'Save'}
             </button>
             <button
@@ -583,8 +586,10 @@ function ProvideSlotRow({ slot }: { slot: SecretKeyMeta }) {
         type="button"
         onClick={() => void submit()}
         disabled={submitting || !value}
-        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
+        aria-busy={submitting || undefined}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
       >
+        {submitting && <BrandLoader size="xs" />}
         {submitting ? 'Saving…' : 'Save'}
       </button>
     </li>
@@ -643,8 +648,10 @@ function ProvideLinkedSlotRow({
         type="button"
         onClick={() => void submit()}
         disabled={submitting || !value}
-        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
+        aria-busy={submitting || undefined}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
       >
+        {submitting && <BrandLoader size="xs" />}
         {submitting ? 'Saving…' : 'Save'}
       </button>
     </li>
@@ -1607,8 +1614,10 @@ function ConnectForm({
             type="button"
             onClick={() => void submit()}
             disabled={submitting || !canSubmit}
-            className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            aria-busy={submitting || undefined}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
+            {submitting && <BrandLoader size="xs" />}
             {submitting ? 'Verifying…' : 'Connect'}
           </button>
         </div>
@@ -2226,8 +2235,10 @@ function ActiveSessionCard({
               type="button"
               onClick={() => void onUpdate()}
               disabled={updating || !canUpdate}
-              className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              aria-busy={updating || undefined}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
+              {updating && <BrandLoader size="xs" />}
               {updating ? 'Verifying…' : 'Update'}
             </button>
             <button
@@ -2250,10 +2261,11 @@ function ActiveSessionCard({
             type="button"
             onClick={() => void onVerify()}
             disabled={verifying}
+            aria-busy={verifying || undefined}
             aria-label={`Test ${GIT_HOST_LABELS[host]} connection`}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
           >
-            <RefreshCw size={12} className={verifying ? 'animate-spin' : ''} />
+            {verifying ? <BrandLoader size="xs" /> : <RefreshCw size={12} />}
             {verifying ? 'Testing…' : 'Test connection'}
           </button>
           <button

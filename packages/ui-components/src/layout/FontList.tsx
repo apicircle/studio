@@ -3,7 +3,8 @@
 // live-preview / Esc-revert / Enter-commit semantics.
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Check, LoaderCircle } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { BrandLoader } from '../primitives/BrandLoader';
 import type { FontFamilyId } from '@apicircle/shared';
 import { ALL_FONTS, type FontFamilyDef } from '../theme/applyFont';
 import { getAvailableFonts } from '../theme/fontAvailability';
@@ -318,12 +319,9 @@ function OptionStatus({
   return (
     <span className="ml-2 flex h-4 w-4 shrink-0 items-center justify-center">
       {pending ? (
-        <LoaderCircle
-          size={14}
-          aria-hidden="true"
-          data-testid={`${testId}-preview-pending`}
-          className="animate-spin text-accent transition-opacity"
-        />
+        <span data-testid={`${testId}-preview-pending`} className="flex">
+          <BrandLoader size="xs" />
+        </span>
       ) : active ? (
         <Check
           size={14}

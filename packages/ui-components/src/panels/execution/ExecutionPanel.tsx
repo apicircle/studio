@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import type { EnvPriorityRef, ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
 import { envPriorityKey, validateEnvVarName, validatePlanName } from '@apicircle/shared';
+import { BrandLoader } from '../../primitives/BrandLoader';
+import { Button } from '../../primitives/Button';
 import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ResponseViewer } from '../editor/ResponseViewer';
@@ -78,7 +80,10 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const runPlan = useWorkspaceStore((s) => s.runPlan);
   const cancelExecutePlan = useWorkspaceStore((s) => s.cancelExecutePlan);
 
-  const [running, setRunning] = useState(false);
+  // Which of the two run buttons started the run in flight, so that one wears
+  // the loader; null when nothing is running.
+  const [runMode, setRunMode] = useState<'plain' | 'assertions' | null>(null);
+  const running = runMode !== null;
   /**
    * Verdict from the most recent plan run, broken into two independent
    * tallies so the UI can be unambiguous about WHAT passed:
@@ -159,7 +164,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   );
 
   const onRun = async (withAssertions: boolean) => {
-    setRunning(true);
+    setRunMode(withAssertions ? 'assertions' : 'plain');
     setRunError(null);
     setLastResult(null);
     try {
@@ -182,7 +187,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
     } catch (err) {
       setRunError(err instanceof Error ? err.message : 'Run failed');
     } finally {
-      setRunning(false);
+      setRunMode(null);
     }
   };
 
@@ -306,24 +311,26 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
       <section>
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">Run</h2>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="md"
+            leftIcon={<Play size={11} aria-hidden="true" />}
+            loading={runMode === 'plain'}
+            disabled={running || plan.steps.length === 0}
             onClick={() => void onRun(false)}
-            disabled={running || plan.steps.length === 0}
-            className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
-            <Play size={11} />
-            {running ? 'Running…' : 'Run'}
-          </button>
-          <button
-            type="button"
+            {runMode === 'plain' ? 'Running…' : 'Run'}
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            leftIcon={<Play size={11} aria-hidden="true" />}
+            loading={runMode === 'assertions'}
+            disabled={running || plan.steps.length === 0}
             onClick={() => void onRun(true)}
-            disabled={running || plan.steps.length === 0}
-            className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
-            <Play size={11} />
-            Run with assertions
-          </button>
+            {runMode === 'assertions' ? 'Running with assertions…' : 'Run with assertions'}
+          </Button>
           {running && (
             <button
               type="button"
@@ -565,15 +572,12 @@ function PlanRunDetails({ planId }: { planId: string }) {
                   type="button"
                   onClick={() => void onRetry(i)}
                   disabled={retrying}
+                  aria-busy={retrying || undefined}
                   aria-label={`Retry step ${i + 1}: ${step.requestName}`}
                   title="Retry this step in isolation — does not re-run the rest of the plan"
                   className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:opacity-40"
                 >
-                  <RotateCw
-                    size={11}
-                    aria-hidden="true"
-                    className={retrying ? 'animate-spin' : undefined}
-                  />
+                  {retrying ? <BrandLoader size="xs" /> : <RotateCw size={11} aria-hidden="true" />}
                 </button>
               </div>
               {open && (

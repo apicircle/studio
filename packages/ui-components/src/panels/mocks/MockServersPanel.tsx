@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  Loader2,
+  Check,
+  Copy,
   Play,
   Plus,
   Radio,
@@ -17,6 +18,8 @@ import { MockEndpointEditor } from './MockEndpointEditor';
 import { CreateMockServerModal } from './CreateMockServerModal';
 import { ServeContractModal } from './ServeContractModal';
 import { DesktopAppLink } from '../../primitives/desktopDownload';
+import { Button } from '../../primitives/Button';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 
 // Friendly label for a mock's source kind — the raw union tags (`openapi-asset`)
 // read poorly in the panel; a linked contract in particular should say so.
@@ -316,6 +319,15 @@ function ServerSummary({
           className="mt-1 h-8 w-full max-w-md rounded-sm border border-border bg-card px-2 text-sm text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
+      <MockRunBar
+        server={server}
+        runtime={runtime}
+        bridge={bridge}
+        starting={starting}
+        stopping={stopping}
+        onStart={onStart}
+        onStop={onStop}
+      />
       {linked && (
         <div
           className="flex max-w-md items-start gap-2 rounded-sm border border-accent/40 bg-accent/10 p-2"
@@ -374,51 +386,110 @@ function ServerSummary({
       </dl>
       <PortSection server={server} runtime={runtime} />
       <CorsSection server={server} />
-      <div className="flex items-center gap-2">
-        {runtime ? (
-          <>
-            <span className="rounded-sm border border-success/50 bg-success/10 px-2 py-0.5 text-[0.6875rem] text-success">
-              running · port {runtime.port}
-            </span>
-            <button
-              type="button"
-              onClick={onStop}
-              disabled={stopping}
-              aria-busy={stopping}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:bg-card-hover disabled:opacity-50"
-            >
-              {stopping ? (
-                <Loader2 size={10} className="animate-spin text-accent" aria-hidden="true" />
-              ) : (
-                <Square size={10} aria-hidden="true" />
-              )}
-              {stopping ? 'Stopping…' : 'Stop'}
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={onStart}
-              disabled={!bridge || starting}
-              title={
-                bridge
-                  ? `Start ${server.name}`
-                  : "Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port"
-              }
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary hover:bg-card-hover disabled:opacity-40"
-            >
-              <Play size={10} aria-hidden="true" />
-              {starting ? 'Starting…' : 'Start'}
-            </button>
-            {!bridge && (
-              <span className="text-[0.6875rem] text-text-muted">
-                Needs the <DesktopAppLink /> or the VS Code extension.
-              </span>
-            )}
-          </>
-        )}
+    </div>
+  );
+}
+
+/**
+ * Whether the mock is running and the one control that changes it, at the top
+ * of the card — the first thing anyone opening a mock wants to do. While it
+ * runs, the address it answers on is there to copy into a request or an
+ * environment.
+ */
+function MockRunBar({
+  server,
+  runtime,
+  bridge,
+  starting,
+  stopping,
+  onStart,
+  onStop,
+}: {
+  server: MockServer;
+  runtime: MockRuntimeEntry | undefined;
+  bridge: DesktopMockBridge | null;
+  starting: boolean;
+  stopping: boolean;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => {
+    if (copy === 'idle') return;
+    const timer = window.setTimeout(() => setCopy('idle'), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copy]);
+
+  if (runtime) {
+    // The runtime binds the loopback address (mock-server-core's default host).
+    const url = `http://127.0.0.1:${runtime.port}`;
+    return (
+      <div
+        role="group"
+        aria-label="Mock server status"
+        className="flex max-w-xl flex-wrap items-center gap-2 rounded-sm border border-success/40 bg-success/5 px-3 py-2"
+      >
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success-fg">
+          <span className="h-2 w-2 rounded-full bg-success" aria-hidden="true" />
+          Running
+        </span>
+        <code className="font-mono text-xs text-text-primary">{url}</code>
+        <Button
+          size="xs"
+          leftIcon={
+            copy === 'copied' ? (
+              <Check size={11} aria-hidden="true" />
+            ) : (
+              <Copy size={11} aria-hidden="true" />
+            )
+          }
+          aria-label={`Copy ${url}`}
+          onClick={() =>
+            void safeCopyToClipboard(url).then((r) => setCopy(r.ok ? 'copied' : 'failed'))
+          }
+        >
+          {copy === 'copied' ? 'Copied' : copy === 'failed' ? 'Couldn’t copy' : 'Copy'}
+        </Button>
+        <Button
+          className="ml-auto"
+          leftIcon={<Square size={11} aria-hidden="true" />}
+          loading={stopping}
+          onClick={onStop}
+        >
+          {stopping ? 'Stopping…' : 'Stop'}
+        </Button>
       </div>
+    );
+  }
+  return (
+    <div
+      role="group"
+      aria-label="Mock server status"
+      className="flex max-w-xl flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-card px-3 py-2"
+    >
+      <span className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+        <span className="h-2 w-2 rounded-full bg-text-faint" aria-hidden="true" />
+        Stopped
+      </span>
+      <Button
+        variant="primary"
+        leftIcon={<Play size={11} aria-hidden="true" />}
+        loading={starting}
+        disabled={!bridge}
+        title={
+          bridge
+            ? `Start ${server.name}`
+            : "Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port"
+        }
+        onClick={onStart}
+      >
+        {starting ? 'Starting…' : 'Start'}
+      </Button>
+      {!bridge && (
+        <span className="text-[0.6875rem] text-text-muted">
+          Needs the <DesktopAppLink /> or the VS Code extension.
+        </span>
+      )}
     </div>
   );
 }

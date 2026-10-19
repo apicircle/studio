@@ -293,7 +293,8 @@ test.describe('Request Editor — URL Bar edge cases', () => {
         // Send is enabled — clicking should surface a validation error.
         await sendButton.click();
       }
-      const errOrDisabled = app.getByText(/url is required|invalid url|^ERR/i);
+      // The response badge for a send that got no response reads "No response".
+      const errOrDisabled = app.getByText(/url is required|invalid url|^No response$/i);
       const errCount = await errOrDisabled.count();
       expect(errCount > 0 || disabled).toBe(true);
     },

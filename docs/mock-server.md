@@ -30,9 +30,9 @@ sharing the same `@apicircle/mock-server-core` engine and workspace format.
 
 1. Open the _Mocks_ panel (sidebar tab).
 2. Mock servers in your workspace appear as cards with endpoint counts.
-3. Pick a mock and select a **Default port** (1024–65535) — or leave blank to let the runtime pick a free port on each Start. The port input is disabled while the mock is running; stop it first to change.
-4. Click **Start** to bind that port. The card flips to a green badge with the live port. If the port is already in use, the runtime surfaces `Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.`
-5. Click **Stop** to shut down without removing the definition.
+3. Pick a mock and select a **Default port** (1024–65535) — or leave blank to let the runtime pick a free port on each Start. The port can be changed while the mock is running; the new value applies at the next Start.
+4. Click **Start** at the top of the card, under the name, to bind that port. While it starts the button reads **Starting…** with the brand loader; then the bar reads **Running** with the address the mock answers on (`http://127.0.0.1:<port>`) and a **Copy** button. If the port is already in use, the runtime surfaces `Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.`
+5. Click **Stop** in the same bar to shut down without removing the definition.
 
 The web build of the app shows the same panel — port editing works there too, since it's a synced-doc field. Start/stop buttons are gated on the desktop bridge (with a banner explaining the alternatives).
 

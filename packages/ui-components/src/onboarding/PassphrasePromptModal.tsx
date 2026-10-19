@@ -18,6 +18,7 @@
 
 import { useState } from 'react';
 import { KeyRound, Lock, ShieldCheck } from 'lucide-react';
+import { BrandLoader } from '../primitives/BrandLoader';
 import { Modal } from '../primitives/Modal';
 import { cn } from '../primitives/cn';
 
@@ -189,10 +190,17 @@ export function PassphrasePromptModal({
             type="button"
             onClick={() => void submit()}
             disabled={!canSubmit}
+            aria-busy={submitting || undefined}
             className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
-            <KeyRound size={12} aria-hidden="true" />
-            {submitting ? 'Working…' : isSetup ? 'Set passphrase' : 'Unlock'}
+            {submitting ? <BrandLoader size="xs" /> : <KeyRound size={12} aria-hidden="true" />}
+            {submitting
+              ? isSetup
+                ? 'Setting passphrase…'
+                : 'Unlocking…'
+              : isSetup
+                ? 'Set passphrase'
+                : 'Unlock'}
           </button>
         </div>
       </div>

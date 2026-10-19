@@ -3,6 +3,7 @@ import { AlertTriangle, FileCode, Info, Server } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { mockSpecWarningToast } from '../../store/mockSpecWarnings';
 import { Modal } from '../../primitives/Modal';
+import { BrandLoader } from '../../primitives/BrandLoader';
 
 // "Serve OpenAPI contract" — the dedicated run-live entry point. It stands up a
 // mock server that serves an OpenAPI/Swagger contract DIRECTLY from a spec
@@ -229,9 +230,10 @@ export function ServeContractModal() {
             type="button"
             onClick={() => void onSubmit()}
             disabled={submitting || !assetId || !name.trim()}
+            aria-busy={submitting || undefined}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
-            <Server size={11} aria-hidden="true" />
+            {submitting ? <BrandLoader size="xs" /> : <Server size={11} aria-hidden="true" />}
             {submitting ? 'Creating…' : 'Create contract server'}
           </button>
         </div>

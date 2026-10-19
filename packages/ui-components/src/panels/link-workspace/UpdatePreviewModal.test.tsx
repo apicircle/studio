@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { LinkedUpdatePreview } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { UpdatePreviewModal } from './UpdatePreviewModal';
@@ -188,5 +188,120 @@ describe('UpdatePreviewModal — Apply enable defaults', () => {
     const applyBtn = screen.getByRole('button', { name: /Update pin/ });
     expect(applyBtn).toBeEnabled();
     expect(applyBtn).toHaveTextContent(/Update pin to v2\.0\.0/);
+  });
+});
+
+describe('UpdatePreviewModal — Apply shows the brand loader while busy', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  const NO_CHANGES: LinkedUpdatePreview['summary'] = {
+    unchanged: 0,
+    'source-only': 0,
+    'local-only': 0,
+    'both-changed': 0,
+    'new-in-source': 0,
+    'removed-in-source': 0,
+  };
+
+  /** Stubs the apply action with one whose promise the test settles. */
+  function holdApply(): { apply: Mock<() => Promise<void>>; finish: () => void } {
+    let finish: () => void = () => {};
+    const apply = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    useWorkspaceStore.setState({ applyLinkedUpdateForLink: apply });
+    return { apply, finish: () => finish() };
+  }
+
+  it('a merge shows "Applying…" with the loader while the update applies, then returns to idle', async () => {
+    const preview: LinkedUpdatePreview = {
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0',
+      entries: [
+        {
+          bucket: 'request',
+          key: 'r1',
+          label: 'Get user',
+          status: 'both-changed',
+          base: null,
+          target: null,
+          override: null,
+        },
+      ],
+      summary: { ...NO_CHANGES, 'both-changed': 1 },
+    };
+    act(() => seedActivePreview('lw-1', preview));
+    const { apply, finish } = holdApply();
+    const user = userEvent.setup();
+    render(<UpdatePreviewModal />);
+
+    // The aria-label stays "Apply update" in both states; the visible text flips.
+    const applyBtn = await screen.findByRole('button', { name: 'Apply update' });
+    expect(applyBtn).toBeEnabled();
+    expect(applyBtn).not.toHaveAttribute('aria-busy');
+    expect(applyBtn).toHaveTextContent('Apply update');
+    expect(applyBtn.querySelector('svg[data-brand-loader]')).toBeNull();
+    expect(applyBtn.querySelector('svg')).not.toBeNull();
+
+    await user.click(applyBtn);
+    // The conflict row's default ("Keep mine") is what goes to the store.
+    expect(apply).toHaveBeenCalledWith({ 'request:r1': 'mine' });
+    expect(applyBtn).toBeDisabled();
+    expect(applyBtn).toHaveAttribute('aria-busy', 'true');
+    expect(applyBtn).toHaveTextContent('Applying…');
+    expect(applyBtn.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    expect(applyBtn.querySelectorAll('svg')).toHaveLength(1);
+
+    await act(async () => {
+      finish();
+    });
+
+    expect(applyBtn).toBeEnabled();
+    expect(applyBtn).not.toHaveAttribute('aria-busy');
+    expect(applyBtn).toHaveTextContent('Apply update');
+    expect(applyBtn.querySelector('svg[data-brand-loader]')).toBeNull();
+  });
+
+  it('a pin-only update shows "Updating pin…" with the loader while the pin moves, then returns to idle', async () => {
+    const preview: LinkedUpdatePreview = {
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0', // ahead of the seeded pin (1.0.0), no content changes
+      entries: [],
+      summary: NO_CHANGES,
+    };
+    act(() => seedActivePreview('lw-1', preview));
+    const { apply, finish } = holdApply();
+    const user = userEvent.setup();
+    render(<UpdatePreviewModal />);
+
+    const pinBtn = await screen.findByRole('button', { name: 'Update pin' });
+    expect(pinBtn).toBeEnabled();
+    expect(pinBtn).not.toHaveAttribute('aria-busy');
+    expect(pinBtn).toHaveTextContent('Update pin to v2.0.0');
+    expect(pinBtn.querySelector('svg[data-brand-loader]')).toBeNull();
+
+    await user.click(pinBtn);
+    expect(apply).toHaveBeenCalledWith({});
+    expect(pinBtn).toBeDisabled();
+    expect(pinBtn).toHaveAttribute('aria-busy', 'true');
+    expect(pinBtn).toHaveTextContent('Updating pin…');
+    expect(pinBtn.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    expect(pinBtn.querySelectorAll('svg')).toHaveLength(1);
+
+    await act(async () => {
+      finish();
+    });
+
+    expect(pinBtn).toBeEnabled();
+    expect(pinBtn).not.toHaveAttribute('aria-busy');
+    expect(pinBtn).toHaveTextContent('Update pin to v2.0.0');
+    expect(pinBtn.querySelector('svg[data-brand-loader]')).toBeNull();
   });
 });

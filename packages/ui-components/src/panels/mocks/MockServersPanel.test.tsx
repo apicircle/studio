@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { MockServersPanel } from './MockServersPanel';
@@ -468,5 +468,100 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(ep.pathPattern).toBe('/orders');
     // Defaults preserved.
     expect(ep.defaultResponse.status).toBe(200);
+  });
+});
+
+describe('MockServersPanel — run bar', () => {
+  const RUNTIME: MockRuntimeEntry = {
+    port: 4040,
+    pid: 1234,
+    startedAt: T0,
+    lastError: null,
+    requestCount: 0,
+  };
+
+  async function openServer(): Promise<void> {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: null,
+    }));
+    await screen.findByLabelText('Mock server name');
+  }
+
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  it('sits at the top of the card, above the source and the port', async () => {
+    await openServer();
+    const bar = screen.getByRole('group', { name: 'Mock server status' });
+    expect(bar).toHaveTextContent('Stopped');
+    const port = screen.getByLabelText('Default port');
+    // The bar comes first in document order.
+    expect(bar.compareDocumentPosition(port) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows Start running, then the address it answers on', async () => {
+    const start = deferred<MockRuntimeEntry>();
+    bridge.start.mockReturnValue(start.promise);
+    await openServer();
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    const starting = screen.getByRole('button', { name: 'Starting…' });
+    expect(starting).toBeDisabled();
+    expect(starting).toHaveAttribute('aria-busy', 'true');
+    expect(starting.querySelector('svg[data-brand-loader]')).not.toBeNull();
+    bridge.list.mockResolvedValue([{ serverId: 'm1', runtime: RUNTIME }]);
+    await act(async () => start.resolve(RUNTIME));
+    const bar = screen.getByRole('group', { name: 'Mock server status' });
+    expect(bar).toHaveTextContent('Running');
+    expect(within(bar).getByText('http://127.0.0.1:4040')).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'Stop' })).toBeEnabled();
+  });
+
+  it('copies the address, and says so', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    bridge.list.mockResolvedValue([{ serverId: 'm1', runtime: RUNTIME }]);
+    await openServer();
+    const copy = await screen.findByRole('button', { name: 'Copy http://127.0.0.1:4040' });
+    await userEvent.click(copy);
+    expect(writeText).toHaveBeenCalledWith('http://127.0.0.1:4040');
+    expect(copy).toHaveTextContent('Copied');
+    // And goes back to offering it again.
+    await waitFor(() => expect(copy).toHaveTextContent(/^Copy$/), { timeout: 3000 });
+  });
+
+  it('says when the address could not be copied', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    bridge.list.mockResolvedValue([{ serverId: 'm1', runtime: RUNTIME }]);
+    await openServer();
+    const copy = await screen.findByRole('button', { name: 'Copy http://127.0.0.1:4040' });
+    await userEvent.click(copy);
+    expect(copy).toHaveTextContent('Couldn’t copy');
+  });
+
+  it('shows Stop running until the server has stopped', async () => {
+    const stop = deferred<{ ok: boolean }>();
+    bridge.stop.mockReturnValue(stop.promise);
+    bridge.list.mockResolvedValue([{ serverId: 'm1', runtime: RUNTIME }]);
+    await openServer();
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    const stopping = screen.getByRole('button', { name: 'Stopping…' });
+    expect(stopping).toBeDisabled();
+    expect(stopping).toHaveAttribute('aria-busy', 'true');
+    bridge.list.mockResolvedValue([]);
+    await act(async () => stop.resolve({ ok: true }));
+    expect(screen.getByRole('group', { name: 'Mock server status' })).toHaveTextContent('Stopped');
   });
 });

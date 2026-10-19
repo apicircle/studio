@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, LifeBuoy } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { probeWorkspaceRecords } from './persistence/workspaceStorage';
+import { probeWorkspaceRecords, type ActiveWorkspaceProbe } from './persistence/workspaceStorage';
 import { connectedHostKind, useWorkspaceStore } from './store/workspaceStore';
 import { getDesktopWorkspaceFileBridge } from './desktop/bridge';
 import {
@@ -183,6 +183,8 @@ import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
 import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
 import { CloseConfirmModal } from './layout/CloseConfirmModal';
 import { OnboardingTour } from './onboarding/OnboardingTour';
+import { LoadingState } from './primitives/BrandLoader';
+import { Button } from './primitives/Button';
 import { ConfirmDialog } from './primitives/ConfirmDialog';
 import { Modal } from './primitives/Modal';
 import { ToastViewport } from './primitives/Toast';
@@ -457,8 +459,8 @@ export function App({
 
   if (!ready) {
     return (
-      <div className="flex h-full items-center justify-center bg-surface text-sm text-text-muted">
-        Loading workspace…
+      <div className="flex h-full items-center justify-center bg-surface">
+        <LoadingState size="lg" title="Loading workspace…" />
       </div>
     );
   }
@@ -640,12 +642,31 @@ function InlineLayout({ hasSidebar, dockedInline, activePanel }: InlineLayoutPro
   );
 }
 
-interface RecoverableSummary {
-  syncedHasData: boolean;
-  localHasData: boolean;
-  syncedWorkspaceName?: string;
-  syncedRequestCount?: number;
-  syncedEnvironmentCount?: number;
+type RecoveryAction = 'retry' | 'recover' | 'reset';
+
+const RECOVERY_FAILED: Record<RecoveryAction, string> = {
+  retry: 'Couldn’t load the workspace.',
+  recover: 'Couldn’t recover the workspace.',
+  reset: 'Couldn’t reset the workspace.',
+};
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * "saved — 12 requests, 2 environments", or just "saved" when the record is
+ * there but its contents can't be counted. Never a count it does not know.
+ */
+function describeSyncedRecord(synced: ActiveWorkspaceProbe['synced']): string {
+  if (!synced) return 'missing';
+  const counts = [
+    synced.requests === null ? null : plural(synced.requests, 'request', 'requests'),
+    synced.environments === null
+      ? null
+      : plural(synced.environments, 'environment', 'environments'),
+  ].filter((c): c is string => c !== null);
+  return counts.length > 0 ? `saved — ${counts.join(', ')}` : 'saved';
 }
 
 function HydrationErrorScreen() {
@@ -653,51 +674,56 @@ function HydrationErrorScreen() {
   const hydrate = useWorkspaceStore((s) => s.hydrate);
   const resetWorkspace = useWorkspaceStore((s) => s.resetWorkspace);
   const recoverPartialWorkspace = useWorkspaceStore((s) => s.recoverPartialWorkspace);
-  const [busy, setBusy] = useState(false);
-  const [recoverable, setRecoverable] = useState<RecoverableSummary | null>(null);
+  const [running, setRunning] = useState<RecoveryAction | null>(null);
+  const [probe, setProbe] = useState<ActiveWorkspaceProbe | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  // Surface the "no recoverable data" outcome from `recoverPartialWorkspace`
-  // as an in-app modal instead of a native alert. When null, the modal is
-  // closed; the message string is displayed verbatim when set.
+  // Shown after a Retry that ran and still could not load the workspace —
+  // otherwise the screen looks exactly as it did and the press seems ignored.
+  const [retryFailed, setRetryFailed] = useState(false);
+  // Surface the "no recoverable data" outcome from `recoverPartialWorkspace`,
+  // or a failed action, as an in-app modal instead of a native alert. When
+  // null, the modal is closed; the message string is displayed verbatim.
   const [recoverNotice, setRecoverNotice] = useState<string | null>(null);
 
-  // Probe IDB on mount so the recovery UI can tell the user what data is
-  // actually salvageable (vs a generic "your data is still in IndexedDB").
+  // Read the open workspace's two records on mount so the screen can say what
+  // is actually still saved, rather than a generic "your data is still there".
   useEffect(() => {
     let cancelled = false;
     probeWorkspaceRecords()
       .then((records) => {
-        if (cancelled) return;
-        // Post-B.6 multi-workspace: probeWorkspaceRecords returns the
-        // registry. The recovery banner only needs to know whether
-        // anything is salvageable — the registry's existence is enough.
-        const reg = records.registry;
-        const activeEntry = reg?.workspaces.find((w) => w.id === reg.activeWorkspaceId);
-        setRecoverable({
-          syncedHasData: Boolean(reg && reg.workspaces.length > 0),
-          localHasData: Boolean(reg && reg.workspaces.length > 0),
-          syncedWorkspaceName: activeEntry?.name,
-          syncedRequestCount: undefined,
-          syncedEnvironmentCount: undefined,
-        });
+        if (!cancelled) setProbe(records.active);
       })
       .catch(() => {
-        // Probe itself failed — IDB is fully broken. Leave recoverable null;
-        // the UI falls back to Retry / Reset.
+        // The probe itself failed — IndexedDB is fully broken. Leave the probe
+        // null; the screen falls back to Retry / Reset.
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const hasData = probe !== null && (probe.synced !== null || probe.local);
+  // Recovery rebuilds a missing or mismatched half. With both halves there and
+  // agreeing on their id, there is nothing for it to rebuild.
   const canRecover =
-    recoverable !== null &&
-    (recoverable.syncedHasData || recoverable.localHasData) &&
-    !(
-      recoverable.syncedHasData &&
-      recoverable.localHasData &&
-      error.syncedWorkspaceId === error.localWorkspaceId
-    );
+    probe !== null &&
+    hasData &&
+    !(probe.synced !== null && probe.local && error.syncedWorkspaceId === error.localWorkspaceId);
+
+  const run = async (action: RecoveryAction, work: () => Promise<void>) => {
+    setRunning(action);
+    setRetryFailed(false);
+    try {
+      await work();
+    } catch (err) {
+      setResetConfirmOpen(false);
+      setRecoverNotice(
+        `${RECOVERY_FAILED[action]} ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setRunning(null);
+    }
+  };
 
   return (
     <div className="flex h-full items-center justify-center bg-surface p-6">
@@ -708,75 +734,70 @@ function HydrationErrorScreen() {
         </header>
         <p className="text-xs text-text-muted">{error.message}</p>
 
-        {recoverable && (recoverable.syncedHasData || recoverable.localHasData) && (
-          <div className="rounded-sm border border-border-subtle bg-card p-2 text-[0.6875rem] text-text-muted">
-            <p className="mb-1 font-medium text-text-primary">Data still in IndexedDB</p>
-            <ul className="flex flex-col gap-0.5 font-mono">
-              <li>
-                synced: {recoverable.syncedHasData ? 'present' : '— (missing)'}
-                {recoverable.syncedHasData &&
-                  ` · ${recoverable.syncedWorkspaceName ?? 'unnamed'} · ${recoverable.syncedRequestCount ?? 0} requests · ${recoverable.syncedEnvironmentCount ?? 0} envs`}
-              </li>
-              <li>local: {recoverable.localHasData ? 'present' : '— (missing)'}</li>
+        {probe && hasData && (
+          <div className="rounded-sm border border-border-subtle bg-card p-2 text-xs text-text-muted">
+            <p className="mb-1 font-medium text-text-primary">
+              Still saved on this device for &ldquo;{probe.name}&rdquo;
+            </p>
+            <ul className="flex flex-col gap-0.5">
+              <li>Collections and environments: {describeSyncedRecord(probe.synced)}</li>
+              <li>History, vault and settings: {probe.local ? 'saved' : 'missing'}</li>
             </ul>
           </div>
         )}
 
         <p className="text-xs text-text-muted">
           {canRecover
-            ? 'Recovering keeps your synced data (collections, environments, folders) and rebuilds the missing local-side state with a fresh secret vault and history. Resetting wipes everything.'
+            ? 'Recovering keeps your collections, environments and folders, and rebuilds what is missing with a fresh secret vault and history. Resetting wipes everything.'
             : 'Try retrying first; if that doesn’t work, resetting creates a brand-new workspace (existing records will be overwritten).'}
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              void (async () => {
-                setBusy(true);
-                try {
-                  await hydrate();
-                } finally {
-                  setBusy(false);
-                }
-              })();
-            }}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
+          <Button
+            variant="primary"
+            loading={running === 'retry'}
+            disabled={running !== null}
+            onClick={() =>
+              void run('retry', async () => {
+                await hydrate();
+                // hydrate() reports its own failure through the store rather
+                // than throwing; this screen is still up only when it failed.
+                if (useWorkspaceStore.getState().hydrationError) setRetryFailed(true);
+              })
+            }
           >
-            {busy ? 'Retrying…' : 'Retry'}
-          </button>
+            {running === 'retry' ? 'Retrying…' : 'Retry'}
+          </Button>
           {canRecover && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                void (async () => {
-                  setBusy(true);
-                  try {
-                    const result = await recoverPartialWorkspace();
-                    if (result === 'no-data') {
-                      setRecoverNotice('No recoverable data found. Use Reset to start fresh.');
-                    }
-                  } finally {
-                    setBusy(false);
+            <Button
+              variant="primary"
+              leftIcon={<LifeBuoy size={11} aria-hidden="true" />}
+              loading={running === 'recover'}
+              disabled={running !== null}
+              onClick={() =>
+                void run('recover', async () => {
+                  const result = await recoverPartialWorkspace();
+                  if (result === 'no-data') {
+                    setRecoverNotice('No recoverable data found. Use Reset to start fresh.');
                   }
-                })();
-              }}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/15 px-3 text-[0.6875rem] text-accent hover:bg-accent/25 disabled:opacity-50"
+                })
+              }
             >
-              <LifeBuoy size={11} />
-              Recover existing data
-            </button>
+              {running === 'recover' ? 'Recovering…' : 'Recover existing data'}
+            </Button>
           )}
-          <button
-            type="button"
-            disabled={busy}
+          <Button
+            variant="danger"
+            disabled={running !== null}
             onClick={() => setResetConfirmOpen(true)}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/40 bg-danger/5 px-3 text-[0.6875rem] text-danger hover:bg-danger/10 disabled:opacity-50"
           >
             Reset workspace
-          </button>
+          </Button>
+          {retryFailed && (
+            <p role="status" className="text-xs text-text-muted">
+              Tried again — it still didn&rsquo;t load.
+            </p>
+          )}
         </div>
       </div>
 
@@ -790,18 +811,13 @@ function HydrationErrorScreen() {
           </p>
         }
         confirmLabel="Reset workspace"
+        busyLabel="Resetting…"
         tone="danger"
         typedConfirm="RESET"
         onCancel={() => setResetConfirmOpen(false)}
-        onConfirm={async () => {
-          setResetConfirmOpen(false);
-          setBusy(true);
-          try {
-            await resetWorkspace();
-          } finally {
-            setBusy(false);
-          }
-        }}
+        // The dialog stays up, busy, while the reset runs; a reset that worked
+        // replaces this whole screen, and one that failed closes it for the notice.
+        onConfirm={() => run('reset', resetWorkspace)}
       />
 
       <Modal

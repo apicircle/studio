@@ -25,7 +25,112 @@ beforeEach(() => {
 describe('EditorPanel', () => {
   it('shows the empty-state when no request is selected', async () => {
     await renderWithStore(<EditorPanel />);
-    expect(screen.getByText(/Select a request from the sidebar/i)).toBeInTheDocument();
+    expect(screen.getByText('No request open')).toBeInTheDocument();
+    expect(screen.getByText('Pick one in the sidebar, or start a new one.')).toBeInTheDocument();
+  });
+
+  it('starts a new request from the empty state, and opens it', async () => {
+    await renderWithStore(<EditorPanel />);
+    await userEvent.click(screen.getByRole('button', { name: 'New request' }));
+    expect(await screen.findByLabelText('Request name')).toHaveValue('New request');
+    const activeId = useWorkspaceStore.getState().local!.ui.activeRequestId!;
+    expect(useWorkspaceStore.getState().synced!.collections.requests[activeId]).toBeDefined();
+  });
+
+  it('opens the import dialog from the empty state', async () => {
+    await renderWithStore(<EditorPanel />);
+    expect(useWorkspaceStore.getState().importModalOpen).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Import…' }));
+    expect(useWorkspaceStore.getState().importModalOpen).toBe(true);
+  });
+
+  describe('renaming from the header', () => {
+    let id: string;
+
+    beforeEach(async () => {
+      await renderWithStore(<EditorPanel />);
+      act(() => {
+        useWorkspaceStore.getState().addRequest(null, 'Get users');
+        id = useWorkspaceStore.getState().addRequest(null, 'List orders');
+      });
+      await waitFor(() => expect(screen.getByLabelText('Request name')).toHaveValue('List orders'));
+    });
+
+    const nameOf = () => useWorkspaceStore.getState().synced!.collections.requests[id].name;
+
+    it('flags a name another request in the folder has, while it is typed', async () => {
+      const input = screen.getByLabelText('Request name');
+      await userEvent.clear(input);
+      await userEvent.type(input, 'get USERS');
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent('A request named “get USERS” is already in this folder.');
+      expect(input).toHaveAttribute('aria-describedby', alert.id);
+      // Enter keeps the field open to fix it, and saves nothing.
+      await userEvent.keyboard('{Enter}');
+      expect(input).toHaveFocus();
+      expect(nameOf()).toBe('List orders');
+    });
+
+    it('puts the saved name back on leaving, and says so', async () => {
+      const input = screen.getByLabelText('Request name');
+      await userEvent.clear(input);
+      await userEvent.type(input, 'Get users');
+      act(() => input.blur());
+      expect(input).toHaveValue('List orders');
+      expect(input).not.toHaveAttribute('aria-invalid');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Kept “List orders”: a request named “Get users” is already in this folder.',
+      );
+      expect(nameOf()).toBe('List orders');
+      // Typing again clears the note.
+      await userEvent.type(input, 's');
+      expect(screen.queryByText(/^Kept “List orders”/)).toBeNull();
+    });
+
+    it('renames when the name is free, a case change of its own name included', async () => {
+      const input = screen.getByLabelText('Request name');
+      await userEvent.clear(input);
+      await userEvent.type(input, 'list ORDERS{Enter}');
+      expect(nameOf()).toBe('list ORDERS');
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('drops the edit and the note on Escape', async () => {
+      const input = screen.getByLabelText('Request name');
+      await userEvent.clear(input);
+      await userEvent.type(input, 'Get users');
+      await userEvent.keyboard('{Escape}');
+      expect(input).toHaveValue('List orders');
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('never saves the edit Escape threw away', async () => {
+      const input = screen.getByLabelText('Request name');
+      await userEvent.clear(input);
+      await userEvent.type(input, 'A free name');
+      await userEvent.keyboard('{Escape}');
+      expect(input).toHaveValue('List orders');
+      expect(nameOf()).toBe('List orders');
+      // The next real edit still saves.
+      await userEvent.clear(input);
+      await userEvent.type(input, 'Orders{Enter}');
+      expect(nameOf()).toBe('Orders');
+    });
+
+    it('starts clean on the next request it opens', async () => {
+      const input = screen.getByLabelText('Request name');
+      await userEvent.clear(input);
+      await userEvent.type(input, 'Get users');
+      act(() => input.blur());
+      expect(screen.getByRole('status')).toBeInTheDocument();
+      act(() => {
+        useWorkspaceStore.getState().addRequest(null, 'Third');
+      });
+      await waitFor(() => expect(screen.getByLabelText('Request name')).toHaveValue('Third'));
+      expect(screen.queryByText(/^Kept “/)).toBeNull();
+    });
   });
 
   describe('with a selected request', () => {

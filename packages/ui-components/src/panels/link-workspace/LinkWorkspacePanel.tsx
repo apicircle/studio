@@ -38,6 +38,7 @@ import { isRepoCoordinateComplete, REPO_PLACEHOLDER } from '../../store/repoCoor
 import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
+import { BrandLoader, LoadingState } from '../../primitives/BrandLoader';
 import { cn } from '../../primitives/cn';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
@@ -281,9 +282,10 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
               type="button"
               onClick={() => void onSearch()}
               disabled={searching || !query.trim()}
+              aria-busy={searching || undefined}
               className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
-              <Search size={11} />
+              {searching ? <BrandLoader size="xs" /> : <Search size={11} />}
               {searching ? 'Searching…' : 'Search'}
             </button>
           </div>
@@ -895,9 +897,10 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
               .
             </p>
           ) : (
-            <p>Loading…</p>
+            <LoadingState size="sm" title="Loading the link details…" />
           )
         }
+        busyLabel="Linking…"
         onCancel={() => setConfirmOpen(false)}
         onConfirm={onConfirm}
       />
@@ -1067,10 +1070,11 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
             type="button"
             onClick={() => void onReviewUpdate()}
             disabled={previewing}
+            aria-busy={previewing || undefined}
             aria-label={`Review update to v${ledger?.currentVersion}`}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-xs text-warning hover:bg-warning/20 disabled:opacity-50"
           >
-            <ArrowDown size={11} />
+            {previewing ? <BrandLoader size="xs" /> : <ArrowDown size={11} />}
             {previewing ? 'Loading preview…' : `Review update → v${ledger?.currentVersion}`}
           </button>
         )}
@@ -1078,9 +1082,10 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           type="button"
           onClick={() => void onRefresh()}
           disabled={refreshing}
+          aria-busy={refreshing || undefined}
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
-          <RefreshCw size={11} className={refreshing ? 'animate-spin' : undefined} />
+          {refreshing ? <BrandLoader size="xs" /> : <RefreshCw size={11} />}
           {refreshing ? 'Refreshing…' : 'Refresh ledger'}
         </button>
         <button
@@ -1273,11 +1278,12 @@ function LinkedAttachmentsSection({ link }: { link: LinkedWorkspace }) {
           type="button"
           onClick={() => void onDownload()}
           disabled={syncing || missingCount === 0}
+          aria-busy={syncing || undefined}
           aria-label={`Download attachments for ${link.name}`}
           className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
-          <Download size={11} aria-hidden="true" />
-          {syncing ? 'Downloading...' : missingCount === 0 ? 'Downloaded' : 'Download missing'}
+          {syncing ? <BrandLoader size="xs" /> : <Download size={11} aria-hidden="true" />}
+          {syncing ? 'Downloading…' : missingCount === 0 ? 'Downloaded' : 'Download missing'}
         </button>
       </div>
       {error && (
@@ -1768,7 +1774,7 @@ function BranchPicker({
         Branch
       </label>
       {loading ? (
-        <p className="mt-1 text-[0.6875rem] text-text-dim">Loading branches…</p>
+        <LoadingState size="sm" title="Loading branches…" className="mt-1" />
       ) : error ? (
         <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
           {error}
@@ -2181,8 +2187,10 @@ function RequiredKeyRow({
             type="button"
             onClick={() => void onSave()}
             disabled={saving || !value}
-            className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20 disabled:opacity-50"
+            aria-busy={saving || undefined}
+            className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20 disabled:opacity-50"
           >
+            {saving && <BrandLoader size="xs" />}
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button
@@ -2532,8 +2540,10 @@ function DedicatedTokenForm({
           type="button"
           onClick={() => void onSave()}
           disabled={submitting || !token.trim()}
-          className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
+          aria-busy={submitting || undefined}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
         >
+          {submitting && <BrandLoader size="xs" />}
           {submitting ? 'Verifying…' : 'Save token'}
         </button>
         <button

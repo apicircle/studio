@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { AnchoredPopover } from '../../primitives/AnchoredPopover';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
+import { BrandLoader } from '../../primitives/BrandLoader';
 
 /**
  * Imperative toast push — used for fire-and-forget sync writes that we
@@ -599,8 +600,10 @@ function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
               type="button"
               onClick={() => void submitCreate()}
               disabled={!newLabel.trim() || busy}
-              className="h-7 flex-1 rounded-sm border border-accent bg-accent/10 px-2 text-[0.6875rem] text-text-primary hover:bg-accent/20 disabled:opacity-50"
+              aria-busy={busy || undefined}
+              className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-2 text-[0.6875rem] text-text-primary hover:bg-accent/20 disabled:opacity-50"
             >
+              {busy && <BrandLoader size="xs" />}
               {busy ? 'Creating…' : 'Create & bind'}
             </button>
           </div>

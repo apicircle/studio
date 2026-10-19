@@ -507,6 +507,12 @@ All 17 `RequestAuth` types are end-to-end functional. Signing primitives
   (`packages/ui-components/src/primitives/cn.ts`). `var(--purple)` is the
   accent (with the `text-accent` / `bg-accent` / `border-accent` tokens).
 - **Icons:** `lucide-react`.
+- **Waits and empty panels:** every wait shows the API Circle mark —
+  `BrandLoader` (primitives; compact under 24px), `LoadingState` for a wait
+  the user is looking at, `Button loading` / `ConfirmDialog` busy for an
+  action in flight (in-flight label plus `aria-busy`). No spinning icons,
+  `Loader2`, or bare "Loading…" text. A panel with nothing to show uses
+  `EmptyState` with the buttons that fill it.
 - **IDs:** `generateId()` from `@apicircle/shared` — never hand-roll IDs.
 - **Tests are co-located:** `foo.ts` ↔ `foo.test.ts` (Vitest). Accessibility is
   covered by axe assertions in the Playwright suite — keep them green.
