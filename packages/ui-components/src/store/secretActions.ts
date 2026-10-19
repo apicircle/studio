@@ -29,19 +29,36 @@ export function vaultSlotLabels(
 
 /**
  * Every set of environments whose encrypted variables can bind a slot of this
- * workspace: its own, and each linked workspace's once the consumer's
- * overrides (which can bind a variable to a slot) are applied. Feeds
+ * workspace: its own (`linkedWorkspaceId: null`), and each linked workspace's
+ * once the consumer's overrides (which can bind a variable to a slot) are
+ * applied. Each set names the link it came from, so the Vault's "Used in" can
+ * say where a bound variable lives.
+ */
+export function slotBindingEnvironmentSets(
+  synced: WorkspaceSynced,
+  linkedCollections: WorkspaceLocal['linkedCollections'],
+): Array<{ linkedWorkspaceId: string | null; items: Record<string, Environment> }> {
+  const sets: Array<{ linkedWorkspaceId: string | null; items: Record<string, Environment> }> = [
+    { linkedWorkspaceId: null, items: synced.environments.items },
+  ];
+  for (const [linkId, snapshot] of Object.entries(linkedCollections)) {
+    sets.push({
+      linkedWorkspaceId: linkId,
+      items: applyLinkedEnvironmentOverrides(snapshot.environments, linkId, synced).items,
+    });
+  }
+  return sets;
+}
+
+/**
+ * The sets of `slotBindingEnvironmentSets`, without their links. Feeds
  * `findEncryptionKeys`, the same sets a send resolves against.
  */
 export function slotBindingEnvironments(
   synced: WorkspaceSynced,
   linkedCollections: WorkspaceLocal['linkedCollections'],
 ): Array<Record<string, Environment>> {
-  const sets: Array<Record<string, Environment>> = [synced.environments.items];
-  for (const [linkId, snapshot] of Object.entries(linkedCollections)) {
-    sets.push(applyLinkedEnvironmentOverrides(snapshot.environments, linkId, synced).items);
-  }
-  return sets;
+  return slotBindingEnvironmentSets(synced, linkedCollections).map((set) => set.items);
 }
 
 export function addSecretEntry(

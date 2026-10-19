@@ -1052,7 +1052,9 @@ describe('SecretVaultDockPanel', () => {
       const deleteBtn = await screen.findByRole('button', { name: /Delete TOKEN/ });
       expect(deleteBtn).toHaveTextContent(/In use \(1\)/);
       await userEvent.click(deleteBtn);
-      expect(screen.getByText(/referenced in 1 place/)).toBeInTheDocument();
+      expect(screen.getByText(/This secret is used in 1 place\./)).toHaveTextContent(
+        'This secret is used in 1 place. Click Confirm to delete anyway, or click outside this row (or press Esc) to cancel.',
+      );
 
       await userEvent.click(screen.getByRole('button', { name: /Delete TOKEN/ }));
       await waitFor(() => {
@@ -1104,6 +1106,135 @@ describe('SecretVaultDockPanel', () => {
       );
       // Only the key's row says so.
       expect(screen.getAllByText(/· not a variable$/)).toHaveLength(1);
+    });
+
+    it('asks before deleting a secret that encrypts variables, names them, and clears them on confirm', async () => {
+      await renderWithStore(<SecretVaultDockPanel />);
+      let keyId = '';
+      await act(async () => {
+        const s = useWorkspaceStore.getState();
+        s.addEnvironment('staging');
+        s.setVariables('staging', [
+          { key: 'ADMIN_TOKEN', value: 'tok', encrypted: false },
+          { key: 'REFRESH_TOKEN', value: 'ref', encrypted: false },
+        ]);
+        keyId = await s.addSecret({ label: 'ADMIN_KEY', value: 'slot-value' });
+        await s.bindVariableToSecretKey('staging', 0, keyId);
+        await s.bindVariableToSecretKey('staging', 1, keyId);
+      });
+
+      // Nothing writes {{ADMIN_KEY}}: the two variables it encrypts are its uses.
+      const deleteBtn = await screen.findByRole('button', { name: 'Delete ADMIN_KEY' });
+      await waitFor(() => expect(deleteBtn).toHaveTextContent('In use (2)'));
+      await userEvent.click(screen.getByRole('button', { name: 'Toggle where ADMIN_KEY is used' }));
+      const uses = screen.getAllByRole('listitem').filter((li) => li.closest('ul.list-disc'));
+      expect(uses.map((li) => li.textContent)).toEqual([
+        'environment-var · staging → ADMIN_TOKEN',
+        'environment-var · staging → REFRESH_TOKEN',
+      ]);
+
+      await userEvent.click(deleteBtn);
+      expect(screen.getByText(/This secret is used in 2 places\./)).toHaveTextContent(
+        'This secret is used in 2 places. Deleting it clears the values of ADMIN_TOKEN, ' +
+          'REFRESH_TOKEN, which it encrypts. Click Confirm to delete anyway, or click outside ' +
+          'this row (or press Esc) to cancel.',
+      );
+      // Not deleted until confirmed.
+      expect(useWorkspaceStore.getState().local!.secretIndex.entries[keyId]).toBeDefined();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Delete ADMIN_KEY' }));
+      await waitFor(() =>
+        expect(useWorkspaceStore.getState().local!.secretIndex.entries[keyId]).toBeUndefined(),
+      );
+      expect(useWorkspaceStore.getState().synced!.environments.items.staging.variables).toEqual([
+        { key: 'ADMIN_TOKEN', value: '', encrypted: false },
+        { key: 'REFRESH_TOKEN', value: '', encrypted: false },
+      ]);
+    });
+
+    it('says the one variable a secret encrypts in the singular', async () => {
+      await renderWithStore(<SecretVaultDockPanel />);
+      await act(async () => {
+        const s = useWorkspaceStore.getState();
+        s.addEnvironment('staging');
+        s.setVariables('staging', [{ key: 'ADMIN_TOKEN', value: 'tok', encrypted: false }]);
+        const keyId = await s.addSecret({ label: 'ADMIN_KEY', value: 'slot-value' });
+        await s.bindVariableToSecretKey('staging', 0, keyId);
+      });
+      await userEvent.click(await screen.findByRole('button', { name: 'Delete ADMIN_KEY' }));
+      expect(
+        screen.getByText(/Deleting it clears the value of ADMIN_TOKEN, which it encrypts\./),
+      ).toBeInTheDocument();
+    });
+
+    it('refreshes where a secret is used when a variable is bound without a commit', async () => {
+      await renderWithStore(<SecretVaultDockPanel />);
+      let keyId = '';
+      await act(async () => {
+        keyId = await useWorkspaceStore.getState().addSecret({ label: 'KEY', value: 'v' });
+      });
+      expect(await screen.findByRole('button', { name: 'Delete KEY' })).toHaveTextContent(
+        /^Delete$/,
+      );
+
+      // A pull or a workspace loaded from disk lands the synced doc as is:
+      // no commit, so nothing else recomputes the index.
+      act(() => {
+        const { synced } = useWorkspaceStore.getState();
+        useWorkspaceStore.setState({
+          synced: {
+            ...synced!,
+            environments: {
+              ...synced!.environments,
+              items: {
+                dev: {
+                  name: 'dev',
+                  variables: [
+                    { key: 'TOKEN', value: 'enc:v1:x', encrypted: true, secretKeyId: keyId },
+                  ],
+                },
+              },
+            },
+          },
+        });
+      });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Delete KEY' })).toHaveTextContent('In use (1)'),
+      );
+
+      // So does a linked workspace's cached snapshot.
+      act(() => {
+        const { synced, local } = useWorkspaceStore.getState();
+        useWorkspaceStore.setState({
+          local: {
+            ...local!,
+            linkedCollections: {
+              'lw-1': {
+                pulledAt: 't',
+                ref: 'HEAD@main',
+                collections: synced!.collections,
+                environments: {
+                  items: {
+                    prod: {
+                      name: 'prod',
+                      variables: [
+                        { key: 'TOKEN', value: 'enc:v1:y', encrypted: true, secretKeyId: keyId },
+                      ],
+                    },
+                  },
+                  activeName: null,
+                  priorityOrder: [],
+                },
+              },
+            },
+          },
+        });
+      });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Delete KEY' })).toHaveTextContent('In use (2)'),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Toggle where KEY is used' }));
+      expect(screen.getByText(/lw-1 · prod → TOKEN/)).toBeInTheDocument();
     });
 
     it('shows the where-used expander once the secret has references', async () => {

@@ -1,4 +1,5 @@
 import type { SecretEntry, WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
+import { slotBindingEnvironmentSets } from './secretActions';
 
 // Build a map of secret-id → SecretUsage[] by scanning every place a
 // `{{LABEL}}` placeholder can appear:
@@ -7,6 +8,10 @@ import type { SecretEntry, WorkspaceLocal, WorkspaceSynced } from '@apicircle/sh
 //   - environment variable values (so envs that wrap a vault secret get
 //     credit for the consumption)
 //   - linked-workspace requiredSecretKeyIds (secrets demanded by a link)
+// and every environment variable a secret encrypts (`encrypted: true` with
+// `secretKeyId` set to it), the workspace's own and each linked workspace's
+// after this workspace's overrides. Deleting the secret clears those
+// variables' values, so each one is a usage that gates the Vault's Delete.
 //
 // The aggregator runs O(secrets × references). It's debounced upstream by
 // the workspace store; this module is pure.
@@ -94,6 +99,28 @@ export function aggregateUsedIn(
     }
   }
 
+  // Environment variables a secret encrypts. Their value is ciphertext that
+  // only that secret's value decrypts, so they are a usage of it whether or
+  // not anything writes `{{LABEL}}`. A linked workspace's variable names the
+  // link, since its environments can share names with this workspace's own.
+  const ids = new Set(Object.keys(local.secretIndex.entries));
+  for (const set of slotBindingEnvironmentSets(synced, local.linkedCollections)) {
+    const linkId = set.linkedWorkspaceId;
+    const linkName = linkId ? (synced.linkedWorkspaces[linkId]?.name ?? linkId) : null;
+    for (const env of Object.values(set.items)) {
+      for (const v of env.variables) {
+        if (!v.encrypted || !v.secretKeyId || !ids.has(v.secretKeyId)) continue;
+        const path = `${env.name}.${v.key}`;
+        const label = `${env.name} → ${v.key || '(unnamed)'}`;
+        push(v.secretKeyId, {
+          kind: 'environment-var',
+          id: linkId ? `${linkId}:${path}` : path,
+          label: linkName ? `${linkName} · ${label}` : label,
+        });
+      }
+    }
+  }
+
   // Linked workspaces — when a link declares it requires a secret label,
   // that's a direct usage even before any placeholder references it.
   for (const link of Object.values(synced.linkedWorkspaces)) {
@@ -125,8 +152,7 @@ export function recomputeUsedIn(synced: WorkspaceSynced, local: WorkspaceLocal):
   for (const id of Object.keys(local.secretIndex.entries)) {
     full[id] = map[id] ?? [];
   }
-  // Apply via the secretActions reducer behavior inline so this module
-  // doesn't import from a sibling — keep deps acyclic.
+  // Applied inline, the same way secretActions' `applyUsedInMap` does it.
   let changed = false;
   const entries = { ...local.secretIndex.entries };
   for (const [id, usedIn] of Object.entries(full)) {

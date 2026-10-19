@@ -98,6 +98,94 @@ describe('aggregateUsedIn', () => {
     expect(aggregateUsedIn(synced, local)['s-token'] ?? []).toEqual([]);
   });
 
+  it('counts every variable a secret encrypts, with no {{LABEL}} anywhere', () => {
+    const { local } = seed();
+    let { synced } = seed();
+    synced = addEnvironment(synced, 'staging');
+    synced = addEnvironment(synced, 'prod');
+    synced = setVariables(synced, 'staging', [
+      { key: 'ADMIN_TOKEN', value: 'enc:v1:a', encrypted: true, secretKeyId: 's-token' },
+      { key: '', value: 'enc:v1:b', encrypted: true, secretKeyId: 's-token' },
+      // A stale binding on a plain variable encrypts nothing.
+      { key: 'PLAIN', value: 'p', encrypted: false, secretKeyId: 's-token' },
+    ]);
+    synced = setVariables(synced, 'prod', [
+      { key: 'ADMIN_TOKEN', value: 'enc:v1:c', encrypted: true, secretKeyId: 's-token' },
+      // A slot this device has no vault entry for is not in the index.
+      { key: 'OTHER', value: 'enc:v1:d', encrypted: true, secretKeyId: 's-not-indexed' },
+    ]);
+    expect(aggregateUsedIn(synced, local)).toEqual({
+      's-token': [
+        { kind: 'environment-var', id: 'staging.ADMIN_TOKEN', label: 'staging → ADMIN_TOKEN' },
+        { kind: 'environment-var', id: 'staging.', label: 'staging → (unnamed)' },
+        { kind: 'environment-var', id: 'prod.ADMIN_TOKEN', label: 'prod → ADMIN_TOKEN' },
+      ],
+    });
+  });
+
+  it("counts a linked workspace's variable an override binds, named by its link", () => {
+    const { local: seeded } = seed();
+    const { synced: base } = seed();
+    const snapshot = {
+      pulledAt: 't',
+      ref: 'HEAD@main',
+      collections: base.collections,
+      environments: {
+        items: {
+          prod: { name: 'prod', variables: [{ key: 'TOKEN', value: 'p', encrypted: false }] },
+        },
+        activeName: null,
+        priorityOrder: [],
+      },
+    };
+    const bound = {
+      envName: 'prod',
+      varKey: 'TOKEN',
+      value: 'enc:v1:x',
+      encrypted: true,
+      secretKeyId: 's-token',
+      updatedAt: 't',
+    };
+    const synced = {
+      ...base,
+      linkedWorkspaces: {
+        'lw-1': {
+          id: 'lw-1',
+          kind: 'public' as const,
+          name: 'Pets API',
+          sourceWorkspaceId: 'src-ws-pets',
+          source: {
+            provider: 'github' as const,
+            repoFullName: 'me/pets',
+            branch: 'main',
+            sessionMode: 'workspace' as const,
+          },
+          scope: ['collections' as const],
+          pinnedVersion: 'v1.0.0',
+          updatePolicy: 'manual' as const,
+          linkedAt: 't',
+          requiredSecretKeyIds: [],
+        },
+      },
+      linkedOverrides: {
+        requests: {},
+        environmentVars: {
+          a: { ...bound, linkedWorkspaceId: 'lw-1' },
+          // The link record is gone but its snapshot is still cached.
+          b: { ...bound, linkedWorkspaceId: 'lw-gone' },
+        },
+      },
+    };
+    const local = {
+      ...seeded,
+      linkedCollections: { 'lw-1': snapshot, 'lw-gone': snapshot },
+    };
+    expect(aggregateUsedIn(synced, local)['s-token']).toEqual([
+      { kind: 'environment-var', id: 'lw-1:prod.TOKEN', label: 'Pets API · prod → TOKEN' },
+      { kind: 'environment-var', id: 'lw-gone:prod.TOKEN', label: 'lw-gone · prod → TOKEN' },
+    ]);
+  });
+
   it('records linked-workspace requiredSecretKeyIds as direct usages', () => {
     const { local } = seed();
     let { synced } = seed();
@@ -150,6 +238,22 @@ describe('recomputeUsedIn', () => {
     synced = updateRequest(synced, r.request.id, { url: 'https://no-placeholder' });
     const cleared = recomputeUsedIn(synced, withUsage);
     expect(cleared.secretIndex.entries['s-token'].usedIn).toEqual([]);
+  });
+
+  it('drops a bound variable from usedIn once it no longer encrypts with the secret', () => {
+    const { local } = seed();
+    let { synced } = seed();
+    synced = addEnvironment(synced, 'dev');
+    synced = setVariables(synced, 'dev', [
+      { key: 'AUTH', value: 'enc:v1:a', encrypted: true, secretKeyId: 's-token' },
+    ]);
+    const bound = recomputeUsedIn(synced, local);
+    expect(bound.secretIndex.entries['s-token'].usedIn).toEqual([
+      { kind: 'environment-var', id: 'dev.AUTH', label: 'dev → AUTH' },
+    ]);
+
+    synced = setVariables(synced, 'dev', [{ key: 'AUTH', value: 'a', encrypted: false }]);
+    expect(recomputeUsedIn(synced, bound).secretIndex.entries['s-token'].usedIn).toEqual([]);
   });
 
   it('returns the same reference when nothing changed', () => {

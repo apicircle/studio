@@ -5426,7 +5426,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Cascade through the synced doc: drop the slot record, and unbind
     // every env var that referenced it. We can't recover those env vars'
     // plaintext (slot key is gone), so they become empty plain rows — the
-    // user keeps the variable name and can re-type a value if needed.
+    // user keeps the variable name and can re-type a value if needed. A
+    // linked workspace's variable this workspace's override bound to the
+    // slot is cleared the same way, on the override. The Vault's Delete asks
+    // first: each of these variables is in the slot's `usedIn`.
     let touched = false;
     const nextItems: Record<string, Environment> = {};
     for (const [envName, env] of Object.entries(synced.environments.items)) {
@@ -5439,6 +5442,28 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       });
       nextItems[envName] = { ...env, variables: nextVars };
     }
+    const nextEnvOverrides: WorkspaceSynced['linkedOverrides']['environmentVars'] = {};
+    for (const [key, ov] of Object.entries(synced.linkedOverrides.environmentVars)) {
+      // The variable the override makes, as `applyLinkedEnvironmentOverrides`
+      // builds it: a field the override leaves out comes from the source.
+      const source = local.linkedCollections[ov.linkedWorkspaceId]?.environments.items[
+        ov.envName
+      ]?.variables.find((v) => v.key === ov.varKey);
+      const encrypted = ov.encrypted ?? source?.encrypted ?? false;
+      if (!ov.removed && encrypted && (ov.secretKeyId ?? source?.secretKeyId) === id) {
+        touched = true;
+        const { secretKeyId: _unbound, ...rest } = ov;
+        void _unbound;
+        nextEnvOverrides[key] = {
+          ...rest,
+          value: '',
+          encrypted: false,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        nextEnvOverrides[key] = ov;
+      }
+    }
     const nextSecretKeys = { ...(synced.secretKeys ?? {}) };
     const hadSlotMeta = id in nextSecretKeys;
     delete nextSecretKeys[id];
@@ -5447,6 +5472,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const nextSynced: WorkspaceSynced = {
         ...synced,
         environments: { ...synced.environments, items: nextItems },
+        linkedOverrides: { ...synced.linkedOverrides, environmentVars: nextEnvOverrides },
         secretKeys: nextSecretKeys,
         meta: { ...synced.meta, updatedAt: new Date().toISOString() },
       };

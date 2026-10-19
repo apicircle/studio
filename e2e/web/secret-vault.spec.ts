@@ -152,7 +152,7 @@ test.describe('Secret Vault', () => {
       const deleteBtn = app.getByRole('button', { name: 'Delete TOKEN' });
       await expect(deleteBtn).toContainText(/In use \(1\)/);
       await deleteBtn.click();
-      await expect(app.getByText(/referenced in 1 place/)).toBeVisible();
+      await expect(app.getByText(/This secret is used in 1 place\./)).toBeVisible();
 
       // Confirm step — second click deletes.
       await app.getByRole('button', { name: 'Delete TOKEN' }).click();
@@ -288,6 +288,61 @@ test.describe('Secret Vault — encryption keys and History', () => {
       });
       expect(stored).toContain('history-hides-secrets');
       expect(stored).not.toContain(TOKEN);
+    },
+  );
+
+  // Deleting the key clears every variable it encrypts: nothing else can
+  // decrypt them. Delete took the key in one click, because "where used"
+  // counted only {{LABEL}} references.
+  test(
+    tc(
+      id('Var :: Toggle secret->plaintext warns'),
+      'deleting the key a variable is encrypted with asks first, names the variable, and clears it',
+    ),
+    async ({ app }) => {
+      await seedEncryptedToken(app);
+
+      await app.getByRole('button', { name: /Open Secret Vault/ }).click();
+      const row = app.getByRole('listitem').filter({ hasText: 'ADMIN_TOKEN_ENCRYPTION_KEY' });
+      const deleteBtn = app.getByRole('button', { name: 'Delete ADMIN_TOKEN_ENCRYPTION_KEY' });
+      // Nothing writes {{ADMIN_TOKEN_ENCRYPTION_KEY}}: the variable it encrypts is its use.
+      await expect(deleteBtn).toContainText('In use (1)');
+      await app
+        .getByRole('button', { name: 'Toggle where ADMIN_TOKEN_ENCRYPTION_KEY is used' })
+        .click();
+      await expect(row.getByText('environment-var · staging → ADMIN_TOKEN')).toBeVisible();
+
+      await deleteBtn.click();
+      const confirm = row.getByText(/This secret is used in 1 place\./);
+      await expect(confirm).toHaveText(
+        'This secret is used in 1 place. Deleting it clears the value of ADMIN_TOKEN, which it ' +
+          'encrypts. Click Confirm to delete anyway, or click outside this row (or press Esc) to ' +
+          'cancel.',
+      );
+      // Esc cancels, and nothing is deleted.
+      await app.keyboard.press('Escape');
+      await expect(confirm).toHaveCount(0);
+      await expect(deleteBtn).toContainText('In use (1)');
+
+      await deleteBtn.click();
+      await expect(deleteBtn).toContainText('Confirm');
+      await deleteBtn.click();
+      await expect(row).toHaveCount(0);
+
+      // The variable stays, as an empty plain one ready for a new value.
+      const variables = await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore: {
+            getState: () => {
+              synced: {
+                environments: { items: Record<string, { variables: unknown[] }> };
+              } | null;
+            };
+          };
+        };
+        return w.__apicircleStore.getState().synced?.environments.items.staging?.variables ?? null;
+      });
+      expect(variables).toEqual([{ key: 'ADMIN_TOKEN', value: '', encrypted: false }]);
     },
   );
 });

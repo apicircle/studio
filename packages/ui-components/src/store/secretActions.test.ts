@@ -7,6 +7,7 @@ import {
   renameSecretEntry,
   setSecretUsedIn,
   slotBindingEnvironments,
+  slotBindingEnvironmentSets,
   vaultSlotLabels,
 } from './secretActions';
 
@@ -74,6 +75,24 @@ describe('slotBindingEnvironments', () => {
     expect(sets[1].prod.variables).toEqual([
       { key: 'TOKEN', value: 'enc:v1:x', encrypted: true, secretKeyId: 's1' },
     ]);
+  });
+});
+
+describe('slotBindingEnvironmentSets', () => {
+  it('names the link each set comes from, and null for the own environments', () => {
+    const { synced, local } = createEmptyWorkspace();
+    const linked = {
+      pulledAt: 't',
+      ref: 'HEAD@main',
+      collections: synced.collections,
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+    const sets = slotBindingEnvironmentSets(synced, { lw1: linked, lw2: linked });
+    expect(sets.map((s) => s.linkedWorkspaceId)).toEqual([null, 'lw1', 'lw2']);
+    expect(sets[0].items).toBe(synced.environments.items);
+    // No overrides for either link: its own environments, as cached.
+    expect(sets[1].items).toBe(linked.environments.items);
+    expect(slotBindingEnvironmentSets(synced, local.linkedCollections)).toHaveLength(1);
   });
 });
 

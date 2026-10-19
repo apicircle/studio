@@ -772,7 +772,8 @@ Each entry is a label and a value. Saving encrypts the value with AES-256-GCM un
     STRIPE_KEY      ............   origin: workspace   used in 2 places
 
 - Values are masked; reveal them briefly, or copy to clipboard.
-- A **"where used"** list tracks the environments and requests that consume the key — and delete is blocked while a key is still in use, so you cannot strand a reference.
+- A **"where used"** list names the requests and environment variables that use the entry: every \`{{LABEL}}\` reference, and every variable the entry encrypts. While anything uses it, the first click on **Delete** shows **In use (N)** and asks you to confirm, so you cannot strand a reference by accident.
+- Deleting an entry clears the value of every variable it encrypts, since nothing else can decrypt them: each one stays as an empty plain variable, ready for a new value. The confirmation names them first.
 - After cloning a workspace a **missing-slots gate** prompts you to fill any keys that have no local value yet.
 
 ## Encryption keys are not variables

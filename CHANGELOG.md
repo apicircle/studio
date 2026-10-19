@@ -102,6 +102,24 @@
 
 ### Fixed
 
+- **Deleting a Secret Vault entry that encrypts environment variables asks
+  first, and says it clears them.** The Vault's "where used" index counted
+  `{{LABEL}}` references and linked-workspace inputs, but not the variables an
+  entry encrypts (`encrypted: true` with `secretKeyId` set to it). So Delete
+  took an entry that encrypted variables in one click, and each of those
+  variables silently became an empty plain row: their ciphertext cannot be
+  decrypted without the entry. `aggregateUsedIn` now counts every variable an
+  entry encrypts as an `environment-var` usage — the workspace's own, and a
+  linked workspace's after this workspace's overrides (named
+  `<link> · <env> → <variable>`), from the same environment sets the send
+  reads (`slotBindingEnvironmentSets`). Delete shows **In use (N)**, "Used in" lists
+  the variables, and the confirmation says "Deleting it clears the values of
+  ADMIN_TOKEN, REFRESH_TOKEN, which it encrypts." The index is also refreshed
+  while the Vault is open, so a binding that arrived without a commit — a
+  workspace loaded from disk, a pull, a linked snapshot — gates Delete too.
+  `removeSecret` now clears a linked override bound to the entry the same way
+  it clears the workspace's own variables, instead of leaving ciphertext that
+  names a deleted slot.
 - **A Git host's address is asked for once, and its token goes nowhere else.**
   A build that registers more hosts than GitHub (an edition's; Studio alone
   registers GitHub and shows none of this) offered an optional "API base URL" in

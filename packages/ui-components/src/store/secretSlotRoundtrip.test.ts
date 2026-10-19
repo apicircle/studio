@@ -262,4 +262,92 @@ describe('secret-slot encryption round-trip', () => {
     expect(afterForce.value).toBe('');
     expect(afterForce.key).toBe('API_TOKEN');
   });
+
+  it('deleting a slot clears every variable it encrypts, linked overrides included, and nothing else', async () => {
+    let keyId = '';
+    let otherId = '';
+    await act(async () => {
+      const s = useWorkspaceStore.getState();
+      s.addEnvironment('prod');
+      s.setVariables('prod', [
+        { key: 'API_TOKEN', value: 'sk_live_abc123', encrypted: false },
+        { key: 'OTHER_TOKEN', value: 'other', encrypted: false },
+        { key: 'PLAIN', value: 'plain', encrypted: false },
+      ]);
+      keyId = await s.addSecret({ label: 'TEAM_KEY', value: 'team-passphrase-v1' });
+      otherId = await s.addSecret({ label: 'OTHER_KEY', value: 'other-passphrase' });
+      expect(await s.bindVariableToSecretKey('prod', 0, keyId)).toBe(true);
+      expect(await s.bindVariableToSecretKey('prod', 1, otherId)).toBe(true);
+    });
+
+    // Linked overrides, as a headless writer could leave them.
+    const at = { linkedWorkspaceId: 'lw1', envName: 'prod', updatedAt: 't' };
+    const overrides = {
+      bound: { ...at, varKey: 'A', value: 'enc:v1:a', encrypted: true, secretKeyId: keyId },
+      // Binds through the source: the override only changes the ciphertext.
+      viaSource: { ...at, varKey: 'B', value: 'enc:v1:b' },
+      otherKey: { ...at, varKey: 'C', value: 'enc:v1:c', encrypted: true, secretKeyId: otherId },
+      removed: { ...at, varKey: 'D', encrypted: true, secretKeyId: keyId, removed: true },
+      plain: { ...at, varKey: 'E', value: 'e', encrypted: false, secretKeyId: keyId },
+      // Its link has no cached snapshot: only what the override says counts.
+      uncached: {
+        ...at,
+        linkedWorkspaceId: 'lw-uncached',
+        varKey: 'F',
+        value: 'f',
+      },
+    };
+    act(() => {
+      const { synced, local } = useWorkspaceStore.getState();
+      useWorkspaceStore.setState({
+        synced: {
+          ...synced!,
+          linkedOverrides: { ...synced!.linkedOverrides, environmentVars: overrides },
+        },
+        local: {
+          ...local!,
+          linkedCollections: {
+            lw1: {
+              pulledAt: 't',
+              ref: 'HEAD@main',
+              collections: synced!.collections,
+              environments: {
+                items: {
+                  prod: {
+                    name: 'prod',
+                    variables: [
+                      { key: 'B', value: 'enc:v1:src', encrypted: true, secretKeyId: keyId },
+                    ],
+                  },
+                },
+                activeName: null,
+                priorityOrder: [],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await act(async () => {
+      await useWorkspaceStore.getState().removeSecret(keyId);
+    });
+
+    const synced = useWorkspaceStore.getState().synced!;
+    expect(synced.secretKeys?.[keyId]).toBeUndefined();
+    const [apiToken, otherToken, plain] = synced.environments.items.prod.variables;
+    expect(apiToken).toEqual({ key: 'API_TOKEN', value: '', encrypted: false });
+    expect(otherToken).toMatchObject({ key: 'OTHER_TOKEN', encrypted: true, secretKeyId: otherId });
+    expect(plain).toEqual({ key: 'PLAIN', value: 'plain', encrypted: false });
+
+    const after = synced.linkedOverrides.environmentVars;
+    for (const cleared of ['bound', 'viaSource'] as const) {
+      expect(after[cleared]).toMatchObject({ value: '', encrypted: false });
+      expect(after[cleared]).not.toHaveProperty('secretKeyId');
+      expect(after[cleared].updatedAt).not.toBe('t');
+    }
+    for (const kept of ['otherKey', 'removed', 'plain', 'uncached'] as const) {
+      expect(after[kept]).toBe(overrides[kept]);
+    }
+  });
 });

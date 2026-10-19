@@ -222,6 +222,16 @@ function VaultTab() {
     });
   }, [synced, local]);
 
+  // Each row's Delete is gated on its `usedIn`, which only a synced commit
+  // refreshes. A workspace loaded from disk, a pull, or a linked snapshot can
+  // bind a variable to a secret without one, and deleting that secret clears
+  // the variable. So the index is refreshed whenever what it reads changes
+  // while the Vault is open; a no-op when nothing moved.
+  const linkedCollections = local?.linkedCollections;
+  useEffect(() => {
+    recompute();
+  }, [recompute, synced, linkedCollections]);
+
   const [adding, setAdding] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
   const [draftValue, setDraftValue] = useState('');
@@ -902,9 +912,11 @@ function SecretRow({ entry, encrypts }: SecretRowProps) {
       )}
       {confirmDelete && (
         <p className="mt-2 text-[0.6875rem] text-warning">
-          This secret is referenced in {usedInCount} place{usedInCount === 1 ? '' : 's'}. Click{' '}
-          <span className="text-text-primary">Confirm</span> to delete anyway, or click outside this
-          row (or press Esc) to cancel.
+          This secret is used in {usedInCount} place{usedInCount === 1 ? '' : 's'}.
+          {encrypts.length > 0 &&
+            ` Deleting it clears the value${encrypts.length === 1 ? '' : 's'} of ${encrypts.join(', ')}, which it encrypts.`}{' '}
+          Click <span className="text-text-primary">Confirm</span> to delete anyway, or click
+          outside this row (or press Esc) to cancel.
         </p>
       )}
     </li>
