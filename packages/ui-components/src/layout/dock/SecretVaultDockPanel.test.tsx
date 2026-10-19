@@ -1061,6 +1061,51 @@ describe('SecretVaultDockPanel', () => {
       });
     });
 
+    it.each([
+      ['no workspace is loaded', { synced: null, local: null }],
+      ['only the synced document is loaded', { local: null }],
+    ])('lists no encryption keys, and no entries, while %s', async (_case, state) => {
+      await renderWithStore(<SecretVaultDockPanel />);
+      act(() => {
+        useWorkspaceStore.setState(state);
+      });
+      expect(await screen.findByText(/No secrets yet/)).toBeInTheDocument();
+      expect(screen.queryByText(/· not a variable$/)).not.toBeInTheDocument();
+    });
+
+    it('marks a secret that encrypts variables as their encryption key, not a variable', async () => {
+      await renderWithStore(<SecretVaultDockPanel />);
+      expect(
+        screen.getByText(/A secret that encrypts environment variables is their/),
+      ).toHaveTextContent(
+        'A secret that encrypts environment variables is their encryption key, not a variable: it is never sent, so write the variable instead.',
+      );
+
+      await act(async () => {
+        const s = useWorkspaceStore.getState();
+        s.addEnvironment('staging');
+        s.setVariables('staging', [
+          { key: 'ADMIN_TOKEN', value: 'tok', encrypted: false },
+          { key: 'REFRESH_TOKEN', value: 'ref', encrypted: false },
+        ]);
+        const keyId = await s.addSecret({ label: 'ADMIN_KEY', value: 'slot-value' });
+        await s.addSecret({ label: 'PLAIN', value: 'plain-value' });
+        await s.bindVariableToSecretKey('staging', 0, keyId);
+        await s.bindVariableToSecretKey('staging', 1, keyId);
+      });
+
+      const keyLine = await screen.findByText(
+        'Encryption key of ADMIN_TOKEN, REFRESH_TOKEN · not a variable',
+      );
+      expect(keyLine.parentElement).toHaveAttribute(
+        'title',
+        '{{ADMIN_KEY}} is the encryption key of ADMIN_TOKEN and REFRESH_TOKEN, not a variable, ' +
+          'so its value is never sent. Write {{ADMIN_TOKEN}} or {{REFRESH_TOKEN}} to send one of the variables.',
+      );
+      // Only the key's row says so.
+      expect(screen.getAllByText(/· not a variable$/)).toHaveLength(1);
+    });
+
     it('shows the where-used expander once the secret has references', async () => {
       await renderWithStore(<SecretVaultDockPanel />);
 

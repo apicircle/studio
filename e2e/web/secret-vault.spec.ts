@@ -160,3 +160,134 @@ test.describe('Secret Vault', () => {
     },
   );
 });
+
+// The 2026-10-18 incident: ADMIN_TOKEN was encrypted with the vault slot
+// ADMIN_TOKEN_ENCRYPTION_KEY, a request named the slot instead of the variable,
+// and the slot's own value went to the server. History then kept the token in
+// plain text. A slot that encrypts variables is now an encryption key: the
+// editor blocks a request naming it, and History never stores a secret.
+test.describe('Secret Vault — encryption keys and History', () => {
+  const TOKEN = 'admin-token-e2e-7731';
+
+  /** ADMIN_TOKEN encrypted under the ADMIN_TOKEN_ENCRYPTION_KEY slot. */
+  async function seedEncryptedToken(app: Page): Promise<void> {
+    await setWorkspacePassphrase(app, 'e2e-test-passphrase');
+    const bound = await app.evaluate(async (token: string) => {
+      const w = window as unknown as {
+        __apicircleStore: {
+          getState: () => {
+            addEnvironment: (name: string) => void;
+            setPriorityOrder: (refs: Array<{ kind: 'local'; name: string }>) => void;
+            setVariables: (
+              env: string,
+              vars: Array<{ key: string; value: string; encrypted: boolean }>,
+            ) => void;
+            addSecret: (args: { label: string; value: string }) => Promise<string>;
+            bindVariableToSecretKey: (env: string, index: number, id: string) => Promise<boolean>;
+          };
+        };
+      };
+      const s = w.__apicircleStore.getState();
+      s.addEnvironment('staging');
+      s.setPriorityOrder([{ kind: 'local', name: 'staging' }]);
+      s.setVariables('staging', [{ key: 'ADMIN_TOKEN', value: token, encrypted: false }]);
+      const slotId = await s.addSecret({
+        label: 'ADMIN_TOKEN_ENCRYPTION_KEY',
+        value: 'slot-passphrase-never-sent',
+      });
+      return s.bindVariableToSecretKey('staging', 0, slotId);
+    }, TOKEN);
+    expect(bound).toBe(true);
+  }
+
+  test(
+    tc(
+      id('Resolution'),
+      'a request naming an encryption-key slot is blocked; the variable it encrypts is sent',
+    ),
+    async ({ app, e2eMock, sidebar }) => {
+      await seedEncryptedToken(app);
+
+      // The vault row says what the slot is.
+      await app.getByRole('button', { name: /Open Secret Vault/ }).click();
+      await expect(
+        app
+          .getByRole('listitem')
+          .filter({ hasText: 'ADMIN_TOKEN_ENCRYPTION_KEY' })
+          .getByText('Encryption key of ADMIN_TOKEN · not a variable'),
+      ).toBeVisible();
+      await app.getByRole('button', { name: 'Close workspace inspector' }).click();
+
+      const path = '/anything/encryption-key-ref';
+      await sidebar.createRequest('key-ref');
+      await app.getByLabel('Request URL').fill(e2eMock.url(path));
+      await app
+        .getByRole('tab', { name: /^Headers/ })
+        .first()
+        .click();
+      await app.getByRole('button', { name: 'Add row' }).click();
+      await app.getByLabel('Headers key 1').fill('Authorization');
+      await app.getByLabel('Headers value 1').fill('Bearer {{ADMIN_TOKEN_ENCRYPTION_KEY}}');
+      await app.keyboard.press('Escape');
+
+      const preSend = app.getByRole('region', { name: 'Pre-send validation' });
+      await expect(preSend).toContainText(
+        '{{ADMIN_TOKEN_ENCRYPTION_KEY}} is the encryption key of ADMIN_TOKEN, not a variable, ' +
+          'so its value is never sent. Write {{ADMIN_TOKEN}} to send the variable.',
+      );
+      await expect(app.getByRole('button', { name: /^Send$/ })).toBeDisabled();
+
+      // Writing the variable instead clears the blocker and sends its value.
+      await app.getByLabel('Headers value 1').fill('Bearer {{ADMIN_TOKEN}}');
+      await app.keyboard.press('Escape');
+      await expect(preSend).toHaveCount(0);
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+      const wire = await e2eMock.findLastByPath((p) => p === path);
+      expect(wire.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    },
+  );
+
+  test(
+    tc(
+      id('Var :: Add secret var masked'),
+      'History keeps header names but hides secret values, and says so',
+    ),
+    async ({ app, e2eMock, sidebar }) => {
+      await seedEncryptedToken(app);
+
+      const path = '/anything/history-hides-secrets';
+      await sidebar.createRequest('hist-secret');
+      await app.getByLabel('Request URL').fill(e2eMock.url(path));
+      await app
+        .getByRole('tab', { name: /^Headers/ })
+        .first()
+        .click();
+      await app.getByRole('button', { name: 'Add row' }).click();
+      await app.getByLabel('Headers key 1').fill('Authorization');
+      await app.getByLabel('Headers value 1').fill('Bearer {{ADMIN_TOKEN}}');
+      await app.keyboard.press('Escape');
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+
+      await app.getByRole('button', { name: /^History$/ }).click();
+      await app.getByRole('button', { name: 'hist-secret run details' }).first().click();
+      await expect(app.getByRole('note').filter({ hasText: 'Secrets were hidden' })).toHaveText(
+        'Secrets were hidden before this run was saved: each value shown as hidden held one. Header names are kept.',
+      );
+      await expect(app.getByText('Authorization', { exact: true }).first()).toBeVisible();
+      await expect(app.getByText('hidden', { exact: true }).first()).toBeVisible();
+
+      // What is stored — the copy IndexedDB and the disk mirror get — holds
+      // neither the token nor the echo of it in the response body.
+      const stored = await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore: { getState: () => { local: { history: unknown } | null } };
+        };
+        return JSON.stringify(w.__apicircleStore.getState().local?.history ?? null);
+      });
+      expect(stored).toContain('history-hides-secrets');
+      expect(stored).not.toContain(TOKEN);
+    },
+  );
+});

@@ -1,4 +1,4 @@
-import type { ExecutionResult } from '@apicircle/core';
+import { NOT_SENT_PREFIX, type ExecutionResult } from '@apicircle/core';
 import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Maximize2, RotateCw, XCircle } from 'lucide-react';
 import { cn } from '../../primitives/cn';
@@ -13,6 +13,11 @@ import { ResponseSizeHint } from './ResponseSizeHint';
  * no further detail; we infer the most common causes from the message.
  */
 function classifyError(error: string): { label: string; hint: string } {
+  // A request Studio refused to send (it names an encryption key): the
+  // reason is the useful part, so it is the hint, not hidden under Details.
+  if (error.startsWith(NOT_SENT_PREFIX)) {
+    return { label: 'Not sent', hint: error.slice(NOT_SENT_PREFIX.length) };
+  }
   const lower = error.toLowerCase();
   if (lower.includes('aborted') || lower.includes('abort')) {
     return {

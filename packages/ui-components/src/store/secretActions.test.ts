@@ -6,7 +6,76 @@ import {
   removeSecretEntry,
   renameSecretEntry,
   setSecretUsedIn,
+  slotBindingEnvironments,
+  vaultSlotLabels,
 } from './secretActions';
+
+describe('vaultSlotLabels', () => {
+  it('labels synced slots, with this device’s vault index on top', () => {
+    const labels = vaultSlotLabels(
+      {
+        s1: { id: 's1', label: 'SYNCED_ONLY', salt: 'x', createdAt: 't' },
+        s2: { id: 's2', label: 'OLD_NAME', salt: 'x', createdAt: 't' },
+      },
+      {
+        s2: { id: 's2', label: 'NEW_NAME', createdAt: 't', origin: 'workspace', usedIn: [] },
+        s3: { id: 's3', label: 'LOCAL_ONLY', createdAt: 't', origin: 'linked', usedIn: [] },
+      },
+    );
+    expect(labels).toEqual({ s1: 'SYNCED_ONLY', s2: 'NEW_NAME', s3: 'LOCAL_ONLY' });
+  });
+
+  it('copes with neither map', () => {
+    expect(vaultSlotLabels(undefined, undefined)).toEqual({});
+  });
+});
+
+describe('slotBindingEnvironments', () => {
+  it('lists the own environments, then each linked set with the consumer overrides applied', () => {
+    const { synced, local } = createEmptyWorkspace();
+    const own = { dev: { name: 'dev', variables: [] } };
+    const sets = slotBindingEnvironments(
+      {
+        ...synced,
+        environments: { ...synced.environments, items: own },
+        linkedOverrides: {
+          requests: {},
+          environmentVars: {
+            o: {
+              linkedWorkspaceId: 'lw1',
+              envName: 'prod',
+              varKey: 'TOKEN',
+              value: 'enc:v1:x',
+              encrypted: true,
+              secretKeyId: 's1',
+              updatedAt: 't',
+            },
+          },
+        },
+      },
+      {
+        ...local.linkedCollections,
+        lw1: {
+          pulledAt: 't',
+          ref: 'HEAD@main',
+          collections: synced.collections,
+          environments: {
+            items: {
+              prod: { name: 'prod', variables: [{ key: 'TOKEN', value: 'p', encrypted: false }] },
+            },
+            activeName: null,
+            priorityOrder: [],
+          },
+        },
+      },
+    );
+    expect(sets).toHaveLength(2);
+    expect(sets[0]).toBe(own);
+    expect(sets[1].prod.variables).toEqual([
+      { key: 'TOKEN', value: 'enc:v1:x', encrypted: true, secretKeyId: 's1' },
+    ]);
+  });
+});
 
 describe('secretActions', () => {
   describe('addSecretEntry', () => {

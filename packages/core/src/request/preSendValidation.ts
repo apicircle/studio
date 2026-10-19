@@ -11,14 +11,18 @@
 //      Content-Type doesn't match the body type, warn.
 //   4. If auth.type requires fields (token/key/etc.) and they're blank,
 //      block. Without these the request will fail at send-time.
+//   5. A `{{LABEL}}` naming a Secret Vault slot that encrypts environment
+//      variables (`scope.encryptionKeys`) blocks: the slot is an encryption
+//      key, not a variable, and is never sent.
 //
 // Returns warnings + blockers separately so the UI can render them
 // distinctly: warnings are yellow + Send-still-allowed, blockers are
 // red + Send-disabled.
 
-import type { Folder, Request as ApiRequest } from '@apicircle/shared';
+import type { Folder, Request as ApiRequest, RequestAuth } from '@apicircle/shared';
 import { findPathPlaceholders } from './buildRequest';
 import { resolveString, type ResolutionScope } from '../environment/variableResolver';
+import { describeEncryptionKeyReference } from '../environment/encryptionKeys';
 import { resolveInheritedAuth } from './resolveInheritedAuth';
 
 export interface PreSendWarning {
@@ -31,7 +35,7 @@ export interface PreSendWarning {
 }
 
 export interface PreSendBlocker {
-  kind: 'auth-fields-missing' | 'unparseable-url' | 'empty-url';
+  kind: 'auth-fields-missing' | 'unparseable-url' | 'empty-url' | 'encryption-key-reference';
   message: string;
 }
 
@@ -82,10 +86,14 @@ export function preSendValidation({
   if (urlTrimmed === '') {
     blockers.push({ kind: 'empty-url', message: 'URL is required.' });
   } else {
-    const { value: resolvedUrl, missing: urlMissing } = resolveString(request.url, scope);
-    // Only attempt to parse if the URL has no unresolved {{var}} references —
-    // otherwise the warning from Rule 1 is the right signal, not a blocker.
-    if (urlMissing.length === 0) {
+    const {
+      value: resolvedUrl,
+      missing: urlMissing,
+      encryptionKeys: urlKeys,
+    } = resolveString(request.url, scope);
+    // Only attempt to parse if every {{var}} in the URL resolved — otherwise
+    // the warning from Rule 1 (or Rule 5's blocker) is the right signal.
+    if (urlMissing.length === 0 && urlKeys.length === 0) {
       try {
         // URL constructor throws on malformed input. Accept relative paths
         // (starting with /) since the runtime may be configured with a base.
@@ -219,5 +227,41 @@ export function preSendValidation({
     }
   }
 
+  // Rule 5: references to encryption-key slots, anywhere the resolver
+  // substitutes — url, headers, query, cookies, body, and the effective auth.
+  const keyRefs = new Set<string>();
+  for (const text of templatedStrings(request, auth)) {
+    for (const name of resolveString(text, scope).encryptionKeys) keyRefs.add(name);
+  }
+  for (const [name, variables] of Object.entries(scope.encryptionKeys ?? {})) {
+    if (!keyRefs.has(name)) continue;
+    blockers.push({
+      kind: 'encryption-key-reference',
+      message: describeEncryptionKeyReference(name, variables),
+    });
+  }
+
   return { warnings, blockers };
+}
+
+/** Every string of `request` (and its effective auth) a `{{var}}` can sit in. */
+function templatedStrings(request: ApiRequest, auth: RequestAuth | undefined): string[] {
+  const out: string[] = [request.url];
+  for (const rows of [request.headers, request.query, request.cookies]) {
+    for (const row of rows ?? []) {
+      if (row.enabled) out.push(row.key, row.value);
+    }
+  }
+  const body = request.body;
+  if (body) {
+    out.push(body.content);
+    for (const row of body.formRows ?? []) {
+      out.push(row.key);
+      if (row.kind === 'text') out.push(row.value);
+    }
+  }
+  for (const [key, value] of Object.entries(auth ?? {})) {
+    if (key !== 'type' && typeof value === 'string') out.push(value);
+  }
+  return out;
 }

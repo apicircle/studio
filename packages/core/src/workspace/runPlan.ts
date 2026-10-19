@@ -17,6 +17,8 @@ import { runAssertions, type AssertionResult } from '../assertions/runAssertions
 import { extractContext } from '../environment/extractContext';
 import { resolveInheritedAuth } from '../request/resolveInheritedAuth';
 import { buildScope, resolveString } from '../environment/variableResolver';
+import { encryptionKeyRefusal, findEncryptionKeys } from '../environment/encryptionKeys';
+import { hideRunSecrets } from '../history/hideRunSecrets';
 import type { WorkspaceState } from './patches';
 import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 
@@ -34,7 +36,10 @@ import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 // plaintext keyed by `secretKeyId` (the CLI sources these from
 // `APICIRCLE_SECRET_<id>` / `--secrets`). An encrypted var with no supplied
 // value is omitted from scope, so `{{VAR}}` surfaces as an unresolved
-// placeholder rather than leaking ciphertext onto the wire.
+// placeholder rather than leaking ciphertext onto the wire. A slot that
+// encrypts variables is an encryption key, never a `{{LABEL}}` value: a step
+// that references one is not sent. Supplied values are hidden in the history
+// this returns (`hideRunSecrets`).
 // =============================================================================
 
 // History buffer caps — mirror the store's circular-buffer behaviour so a CLI
@@ -128,7 +133,10 @@ export interface PlanStepResult {
   missingVariables: string[];
   /** True when the request succeeded and (if enabled) every assertion passed. */
   passed: boolean;
-  /** Set when the step couldn't run at all (missing / linked / unsupported). */
+  /**
+   * Set when the step couldn't run at all (missing / linked / unsupported),
+   * or was not sent because it references an encryption-key slot.
+   */
   error?: string;
 }
 
@@ -330,6 +338,8 @@ export async function runPlan(
   const secretsById = opts.secretsById ?? {};
   const flatEnvs = buildEnvMaps(state.synced, secretsById, state.local);
   const secretsByLabel = buildSecretsByLabel(state.synced, secretsById);
+  const encryptionKeys = buildEncryptionKeys(state.synced, state.local);
+  const knownSecrets = Object.values(secretsById);
 
   // Env priority for this run: the plan's overlay (or the workspace order),
   // with an optional `--env` environment layered on top at highest precedence.
@@ -423,7 +433,11 @@ export async function runPlan(
         ? (lookup.linkedEnvironments?.priorityOrder ?? envRefs)
         : envRefs;
 
-    const { request: resolved, missing } = resolveRequest(
+    const {
+      request: resolved,
+      missing,
+      encryptionKeys: keyRefs,
+    } = resolveRequest(
       baseRequest,
       resolveSynced,
       plan,
@@ -431,7 +445,31 @@ export async function runPlan(
       globalContext,
       step.linkedWorkspaceId ? buildEnvMaps(resolveSynced, secretsById, state.local) : flatEnvs,
       secretsByLabel,
+      encryptionKeys,
     );
+
+    // A reference to an encryption key: refuse the step rather than send the
+    // placeholder, and say why in the run and the step.
+    if (keyRefs.length > 0) {
+      const runId = generateId();
+      const error = encryptionKeyRefusal(keyRefs, encryptionKeys);
+      newRequestRuns.push(orphanRun(runId, baseRequest.id, error));
+      stepRecords.push({ requestRunId: runId, passed: false });
+      record({
+        stepIndex: i,
+        requestId: baseRequest.id,
+        requestName: baseRequest.name,
+        requestMethod: baseRequest.method,
+        skipped: false,
+        result: null,
+        assertionResults: [],
+        missingVariables: missing,
+        passed: false,
+        error,
+      });
+      if (bail) break;
+      continue;
+    }
 
     const result = await executeRequest(resolved, {
       fetchImpl: opts.fetchImpl,
@@ -447,7 +485,10 @@ export async function runPlan(
 
     const assertionResults = withAssertions ? runAssertions(baseRequest.assertions, result) : [];
     const passed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
-    const requestRun = buildRequestRun(resolved, result, assertionResults);
+    const requestRun = hideRunSecrets(
+      buildRequestRun(resolved, result, assertionResults),
+      knownSecrets,
+    );
     newRequestRuns.push(requestRun);
     stepRecords.push({ requestRunId: requestRun.id, passed });
     record({
@@ -572,6 +613,24 @@ function buildEnvMaps(
   return flat;
 }
 
+/**
+ * The slots that encrypt variables, by the label `buildSecretsByLabel` gives
+ * them — in the workspace's own environments, or in a linked workspace's once
+ * the consumer's overrides (which can bind a variable to a slot) are applied.
+ */
+function buildEncryptionKeys(
+  synced: WorkspaceSynced,
+  local: WorkspaceLocal,
+): Record<string, string[]> {
+  const slotLabels: Record<string, string> = {};
+  for (const [id, meta] of Object.entries(synced.secretKeys ?? {})) slotLabels[id] = meta.label;
+  const environments = [synced.environments.items];
+  for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
+    environments.push(applyEnvironmentOverrides(snapshot.environments, linkId, synced).items);
+  }
+  return findEncryptionKeys({ slotLabels, environments });
+}
+
 /** Project supplied secrets onto their human labels for direct `{{Label}}` refs. */
 function buildSecretsByLabel(
   synced: WorkspaceSynced,
@@ -601,7 +660,8 @@ function resolveRequest(
   globalContext: Record<string, string>,
   flatEnvs: Record<string, Record<string, string>>,
   secretsByLabel: Record<string, string>,
-): { request: ApiRequest; missing: string[] } {
+  encryptionKeys: Record<string, string[]>,
+): { request: ApiRequest; missing: string[]; encryptionKeys: string[] } {
   // contextVars layering (low → high): globalContext, plan vars, request vars.
   const ctxMap: Record<string, string> = { ...globalContext };
   for (const v of plan.variables ?? []) {
@@ -617,12 +677,15 @@ function resolveRequest(
     activeEnvName: null,
     priorityOrder: envRefs.map(envPriorityKey),
     secrets: secretsByLabel,
+    encryptionKeys,
   });
 
   const missing = new Set<string>();
+  const keyRefs = new Set<string>();
   const sub = (input: string): string => {
-    const { value, missing: m } = resolveString(input, scope);
+    const { value, missing: m, encryptionKeys: k } = resolveString(input, scope);
     for (const name of m) missing.add(name);
+    for (const name of k) keyRefs.add(name);
     return value;
   };
 
@@ -665,7 +728,11 @@ function resolveRequest(
   });
   const auth = resolveAuthVariables(inheritedAuth, sub);
 
-  return { request: { ...request, url, headers, query, body, auth }, missing: [...missing] };
+  return {
+    request: { ...request, url, headers, query, body, auth },
+    missing: [...missing],
+    encryptionKeys: [...keyRefs],
+  };
 }
 
 /** Interpolate `{{var}}` in every string-valued auth field; `type` is left verbatim. */

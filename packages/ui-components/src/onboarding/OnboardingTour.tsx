@@ -117,7 +117,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'dock-vault',
     title: 'Secret Vault',
-    body: 'Store API keys and tokens encrypted with your local master key. Reference any secret in a request as {{LABEL}}.',
+    body: 'Store API keys and tokens encrypted with your local master key. Reference a secret in a request as {{LABEL}}; one that encrypts environment variables is their key and is never sent.',
     target: 'dock-vault',
   },
   {

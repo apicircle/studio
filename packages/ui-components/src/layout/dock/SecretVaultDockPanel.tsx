@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import type { LinkedWorkspace, SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import { safeExternalHref } from '@apicircle/shared';
+import { describeEncryptionKeyReference, findEncryptionKeys } from '@apicircle/core';
+import { slotBindingEnvironments } from '../../store/secretActions';
 import { type GitHostKind, GIT_HOST_LABELS } from '@apicircle/git';
 import {
   BITBUCKET_ACCESS_TOKEN_SCOPES,
@@ -62,6 +64,7 @@ import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 
 // Frozen empty, so the folded selector keeps a stable identity across renders.
 const NO_LINKED_WORKSPACES: Record<string, LinkedWorkspace> = Object.freeze({});
+const NO_VARIABLES: readonly string[] = Object.freeze([]);
 
 /**
  * Secret Vault tab content for the right-side dock. Two sub-tabs:
@@ -204,6 +207,21 @@ function VaultTab() {
     }),
   );
 
+  // Which variables each entry encrypts. An entry that encrypts any is an
+  // encryption key, not a variable: its row says so. Keyed by entry id
+  // (each id passed as its own "label"), from the environments a send reads.
+  const synced = useWorkspaceStore((s) => s.synced);
+  const local = useWorkspaceStore((s) => s.local);
+  const encryptsById = useMemo(() => {
+    if (!synced || !local) return {};
+    const ids: Record<string, string> = {};
+    for (const id of Object.keys(local.secretIndex.entries)) ids[id] = id;
+    return findEncryptionKeys({
+      slotLabels: ids,
+      environments: slotBindingEnvironments(synced, local.linkedCollections),
+    });
+  }, [synced, local]);
+
   const [adding, setAdding] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
   const [draftValue, setDraftValue] = useState('');
@@ -266,7 +284,8 @@ function VaultTab() {
         Cross-workspace named secrets. Reference any secret by its label as{' '}
         <code className="text-text-primary">{'{{LABEL}}'}</code> in URLs, headers, params, body
         content, or environment variables. Resolution order at send time: context vars → active env
-        → priority list → vault.
+        → priority list → vault. A secret that encrypts environment variables is their encryption
+        key, not a variable: it is never sent, so write the variable instead.
       </p>
 
       <p
@@ -365,7 +384,11 @@ function VaultTab() {
 
       <ul role="list" aria-label="Secret entries" className="flex flex-col gap-1">
         {entries.map((entry) => (
-          <SecretRow key={entry.id} entry={entry} />
+          <SecretRow
+            key={entry.id}
+            entry={entry}
+            encrypts={encryptsById[entry.id] ?? NO_VARIABLES}
+          />
         ))}
       </ul>
 
@@ -620,6 +643,8 @@ function ProvideLinkedSlotRow({
 
 interface SecretRowProps {
   entry: SecretEntry;
+  /** Environment variables this entry encrypts; non-empty makes it an encryption key. */
+  encrypts: readonly string[];
 }
 
 // How long a revealed secret stays on screen before auto-masking. Tuned for
@@ -627,7 +652,7 @@ interface SecretRowProps {
 // laptop doesn't leak it". Reset by user interaction (re-reveal restarts).
 const SECRET_AUTO_MASK_MS = 15_000;
 
-function SecretRow({ entry }: SecretRowProps) {
+function SecretRow({ entry, encrypts }: SecretRowProps) {
   const decryptSecret = useWorkspaceStore((s) => s.decryptSecret);
   const removeSecret = useWorkspaceStore((s) => s.removeSecret);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
@@ -841,6 +866,19 @@ function SecretRow({ entry }: SecretRowProps) {
         </p>
       )}
 
+      {encrypts.length > 0 && (
+        // Its own full-width line, like "Used in": inside the label column
+        // it would truncate to a few characters in the narrow dock.
+        <p
+          className="mt-1 flex items-start gap-1 text-[0.6875rem] text-text-dim"
+          title={describeEncryptionKeyReference(displayLabel, encrypts)}
+        >
+          <Lock size={10} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="break-words">
+            Encryption key of {encrypts.join(', ')} · not a variable
+          </span>
+        </p>
+      )}
       {usedInCount > 0 && (
         <button
           type="button"

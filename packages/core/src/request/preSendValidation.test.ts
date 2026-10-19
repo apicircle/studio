@@ -264,3 +264,120 @@ describe('preSendValidation', () => {
     expect(result.warnings.some((w) => w.kind === 'unresolved-variable')).toBe(false);
   });
 });
+
+describe('preSendValidation — encryption-key references (Rule 5)', () => {
+  // KEY is a vault slot that encrypts the TOKEN variable.
+  const keyScope: ResolutionScope = {
+    ...emptyScope,
+    secrets: { KEY: 'slot-value' },
+    encryptionKeys: { KEY: ['TOKEN'] },
+  };
+  const keyBlockers = (
+    request: ApiRequest,
+    folders?: Parameters<typeof preSendValidation>[0]['folders'],
+  ) =>
+    preSendValidation({ request, scope: keyScope, folders }).blockers.filter(
+      (b) => b.kind === 'encryption-key-reference',
+    );
+
+  it('blocks a header that names an encryption key, with the message saying what to write', () => {
+    const blockers = keyBlockers(
+      baseReq({ headers: [{ key: 'Authorization', value: 'Bearer {{KEY}}', enabled: true }] }),
+    );
+    expect(blockers).toEqual([
+      {
+        kind: 'encryption-key-reference',
+        message:
+          '{{KEY}} is the encryption key of TOKEN, not a variable, so its value is never sent. ' +
+          'Write {{TOKEN}} to send the variable.',
+      },
+    ]);
+  });
+
+  it('is not also reported as an unresolved variable', () => {
+    const result = preSendValidation({
+      request: baseReq({ headers: [{ key: 'X', value: '{{KEY}}', enabled: true }] }),
+      scope: keyScope,
+    });
+    expect(result.warnings.some((w) => w.kind === 'unresolved-variable')).toBe(false);
+  });
+
+  it('finds the reference in the url, query, cookies, body and form rows — once', () => {
+    const blockers = keyBlockers(
+      baseReq({
+        url: 'https://api.example.test/{{KEY}}',
+        query: [{ key: 'k', value: '{{KEY}}', enabled: true }],
+        cookies: [{ key: '{{KEY}}', value: 'v', enabled: true }],
+        body: { type: 'json', content: '{"t":"{{KEY}}"}' },
+      }),
+    );
+    expect(blockers).toHaveLength(1);
+
+    for (const request of [
+      baseReq({ url: 'https://api.example.test/?k={{KEY}}' }),
+      baseReq({ query: [{ key: 'k', value: '{{KEY}}', enabled: true }] }),
+      baseReq({ cookies: [{ key: 'c', value: '{{KEY}}', enabled: true }] }),
+      baseReq({ body: { type: 'text', content: '{{KEY}}' } }),
+      baseReq({
+        body: {
+          type: 'form-data',
+          content: '',
+          formRows: [{ kind: 'text', key: 'f', value: '{{KEY}}', enabled: true }],
+        },
+      }),
+      baseReq({
+        body: {
+          type: 'form-data',
+          content: '',
+          formRows: [{ kind: 'file', key: '{{KEY}}', slotId: null, enabled: true }],
+        },
+      }),
+    ]) {
+      expect(keyBlockers(request)).toHaveLength(1);
+    }
+  });
+
+  it('skips the URL parse when the URL holds an encryption key', () => {
+    const result = preSendValidation({ request: baseReq({ url: '{{KEY}}/x' }), scope: keyScope });
+    expect(result.blockers.map((b) => b.kind)).toEqual(['encryption-key-reference']);
+  });
+
+  it('finds the reference in an auth field, inherited ones included', () => {
+    expect(keyBlockers(baseReq({ auth: { type: 'bearer', token: '{{KEY}}' } }))).toHaveLength(1);
+    const folders = {
+      f: {
+        id: 'f',
+        name: 'F',
+        parentId: null,
+        auth: { type: 'bearer', token: '{{KEY}}' } as RequestAuth,
+      },
+    } as unknown as Parameters<typeof preSendValidation>[0]['folders'];
+    expect(
+      keyBlockers(baseReq({ folderId: 'f', auth: { type: 'inherit' } as RequestAuth }), folders),
+    ).toHaveLength(1);
+  });
+
+  it('ignores disabled rows', () => {
+    expect(
+      keyBlockers(baseReq({ headers: [{ key: 'X', value: '{{KEY}}', enabled: false }] })),
+    ).toHaveLength(0);
+  });
+
+  it('does not block when an environment variable of that name wins', () => {
+    const result = preSendValidation({
+      request: baseReq({ headers: [{ key: 'X', value: '{{KEY}}', enabled: true }] }),
+      scope: { ...keyScope, priorityEnvs: [{ KEY: 'env-value' }] },
+    });
+    expect(result.blockers).toHaveLength(0);
+  });
+
+  it('copes with a request that has no cookies and no auth', () => {
+    // A document from disk can lack `auth` though the type requires it — the
+    // validator's auth rule already guards for that, and so must Rule 5.
+    const request = {
+      ...baseReq({ headers: [{ key: 'X', value: '{{KEY}}', enabled: true }], cookies: undefined }),
+      auth: undefined,
+    } as unknown as ApiRequest;
+    expect(keyBlockers(request)).toHaveLength(1);
+  });
+});

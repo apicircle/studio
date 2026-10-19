@@ -135,6 +135,30 @@ describe('persistRequestRun', () => {
     expect(state.local.history.requestRuns[0].id).toBe(run.id);
   });
 
+  it('hides the secrets the send decrypted, and credential headers, before writing', async () => {
+    const surface = bridge.activeWorkspace()!;
+    const request = makeReq();
+    request.headers = [
+      { key: 'Authorization', value: 'Bearer {{ADMIN_TOKEN}}', enabled: true },
+      { key: 'X-Trace', value: 'abc', enabled: true },
+    ];
+    const run = await persistRequestRun({
+      surface,
+      request,
+      result: makeResult({
+        url: 'https://api.example.com/x?t=decrypted-admin-token',
+        body: '{"echo":"decrypted-admin-token","refresh_token":"r-1"}',
+      }),
+      secrets: ['decrypted-admin-token'],
+    });
+    expect(run.secretsHidden).toBe(true);
+    expect(run.requestHeaders).toEqual({ Authorization: '[hidden]', 'X-Trace': 'abc' });
+    expect(run.url).toBe('https://api.example.com/x?t=[hidden]');
+    expect(run.responseBodyPreview).toBe('{"echo":"[hidden]","refresh_token":"[hidden]"}');
+    const state = await surface.read();
+    expect(JSON.stringify(state.local.history)).not.toContain('decrypted-admin-token');
+  });
+
   it('captures only enabled request headers', async () => {
     const surface = bridge.activeWorkspace()!;
     const run = await persistRequestRun({ surface, request: makeReq(), result: makeResult() });

@@ -1,4 +1,4 @@
-import type { ExecutionResult, AssertionResult } from '@apicircle/core';
+import { hideRunSecrets, type ExecutionResult, type AssertionResult } from '@apicircle/core';
 import type { Request as ApiRequest, RequestRun } from '@apicircle/shared';
 import { generateId, RUN_BODY_PREVIEW_LIMIT } from '@apicircle/shared';
 import type { WorkspaceSurface } from '../host/vscodeBridge';
@@ -8,7 +8,9 @@ import type { WorkspaceSurface } from '../host/vscodeBridge';
 //
 // Captured at the moment send completes. Truncates request/response body
 // previews per RUN_BODY_PREVIEW_LIMIT so 100 history rows can't blow up the
-// IDB / disk record.
+// IDB / disk record, and hides secrets (`hideRunSecrets`) before the run is
+// written: credential headers, the values the send decrypted, credential
+// fields in the bodies.
 //
 // Note: WorkspacePatch doesn't yet have a `history.append_run` variant —
 // we write through `provider.write({ local })` directly. This is the same
@@ -24,11 +26,21 @@ export interface PersistRunArgs {
   maxEntries?: number;
   /** Drop runs older than this many days before appending. 0 / negative = no time cap. */
   retentionDays?: number;
+  /** Plaintexts the send decrypted (encrypted variables, linked secrets) — hidden in the run. */
+  secrets?: readonly string[];
 }
 
 export async function persistRequestRun(args: PersistRunArgs): Promise<RequestRun> {
-  const { surface, request, result, assertionVerdicts, maxEntries = 500, retentionDays = 0 } = args;
-  const run: RequestRun = {
+  const {
+    surface,
+    request,
+    result,
+    assertionVerdicts,
+    maxEntries = 500,
+    retentionDays = 0,
+    secrets = [],
+  } = args;
+  const captured: RequestRun = {
     id: generateId(),
     requestId: request.id,
     startedAt: result.startedAt,
@@ -55,6 +67,7 @@ export async function persistRequestRun(args: PersistRunArgs): Promise<RequestRu
       detail: v.detail,
     })),
   };
+  const run = hideRunSecrets(captured, secrets);
 
   const state = await surface.read();
   const existing = pruneByRetention(state.local.history.requestRuns, retentionDays);

@@ -80,6 +80,7 @@ import {
 import {
   type AttachmentResolver,
   type CollectFolderExportResult,
+  type ExecuteOptions,
   type ExecutionResult,
   type LinkedUpdatePreview,
   type LinkedUpdateResolutionMap,
@@ -90,7 +91,6 @@ import {
   type PublishReleaseArgs,
   type AuthApplyOptions,
   type ResolutionMap,
-  type ResolutionScope,
   type ThreeWayDiff,
   applyLinkedUpdate as applyLinkedUpdateCore,
   applyMerge,
@@ -101,9 +101,12 @@ import {
   decryptString,
   deprecateRelease as deprecateReleaseAction,
   deriveKeyFromSlotValue,
+  encryptionKeyRefusal,
   encryptString,
   executeRequest as coreExecuteRequest,
   extractContext,
+  findEncryptionKeys,
+  hideRunSecrets,
   generateSlotSalt,
   generateWorkingBranchName,
   collectFolderExport,
@@ -244,6 +247,7 @@ import {
   addSecretEntry as addSecretEntryAction,
   removeSecretEntry as removeSecretEntryAction,
   renameSecretEntry as renameSecretEntryAction,
+  vaultSlotLabels,
 } from './secretActions';
 import {
   addPlan as addPlanAction,
@@ -646,13 +650,57 @@ function redactUrlCredentials(url: string): string {
   return url;
 }
 
+/** What `resolveRequest` hands a send path. */
+interface ResolvedForSend {
+  request: ApiRequest;
+  /**
+   * Set when the request references a Secret Vault slot that encrypts
+   * environment variables: why it must not be sent. `sendResolved` refuses it.
+   */
+  refusal: string | null;
+  /**
+   * Plaintexts this resolve decrypted — encrypted variables and vault slots —
+   * so the stored run can hide them (`hideRunSecrets`).
+   */
+  secretValues: string[];
+}
+
+/**
+ * Send a resolved request — or, when it references an encryption key, return
+ * a result saying it was not sent, without touching the network.
+ */
+async function sendResolved(
+  resolved: ResolvedForSend,
+  opts: ExecuteOptions,
+): Promise<ExecutionResult> {
+  if (resolved.refusal !== null) {
+    return {
+      startedAt: new Date().toISOString(),
+      durationMs: 0,
+      status: null,
+      ok: false,
+      statusText: '',
+      headers: {},
+      body: '',
+      bodyKind: 'empty',
+      error: resolved.refusal,
+      url: '',
+      method: resolved.request.method,
+      authWarnings: [],
+    };
+  }
+  return coreExecuteRequest(resolved.request, opts);
+}
+
+/** Build the RequestRun history keeps, with its secrets hidden. */
 function buildRequestRun(
-  resolvedRequest: ApiRequest,
+  resolved: ResolvedForSend,
   result: ExecutionResult,
   assertions: RequestRun['assertions'],
 ): RequestRun {
+  const resolvedRequest = resolved.request;
   const { preview: responseBodyPreview, truncated } = clampPreview(result.body ?? '');
-  return {
+  const run: RequestRun = {
     id: generateId(),
     requestId: resolvedRequest.id,
     startedAt: result.startedAt,
@@ -675,6 +723,9 @@ function buildRequestRun(
     responseTruncated: truncated,
     assertions,
   };
+  // History lives in IndexedDB and the plain-JSON disk mirror: hide the
+  // secrets this send resolved, and credential headers, before it lands.
+  return hideRunSecrets(run, resolved.secretValues);
 }
 
 /**
@@ -7571,10 +7622,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             : synced;
         // Bail out cleanly between steps if the plan was cancelled. The
         // currently-running step's fetch is also aborted via the signal
-        // we pass into coreExecuteRequest below.
+        // we pass into sendResolved below.
         if (controller.signal.aborted) break;
         const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
-        const result = await coreExecuteRequest(resolved, {
+        const result = await sendResolved(resolved, {
           resolveAttachment: attachmentResolver,
           signal: controller.signal,
           authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, request.id) },
@@ -8541,7 +8592,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((s) => ({ isExecuting: { ...s.isExecuting, [active.itemId]: true } }));
     try {
       const resolved = await resolveRequest(request, resolveSynced, local);
-      const result = await coreExecuteRequest(resolved, {
+      const result = await sendResolved(resolved, {
         resolveAttachment: attachmentResolver,
         signal: linkedController.signal,
         authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, request.id) },
@@ -8625,7 +8676,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((s) => ({ isExecuting: { ...s.isExecuting, [id]: true } }));
     try {
       const resolved = await resolveRequest(request, synced, get().local);
-      const result = await coreExecuteRequest(resolved, {
+      const result = await sendResolved(resolved, {
         resolveAttachment: attachmentResolver,
         signal: controller.signal,
         // Persist refreshed OAuth2 tokens so the next request doesn't
@@ -8738,7 +8789,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     });
     if (!attachmentsReady) return;
     const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
-    const result = await coreExecuteRequest(resolved, { resolveAttachment: attachmentResolver });
+    const result = await sendResolved(resolved, { resolveAttachment: attachmentResolver });
     const assertionResults = runAssertions(request.assertions, result);
     const allPassed = result.ok && assertionResults.every((a) => a.passed);
 
@@ -8796,7 +8847,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((s) => ({ isExecuting: { ...s.isExecuting, [request.id]: true } }));
     try {
       const resolved = await resolveRequest(request, synced, get().local);
-      const result = await coreExecuteRequest(resolved, {
+      const result = await sendResolved(resolved, {
         resolveAttachment: attachmentResolver,
       });
       const assertionResults = runAssertions(request.assertions, result);
@@ -10378,16 +10429,15 @@ async function verifyAssetRefsAndPatch(
  * `resolveRequest` but `resolveInheritedAuth` only resolves folder
  * inheritance, never variable substitution.
  *
- * We map `resolveString` over every string property; non-string fields
- * pass through untouched, and enum-typed strings (which never contain
- * `{{`) are a harmless no-op.
+ * We map `res` (the resolve's `resolveString`) over every string property;
+ * non-string fields pass through untouched, and enum-typed strings (which
+ * never contain `{{`) are a harmless no-op.
  */
-function resolveAuthVariables(auth: RequestAuth, scope: ResolutionScope): RequestAuth {
+function resolveAuthVariables(auth: RequestAuth, res: (input: string) => string): RequestAuth {
   const resolved: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(auth)) {
     // `type` is the discriminant — never templated, keep it verbatim.
-    resolved[key] =
-      key !== 'type' && typeof value === 'string' ? resolveString(value, scope).value : value;
+    resolved[key] = key !== 'type' && typeof value === 'string' ? res(value) : value;
   }
   return resolved as unknown as RequestAuth;
 }
@@ -10402,6 +10452,11 @@ function resolveAuthVariables(auth: RequestAuth, scope: ResolutionScope): Reques
  * Encrypted env-var values are decrypted in this single pass — the master
  * key is fetched once, decryption runs in parallel for the variables that
  * need it, and the resulting plaintext-only env map feeds the resolver.
+ *
+ * A vault slot that encrypts environment variables is an encryption key, not
+ * a variable: `{{LABEL}}` naming one is left as typed and `refusal` says why
+ * the request must not be sent. `secretValues` carries every plaintext this
+ * resolve decrypted, so the stored run can hide them.
  */
 async function resolveRequest(
   request: ApiRequest,
@@ -10416,9 +10471,13 @@ async function resolveRequest(
      */
     planVariables?: ReadonlyArray<{ key: string; value: string }>;
   },
-): Promise<ApiRequest> {
+): Promise<ResolvedForSend> {
   const vault = local ? await decryptVault(local) : { byLabel: {}, byId: {} };
   const secrets = vault.byLabel;
+  const secretValues: string[] = Object.values(vault.byId);
+  // Every environment set whose encrypted variables can name a slot: the
+  // ones resolved below, own and linked (after the consumer's overrides).
+  const environmentSets: Array<Record<string, Environment>> = [synced.environments.items];
 
   // Plan-level priority overrides the workspace's global order when the
   // plan supplied a non-empty list (plan §6 P6 + §11.1 inline guidance).
@@ -10441,6 +10500,7 @@ async function resolveRequest(
   for (const [name, vars] of Object.entries(localEnvs.items)) {
     flatEnvs[envPriorityKey({ kind: 'local', name })] = vars;
   }
+  secretValues.push(...localEnvs.decrypted);
   // Accumulate per-resolve decryption failures so the Environments panel
   // can light up a banner ("3 encrypted variables won't decrypt on this
   // device — re-enter their slot values or unbind"). The store action
@@ -10454,6 +10514,7 @@ async function resolveRequest(
   if (local) {
     for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
       const overridden = applyEnvironmentOverrides(snapshot.environments, linkId, synced);
+      environmentSets.push(overridden.items);
       const decrypted = await decryptEnvironments(
         overridden.items,
         vault.byId,
@@ -10462,6 +10523,7 @@ async function resolveRequest(
       for (const [envName, vars] of Object.entries(decrypted.items)) {
         flatEnvs[envPriorityKey({ kind: 'linked', linkedWorkspaceId: linkId, envName })] = vars;
       }
+      secretValues.push(...decrypted.decrypted);
       // Tag linked-env failures with the link id so the banner can
       // disambiguate them from local-env failures (different surface to
       // fix in the UI). LinkedSnapshot doesn't carry a label; the link
@@ -10497,6 +10559,10 @@ async function resolveRequest(
   }
   const contextVars = Object.entries(ctxMap).map(([key, value]) => ({ key, value }));
   const priorityKeys = refs.map(envPriorityKey);
+  const encryptionKeys = findEncryptionKeys({
+    slotLabels: vaultSlotLabels(synced.secretKeys, local?.secretIndex.entries),
+    environments: environmentSets,
+  });
   const scope = buildScope({
     contextVars,
     environments: flatEnvs,
@@ -10505,18 +10571,28 @@ async function resolveRequest(
     activeEnvName: null,
     priorityOrder: priorityKeys,
     secrets,
+    encryptionKeys,
   });
 
-  const url = resolveString(request.url, scope).value;
+  // Every substitution goes through `res`, which also notes each reference
+  // to an encryption key (left as typed by the resolver).
+  const keyRefs = new Set<string>();
+  const res = (input: string): string => {
+    const r = resolveString(input, scope);
+    for (const name of r.encryptionKeys) keyRefs.add(name);
+    return r.value;
+  };
+
+  const url = res(request.url);
   const headers = request.headers.map((h) => ({
     ...h,
-    key: resolveString(h.key, scope).value,
-    value: resolveString(h.value, scope).value,
+    key: res(h.key),
+    value: res(h.value),
   }));
   const query = request.query.map((q) => ({
     ...q,
-    key: resolveString(q.key, scope).value,
-    value: resolveString(q.value, scope).value,
+    key: res(q.key),
+    value: res(q.value),
   }));
 
   let body: RequestBody = request.body;
@@ -10527,19 +10603,15 @@ async function resolveRequest(
     body.type === 'graphql' ||
     body.type === 'urlencoded'
   ) {
-    body = { ...body, content: resolveString(body.content, scope).value };
+    body = { ...body, content: res(body.content) };
   } else if (body.type === 'form-data' && body.formRows) {
     body = {
       ...body,
       formRows: body.formRows.map((row) => {
         if (row.kind === 'text') {
-          return {
-            ...row,
-            key: resolveString(row.key, scope).value,
-            value: resolveString(row.value, scope).value,
-          };
+          return { ...row, key: res(row.key), value: res(row.value) };
         }
-        return { ...row, key: resolveString(row.key, scope).value };
+        return { ...row, key: res(row.key) };
       }),
     };
   }
@@ -10556,9 +10628,13 @@ async function resolveRequest(
   // resolveInheritedAuth only resolves folder inheritance, so a
   // `{{token}}` typed into a Bearer / Basic / API-key field would
   // otherwise reach the wire verbatim.
-  const auth = resolveAuthVariables(inheritedAuth, scope);
+  const auth = resolveAuthVariables(inheritedAuth, res);
 
-  return { ...request, url, headers, query, body, auth };
+  return {
+    request: { ...request, url, headers, query, body, auth },
+    refusal: keyRefs.size > 0 ? encryptionKeyRefusal([...keyRefs], encryptionKeys) : null,
+    secretValues,
+  };
 }
 
 /**
@@ -10783,7 +10859,8 @@ export interface EnvDecryptFailure {
  * slot's salt (from `synced.secretKeys[id].salt`). When decryption can't
  * resolve we still substitute `<MISSING:LABEL>` (so the wire request
  * shows the user *where* the failure was), but we also accumulate a
- * structured `failures[]` so the store can light up a banner.
+ * structured `failures[]` so the store can light up a banner. `decrypted`
+ * lists every plaintext produced, so a stored run can hide it.
  */
 async function decryptEnvironments(
   items: Record<string, Environment>,
@@ -10792,9 +10869,11 @@ async function decryptEnvironments(
 ): Promise<{
   items: Record<string, Record<string, string>>;
   failures: EnvDecryptFailure[];
+  decrypted: string[];
 }> {
   const out: Record<string, Record<string, string>> = {};
   const failures: EnvDecryptFailure[] = [];
+  const decrypted: string[] = [];
   // Cache derived keys per slot — same slot used N times in N env vars
   // shouldn't pay PBKDF2 N times.
   const derivedKeyCache = new Map<string, CryptoKey>();
@@ -10852,7 +10931,9 @@ async function decryptEnvironments(
         }
         try {
           const key = await deriveOnce(v.secretKeyId, slotValue, meta.salt);
-          flat[v.key] = await decryptString(payload, key);
+          const plaintext = await decryptString(payload, key);
+          flat[v.key] = plaintext;
+          decrypted.push(plaintext);
         } catch {
           // The high-value signal: everything was set up to decrypt but
           // AES-GCM unwrap failed. Either the slot's local plaintext is
@@ -10873,5 +10954,5 @@ async function decryptEnvironments(
     }
     out[name] = flat;
   }
-  return { items: out, failures };
+  return { items: out, failures, decrypted };
 }

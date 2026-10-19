@@ -182,6 +182,15 @@ export type {
   VariableSuggestion,
 } from './environment/variableResolver';
 
+export {
+  describeEncryptionKeyReference,
+  encryptionKeyRefusal,
+  findEncryptionKeys,
+  NOT_SENT_PREFIX,
+} from './environment/encryptionKeys';
+
+export { hideRunSecrets } from './history/hideRunSecrets';
+
 export { extractContext } from './environment/extractContext';
 export type { ContextExtractionResult } from './environment/extractContext';
 

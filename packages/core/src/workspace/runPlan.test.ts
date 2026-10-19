@@ -631,3 +631,175 @@ describe('runPlan', () => {
     );
   });
 });
+
+describe('runPlan — encryption keys and stored secrets', () => {
+  // Slot s1 (label ADMIN_TOKEN_KEY) encrypts the ADMIN_TOKEN variable.
+  const keyedSynced = (requests: Record<string, ApiRequest>, steps: ExecutionPlan['steps']) =>
+    makeSynced({
+      collections: { tree: { id: 'root', type: 'root', children: [] }, requests, folders: {} },
+      environments: {
+        items: {
+          prod: {
+            name: 'prod',
+            variables: [
+              { key: 'ADMIN_TOKEN', value: 'enc:v1:x', encrypted: true, secretKeyId: 's1' },
+            ],
+          },
+        },
+        activeName: null,
+        priorityOrder: [{ kind: 'local', name: 'prod' }],
+      },
+      secretKeys: { s1: { id: 's1', label: 'ADMIN_TOKEN_KEY', salt: 'x', createdAt: T0 } },
+      executionPlans: { p1: makePlan('p1', { steps }) },
+    });
+
+  it('refuses a step that names an encryption key — nothing is sent — and runs the rest', async () => {
+    const leak = makeRequest('leak', {
+      headers: [{ key: 'Authorization', value: 'Bearer {{ADMIN_TOKEN_KEY}}', enabled: true }],
+    });
+    const ok = makeRequest('ok', { url: 'https://api.test/ok' });
+    const state: WorkspaceState = {
+      synced: keyedSynced({ leak, ok }, [{ requestId: 'leak' }, { requestId: 'ok' }]),
+      local: makeLocal(),
+    };
+    const { fetchImpl, calls } = makeFetch({ '*': { status: 200 } });
+
+    const out = await runPlan(state, 'p1', { fetchImpl, secretsById: { s1: 'the-key-value' } });
+
+    expect(calls.map((c) => c.url)).toEqual(['https://api.test/ok']);
+    expect(out.passed).toBe(false);
+    expect(out.steps[0]).toMatchObject({ requestName: 'leak', passed: false, result: null });
+    expect(out.steps[0].error).toBe(
+      'Not sent. {{ADMIN_TOKEN_KEY}} is the encryption key of ADMIN_TOKEN, not a variable, ' +
+        'so its value is never sent. Write {{ADMIN_TOKEN}} to send the variable.',
+    );
+    // The refusal is in history too, and the key's value is nowhere in it.
+    const refused = out.nextState.local.history.requestRuns.find((r) => r.requestId === 'leak');
+    expect(refused?.error).toBe(out.steps[0].error);
+    expect(JSON.stringify(out.nextState.local)).not.toContain('the-key-value');
+  });
+
+  it('stops at a refused step under --bail', async () => {
+    const leak = makeRequest('leak', { url: 'https://api.test/{{ADMIN_TOKEN_KEY}}' });
+    const ok = makeRequest('ok');
+    const state: WorkspaceState = {
+      synced: keyedSynced({ leak, ok }, [{ requestId: 'leak' }, { requestId: 'ok' }]),
+      local: makeLocal(),
+    };
+    const { fetchImpl, calls } = makeFetch({ '*': { status: 200 } });
+
+    const out = await runPlan(state, 'p1', { fetchImpl, bail: true });
+
+    expect(out.steps).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('finds a key that a linked environment binds through the consumer override', async () => {
+    const linkedRequest = makeRequest('r1', { url: 'https://linked.test/?k={{ADMIN_TOKEN_KEY}}' });
+    const synced = makeSynced({
+      secretKeys: { s1: { id: 's1', label: 'ADMIN_TOKEN_KEY', salt: 'x', createdAt: T0 } },
+      linkedWorkspaces: {
+        lw1: {
+          id: 'lw1',
+          kind: 'private',
+          name: 'Linked API',
+          sourceWorkspaceId: 'remote-ws-1',
+          source: {
+            provider: 'github',
+            repoFullName: 'acme/linked-api',
+            branch: 'main',
+            sessionMode: 'workspace',
+          },
+          scope: ['collections', 'environments'],
+          pinnedVersion: null,
+          updatePolicy: 'manual',
+          linkedAt: T0,
+          requiredSecretKeyIds: [],
+        },
+      },
+      linkedOverrides: {
+        requests: {},
+        environmentVars: {
+          'lw1:dev:TOKEN': {
+            linkedWorkspaceId: 'lw1',
+            envName: 'dev',
+            varKey: 'TOKEN',
+            value: 'enc:v1:y',
+            encrypted: true,
+            secretKeyId: 's1',
+            updatedAt: T0,
+          },
+        },
+      },
+      executionPlans: {
+        p1: makePlan('p1', { steps: [{ requestId: 'r1', linkedWorkspaceId: 'lw1' }] }),
+      },
+    });
+    const state: WorkspaceState = {
+      synced,
+      local: makeLocal({
+        linkedCollections: {
+          lw1: {
+            pulledAt: T0,
+            ref: 'HEAD@main',
+            collections: {
+              tree: { id: 'root', type: 'root', children: [] },
+              requests: { r1: linkedRequest },
+              folders: {},
+            },
+            environments: {
+              items: {
+                dev: { name: 'dev', variables: [{ key: 'TOKEN', value: 'p', encrypted: false }] },
+              },
+              activeName: null,
+              priorityOrder: [],
+            },
+          },
+        },
+      }),
+    };
+    const { fetchImpl, calls } = makeFetch({ '*': { status: 200 } });
+
+    const out = await runPlan(state, 'p1', { fetchImpl, secretsById: { s1: 'v' } });
+
+    expect(calls).toHaveLength(0);
+    expect(out.steps[0].error).toContain('is the encryption key of TOKEN');
+  });
+
+  it('hides supplied secret values and credential headers in the stored run', async () => {
+    const r1 = makeRequest('r1', {
+      url: 'https://api.test/x?q={{ADMIN_TOKEN}}',
+      headers: [
+        { key: 'Authorization', value: 'Bearer {{ADMIN_TOKEN}}', enabled: true },
+        { key: 'X-Echo', value: 'tok:{{ADMIN_TOKEN}}', enabled: true },
+        { key: 'Accept', value: 'application/json', enabled: true },
+      ],
+    });
+    const state: WorkspaceState = {
+      synced: keyedSynced({ r1 }, [{ requestId: 'r1' }]),
+      local: makeLocal(),
+    };
+    const { fetchImpl, calls } = makeFetch({
+      '*': { status: 200, body: '{"echo":"plaintext-admin-token","access_token":"fresh-xyz"}' },
+    });
+
+    const out = await runPlan(state, 'p1', {
+      fetchImpl,
+      secretsById: { s1: 'plaintext-admin-token' },
+    });
+
+    // The wire got the real value…
+    expect(calls[0].headers.authorization).toBe('Bearer plaintext-admin-token');
+    // …history did not.
+    const run = out.nextState.local.history.requestRuns[0];
+    expect(run.secretsHidden).toBe(true);
+    expect(run.requestHeaders).toEqual({
+      Authorization: '[hidden]',
+      'X-Echo': '[hidden]',
+      Accept: 'application/json',
+    });
+    expect(run.url).toBe('https://api.test/x?q=[hidden]');
+    expect(run.responseBodyPreview).toBe('{"echo":"[hidden]","access_token":"[hidden]"}');
+    expect(JSON.stringify(out.nextState.local)).not.toContain('plaintext-admin-token');
+  });
+});

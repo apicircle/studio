@@ -100,6 +100,21 @@ describe('formatRequestRunDocument', () => {
     expect(doc.endsWith('\n')).toBe(true);
     expect(doc.endsWith('\n\n')).toBe(false);
   });
+
+  it('says secrets were hidden when the run hid some', () => {
+    const doc = formatRequestRunDocument(
+      run({ requestHeaders: { Authorization: '[hidden]' }, secretsHidden: true }),
+    );
+    expect(doc).toContain(
+      '# ── secrets hidden ──\nSecrets were hidden before this run was saved: each value shown as ' +
+        '[hidden] held one. Header names are kept.',
+    );
+    expect(doc).toContain('authorization: "[hidden]"');
+  });
+
+  it('adds no secrets note to a run that hid nothing', () => {
+    expect(formatRequestRunDocument(run())).not.toContain('secrets hidden');
+  });
 });
 
 describe('formatPlanRunDocument', () => {

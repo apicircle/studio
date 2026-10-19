@@ -1,6 +1,8 @@
 import {
   applyLinkedEnvironmentOverrides,
   attachmentPath,
+  encryptionKeyRefusal,
+  findEncryptionKeys,
   plaintextEnvMap,
   resolveRequestForExecution,
   type AttachmentResolver,
@@ -27,6 +29,12 @@ import { getLinkToken, linkedSecretStorageKey } from '../host/githubAuth';
 // provisioned linked-secret values, plus the `{{linkId}}` context the linked
 // projection carries. Returns the resolved request + a list of missing
 // placeholders the executor can surface to the user.
+//
+// A vault slot that encrypts environment variables is an encryption key, not
+// a variable: `workspaceEncryptionKeys` names those slots, the resolver
+// leaves `{{LABEL}}` naming one as typed, and the result's `refusal` says
+// why the send command must not send the request. `secretValues` lists every
+// plaintext the resolve decrypted, so the stored run can hide it.
 // =============================================================================
 
 const ENC_PREFIX = 'enc:v1:';
@@ -52,12 +60,14 @@ export interface BuildSendScopeArgs {
  * Decrypt every `enc:v1:` row in an `Environment.items` map and return a flat
  * plaintext-only structure. Rows the vault can't decrypt (locked / bad
  * ciphertext / missing key) are dropped silently — the resolver reports the
- * placeholder as missing.
+ * placeholder as missing. Each plaintext produced is also pushed to
+ * `decrypted`.
  */
 async function decryptEnvironments(
   items: Record<string, Environment>,
   vault: VsCodeVaultManager | null,
   workspaceId: string,
+  decrypted: string[],
 ): Promise<Record<string, Record<string, string>>> {
   const out: Record<string, Record<string, string>> = {};
   for (const [envName, env] of Object.entries(items)) {
@@ -69,7 +79,9 @@ async function decryptEnvironments(
       }
       if (!vault || !v.value.startsWith(ENC_PREFIX)) continue;
       try {
-        vars[v.key] = await vault.decryptValue(workspaceId, v.value);
+        const plaintext = await vault.decryptValue(workspaceId, v.value);
+        vars[v.key] = plaintext;
+        decrypted.push(plaintext);
       } catch {
         // Locked / corrupt / missing key — the resolver will report the
         // placeholder as missing rather than failing the whole send.
@@ -107,33 +119,73 @@ async function collectLinkedSecrets(
   return out;
 }
 
-export async function buildResolvedRequest(
-  args: BuildSendScopeArgs,
-): Promise<ResolvedRequestResult> {
+/**
+ * The slots that encrypt environment variables, by the label `{{LABEL}}`
+ * would name them: the workspace's own slots and each linked workspace's
+ * (whose values `collectLinkedSecrets` puts in scope by label), checked
+ * against the workspace's own environments and each linked workspace's after
+ * the consumer's overrides.
+ */
+export function workspaceEncryptionKeys(state: WorkspaceState): Record<string, string[]> {
+  const slotLabels: Record<string, string> = {};
+  const environments: Array<Record<string, Environment>> = [state.synced.environments.items];
+  for (const [id, meta] of Object.entries(state.synced.secretKeys ?? {}))
+    slotLabels[id] = meta.label;
+  for (const [linkId, snapshot] of Object.entries(state.local.linkedCollections)) {
+    for (const [id, meta] of Object.entries(snapshot.secretKeys ?? {})) slotLabels[id] = meta.label;
+    environments.push(
+      applyLinkedEnvironmentOverrides(snapshot.environments, linkId, state.synced).items,
+    );
+  }
+  return findEncryptionKeys({ slotLabels, environments });
+}
+
+export interface BuiltSendRequest extends ResolvedRequestResult {
+  /** Plaintexts the resolve decrypted (encrypted variables, linked secrets). */
+  secretValues: string[];
+  /** Why the request must not be sent — it names an encryption key — or null. */
+  refusal: string | null;
+}
+
+export async function buildResolvedRequest(args: BuildSendScopeArgs): Promise<BuiltSendRequest> {
   const { state, request, vault, secrets, workspaceId, fromLinkId } = args;
+  const secretValues: string[] = [];
 
   // Local envs — decrypt encrypted rows up-front.
-  const localEnvs = await decryptEnvironments(state.synced.environments.items, vault, workspaceId);
+  const localEnvs = await decryptEnvironments(
+    state.synced.environments.items,
+    vault,
+    workspaceId,
+    secretValues,
+  );
 
   // Linked envs — apply the consumer's per-row overrides, then decrypt.
   const linkedEnvs: Record<string, Record<string, Record<string, string>>> = {};
   for (const [linkId, snapshot] of Object.entries(state.local.linkedCollections)) {
     const overridden = applyLinkedEnvironmentOverrides(snapshot.environments, linkId, state.synced);
-    linkedEnvs[linkId] = await decryptEnvironments(overridden.items, vault, workspaceId);
+    linkedEnvs[linkId] = await decryptEnvironments(
+      overridden.items,
+      vault,
+      workspaceId,
+      secretValues,
+    );
   }
 
   // For an owned environment whose every row decrypted to plaintext already
   // (no vault), `plaintextEnvMap` is the simpler path — used by tests.
   void plaintextEnvMap;
 
-  const secretValues = await collectLinkedSecrets(state, secrets);
+  const linkedSecrets = await collectLinkedSecrets(state, secrets);
+  secretValues.push(...Object.values(linkedSecrets));
+  const encryptionKeys = workspaceEncryptionKeys(state);
 
-  return resolveRequestForExecution({
+  const resolved = resolveRequestForExecution({
     request,
     synced: state.synced,
     localEnvs,
     linkedEnvs,
-    secrets: secretValues,
+    secrets: linkedSecrets,
+    encryptionKeys,
     globalContext: state.local.globalContext ?? {},
     envPriorityOverride: args.envPriorityOverride,
     // The linked request projection drops fromLinkId here implicitly —
@@ -142,6 +194,14 @@ export async function buildResolvedRequest(
     // no extra wiring needed.
     ...(fromLinkId ? {} : {}),
   });
+  return {
+    ...resolved,
+    secretValues,
+    refusal:
+      resolved.encryptionKeys.length > 0
+        ? encryptionKeyRefusal(resolved.encryptionKeys, encryptionKeys)
+        : null,
+  };
 }
 
 // ---------------------------------------------------------------------------

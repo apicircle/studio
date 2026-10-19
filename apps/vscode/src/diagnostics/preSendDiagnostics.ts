@@ -3,6 +3,7 @@ import { preSendValidation, buildScope } from '@apicircle/core';
 import { parseRequestFromYaml } from '../fs/requestYaml';
 import { uriEntityKind } from '../fs/uriKind';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import { workspaceEncryptionKeys } from '../execute/buildSendScope';
 import type { Request as ApiRequest } from '@apicircle/shared';
 
 // =============================================================================
@@ -97,11 +98,15 @@ export class PreSendDiagnostics implements vscode.Disposable {
       .filter((p) => p.kind === 'local')
       .map((p) => (p as { name: string }).name);
 
+    // Vault slots that encrypt variables are encryption keys: a request
+    // naming one gets a blocker, as the send command refuses it. Reading
+    // which slots they are needs slot metadata only, never the vault.
     const scope = buildScope({
       contextVars: request.contextVars,
       environments: envByName,
       activeEnvName: state.synced.environments.activeName,
       priorityOrder,
+      encryptionKeys: workspaceEncryptionKeys(state),
     });
 
     // Pass `folders` so the validator resolves `auth: inherit` against the

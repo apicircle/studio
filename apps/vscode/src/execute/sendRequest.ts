@@ -157,6 +157,11 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
   // let the executor see raw placeholders — that's the previous behavior.
   let resolvedRequest = request;
   let missingPlaceholders: string[] = [];
+  // Set when the request names a vault slot that encrypts variables: the
+  // reason it is refused instead of sent.
+  let refusal: string | null = null;
+  // Plaintexts the resolve decrypted, hidden in the stored history run.
+  let secretValues: string[] = [];
   let stateForExecute: WorkspaceState | null = null;
   if (deps.secrets) {
     try {
@@ -171,6 +176,8 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
       });
       resolvedRequest = resolved.request;
       missingPlaceholders = resolved.missing;
+      secretValues = resolved.secretValues;
+      refusal = resolved.refusal;
     } catch (e) {
       void e; // resolution is best-effort; fall back to raw on error
     }
@@ -191,6 +198,8 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
   }
 
   try {
+    // An encryption key never goes on the wire: fail the send with the reason.
+    if (refusal !== null) throw new Error(refusal);
     const result = await withProgress<ExecutionResult>(
       {
         location: vscode.ProgressLocation.Window,
@@ -227,6 +236,7 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
         assertionVerdicts: verdicts,
         maxEntries,
         retentionDays,
+        secrets: secretValues,
       });
     } catch (persistErr) {
       // History persistence failure is non-fatal — log but don't block the

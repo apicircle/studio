@@ -1030,4 +1030,61 @@ describe('sendRequestCommand', () => {
       // didn't crash with a secrets handle.
     });
   });
+
+  describe('encryption keys', () => {
+    it('refuses a request that names a vault slot encrypting a variable, without sending', async () => {
+      const req = makeRequest('r1', {
+        headers: [{ key: 'Authorization', value: 'Bearer {{ADMIN_KEY}}', enabled: true }],
+      });
+      activate([req]);
+      // Slot s1 (ADMIN_KEY) encrypts the ADMIN_TOKEN variable.
+      const file = path.join(apicircleDir, 'workspace.json');
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          ...doc,
+          environments: {
+            items: {
+              staging: {
+                name: 'staging',
+                variables: [
+                  { key: 'ADMIN_TOKEN', value: 'enc:v1:a:b', encrypted: true, secretKeyId: 's1' },
+                ],
+              },
+            },
+            activeName: null,
+            priorityOrder: [{ kind: 'local', name: 'staging' }],
+          },
+          secretKeys: { s1: { id: 's1', label: 'ADMIN_KEY', salt: 'x', createdAt: 't' } },
+        }),
+      );
+      (
+        window.showQuickPick as { mockResolvedValueOnce: (v: unknown) => unknown }
+      ).mockResolvedValueOnce({ label: 'x', request: req });
+      const execute = vi.fn().mockResolvedValue(makeResult());
+      const secrets = {
+        get: vi.fn().mockResolvedValue(undefined),
+        store: vi.fn(),
+        delete: vi.fn(),
+        onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
+      };
+
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        execute: execute as never,
+        openResponse: vi.fn(),
+        secrets: secrets as never,
+      });
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(window.showErrorMessage).toHaveBeenCalledWith(
+        'Send failed: Not sent. {{ADMIN_KEY}} is the encryption key of ADMIN_TOKEN, not a ' +
+          'variable, so its value is never sent. Write {{ADMIN_TOKEN}} to send the variable.',
+      );
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.local.history.requestRuns).toHaveLength(0);
+    });
+  });
 });

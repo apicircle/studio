@@ -27,6 +27,46 @@
 
 ### Security
 
+- **A Secret Vault slot that encrypts environment variables is an encryption
+  key, not a variable, and is never sent.** A slot's label resolved as
+  `{{LABEL}}` from the vault layer even when the slot was the key an
+  environment variable was encrypted with. A user who encrypted `ADMIN_TOKEN`
+  with a slot labelled `ADMIN_TOKEN_ENCRYPTION_KEY` and wrote
+  `Bearer {{ADMIN_TOKEN_ENCRYPTION_KEY}}` sent the key's own value to the
+  server — and that value, with the ciphertext in Git, decrypts every variable
+  it encrypts. The resolver now leaves such a reference as typed
+  (`ResolutionScope.encryptionKeys`, filled by `findEncryptionKeys` in
+  `@apicircle/core`); a context or environment variable of the same name still
+  resolves. Pre-send validation blocks the request with the
+  `encryption-key-reference` blocker ("`{{ADMIN_TOKEN_ENCRYPTION_KEY}}` is the
+  encryption key of ADMIN_TOKEN, not a variable, so its value is never sent.
+  Write `{{ADMIN_TOKEN}}` to send the variable."), in the Editor and in VS
+  Code's Problems panel. Every send path refuses it even with validation off —
+  a single send, a linked request, a plan step, a step retry and a replay on
+  web and desktop, `runPlan` in `@apicircle/core` (the CLI), and VS Code's
+  Send Request — and says why: the response panel labels it **Not sent** with
+  the reason (`NOT_SENT_PREFIX`), and History keeps the refused run with that
+  error. Autocomplete no longer offers the slot, and its Vault row reads
+  "Encryption key of
+  ADMIN_TOKEN · not a variable". A slot that encrypts nothing is unchanged and
+  still works as `{{LABEL}}`.
+- **History no longer stores secrets.** A stored run recorded the resolved
+  request, so a token from an encrypted variable or a vault slot sat in plain
+  text in `WorkspaceLocal` — IndexedDB and the disk mirror
+  (`~/.apicircle/workspace-<id>/workspace.local.json`) — as did a token a
+  server returned. Before a run is stored, `hideRunSecrets` (`@apicircle/core`)
+  replaces with `[hidden]` (`RUN_HIDDEN_VALUE` in `@apicircle/shared`): the
+  value of a header named like a credential (`Authorization`, `Cookie`,
+  `Set-Cookie`, `X-API-Key`, …), shaped like one, or holding a value the send
+  decrypted; any value the send decrypted inside the URL or a body preview; and
+  the value of a URL query parameter, JSON field or form field named or shaped
+  like a credential (`access_token`, `password`, `client_secret`, …). Header
+  names are kept, and a URL's `user:pass@` is dropped. The run is marked
+  `secretsHidden`, and the History detail — web, desktop and VS Code's run
+  document — says "Secrets were hidden before this run was saved: each value
+  shown as hidden held one. Header names are kept." The live response is
+  untouched. Applies on web and desktop, to the CLI's plan runs and to VS
+  Code's History.
 - **The desktop app runs on Electron 44.** It ran on Electron 32.3.3, which is
   out of support and named in 37 published advisories (12 of them high), among
   them a context-isolation bypass and an ASAR integrity bypass. The app now

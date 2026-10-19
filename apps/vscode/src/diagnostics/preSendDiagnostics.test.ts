@@ -177,6 +177,54 @@ describe('PreSendDiagnostics', () => {
     diag.dispose();
   });
 
+  it('emits an Error diagnostic for a vault slot that encrypts a variable', async () => {
+    // Slot s1 (ADMIN_KEY) encrypts ADMIN_TOKEN: naming the slot is a blocker,
+    // read from slot metadata alone — the vault stays locked.
+    const file = path.join(apicircleDir, 'workspace.json');
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        ...doc,
+        environments: {
+          items: {
+            staging: {
+              name: 'staging',
+              variables: [
+                { key: 'ADMIN_TOKEN', value: 'enc:v1:a:b', encrypted: true, secretKeyId: 's1' },
+              ],
+            },
+          },
+          activeName: null,
+          priorityOrder: [{ kind: 'local', name: 'staging' }],
+        },
+        secretKeys: { s1: { id: 's1', label: 'ADMIN_KEY', salt: 'x', createdAt: 't' } },
+      }),
+    );
+    const diag = new PreSendDiagnostics(bridge);
+    const uri = Uri.parse('apicircle://x/requests/abc.yaml');
+    diag.lintDocument(
+      makeDoc(
+        uri,
+        'name: x\nmethod: GET\nurl: https://admin.example.test/\nheaders:\n  - key: Authorization\n    value: "Bearer {{ADMIN_KEY}}"\n    enabled: true\n',
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    const calls = collection.set.mock.calls as Array<
+      [unknown, Array<{ message: string; severity: number }>]
+    >;
+    const blocker = calls
+      .at(-1)![1]
+      .find((d) => d.message.startsWith('[encryption-key-reference]'));
+    expect(blocker).toMatchObject({
+      severity: 0,
+      message:
+        '[encryption-key-reference] {{ADMIN_KEY}} is the encryption key of ADMIN_TOKEN, not a ' +
+        'variable, so its value is never sent. Write {{ADMIN_TOKEN}} to send the variable.',
+    });
+    diag.dispose();
+  });
+
   it('hasBlocker reads the underlying collection', () => {
     const diag = new PreSendDiagnostics(bridge);
     const uri = Uri.parse('apicircle://x/requests/abc.yaml');

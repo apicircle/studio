@@ -1,5 +1,5 @@
 import * as YAML from 'yaml';
-import type { RequestRun, PlanRun } from '@apicircle/shared';
+import { RUN_HIDDEN_VALUE, type RequestRun, type PlanRun } from '@apicircle/shared';
 
 // =============================================================================
 // History run-detail formatter.
@@ -114,6 +114,15 @@ function requestSummarySection(run: RequestRun, displayName: string): Section {
  */
 function requestWireSections(run: RequestRun, noteEmptyAssertions = false): Section[] {
   const sections: Section[] = [];
+
+  if (run.secretsHidden) {
+    sections.push({
+      title: 'secrets hidden',
+      content:
+        `Secrets were hidden before this run was saved: each value shown as ${RUN_HIDDEN_VALUE} ` +
+        'held one. Header names are kept.',
+    });
+  }
 
   sections.push({
     title: 'requestHeaders',

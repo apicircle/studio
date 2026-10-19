@@ -714,6 +714,8 @@ Placeholders resolve in a fixed order; the first match wins:
     2. The environment layer (the environments in the priority list, in order)
     3. Secret Vault          (encrypted secrets, by label)
 
+A Secret Vault entry that encrypts environment variables is their **encryption key**, not a variable: \`{{LABEL}}\` never resolves to it (see Secret Vault → Encryption keys are not variables).
+
 Example — \`{{BASE_URL}}\` with a "Staging" and a "Prod" environment:
 
     Staging   BASE_URL = https://staging.api.example.com
@@ -772,6 +774,14 @@ Each entry is a label and a value. Saving encrypts the value with AES-256-GCM un
 - Values are masked; reveal them briefly, or copy to clipboard.
 - A **"where used"** list tracks the environments and requests that consume the key — and delete is blocked while a key is still in use, so you cannot strand a reference.
 - After cloning a workspace a **missing-slots gate** prompts you to fill any keys that have no local value yet.
+
+## Encryption keys are not variables
+
+An entry you use to **Encrypt** environment variables is their encryption key: each of those variables is ciphertext derived from the entry's value, and that ciphertext travels through Git. Sending the value would let anyone who sees it decrypt every one of them, so it is never sent. Its row says so:
+
+    ADMIN_TOKEN_ENCRYPTION_KEY   Encryption key of ADMIN_TOKEN · not a variable
+
+A request that writes \`{{ADMIN_TOKEN_ENCRYPTION_KEY}}\` is blocked before it is sent: pre-send validation says "{{ADMIN_TOKEN_ENCRYPTION_KEY}} is the encryption key of ADMIN_TOKEN, not a variable, so its value is never sent. Write {{ADMIN_TOKEN}} to send the variable." With validation off, Send still refuses it and shows the same reason in the response — in a plan run, on a retry and on a replay too. Write the variable it encrypts (\`{{ADMIN_TOKEN}}\`) instead. An entry that encrypts nothing is an ordinary secret and works as \`{{LABEL}}\`.
 
 ## How it is stored
 
@@ -971,6 +981,16 @@ The web and desktop apps still run plans interactively with the live last-run su
 
 For each request run: the method, URL, status, duration, response headers and body, and assertion verdicts. For each plan run: a summary plus the per-step results. History is part of the local document — it never pushes to Git, and clearing browser storage clears it.
 
+## Secrets are hidden
+
+History is saved on this machine (IndexedDB, and on desktop the workspace's JSON file under \`~/.apicircle\`), so secrets are hidden before a run is saved; the response you are looking at is not changed. Each hidden value is shown as **hidden** (stored as \`[hidden]\`):
+
+- the value of a header named like a credential — \`Authorization\`, \`Cookie\`, \`Set-Cookie\`, \`X-API-Key\` and the like — or shaped like one; the header's name is kept;
+- any value the send decrypted from an encrypted variable or the Secret Vault, wherever it appears — a header, the URL or a body;
+- the value of a URL query parameter, JSON field or form field named or shaped like a credential (\`access_token\`, \`password\`, \`client_secret\`, …), so a token a server returns is not kept either.
+
+A run that hid something says "Secrets were hidden before this run was saved: each value shown as hidden held one. Header names are kept."
+
 ## Tabs
 
 - **Requests** — individual Sends.
@@ -997,7 +1017,17 @@ So you can prune just the noise (say, every \`error\` run from a flaky afternoon
 ## Storage footprint
 
 History is a circular buffer capped by a fixed maximum number of runs — once full, the oldest run drops as a new one lands, so it never grows without bound. It lives entirely in this browser's IndexedDB. To reclaim space immediately, use the filter-aware clear above.`,
-    keywords: ['history', 'logs', 'past runs', 'buffer', 'filter', 'clear', 'date range'],
+    keywords: [
+      'history',
+      'logs',
+      'past runs',
+      'buffer',
+      'filter',
+      'clear',
+      'date range',
+      'hidden',
+      'secrets',
+    ],
   },
   {
     id: 'snapshots',

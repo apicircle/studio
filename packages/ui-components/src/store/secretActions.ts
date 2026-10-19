@@ -1,8 +1,48 @@
-import type { SecretEntry, WorkspaceLocal } from '@apicircle/shared';
+import { applyLinkedEnvironmentOverrides } from '@apicircle/core';
+import type {
+  Environment,
+  SecretEntry,
+  SecretKeyMeta,
+  WorkspaceLocal,
+  WorkspaceSynced,
+} from '@apicircle/shared';
 
 // Pure reducers for the cross-workspace Secret Vault index. The encrypted
 // payload itself lives in the secrets IDB store (see persistence/secrets.ts);
 // these reducers manage the metadata in `WorkspaceLocal.secretIndex`.
+
+/**
+ * Slot id → the label `{{LABEL}}` names it by: the synced slot records, with
+ * this device's vault index (which also holds linked and host-token entries)
+ * on top. A slot is an encryption key whether or not this device has its
+ * value, so the synced records count too. Feeds `findEncryptionKeys`.
+ */
+export function vaultSlotLabels(
+  secretKeys: Readonly<Record<string, SecretKeyMeta>> | undefined,
+  entries: Readonly<Record<string, SecretEntry>> | undefined,
+): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const [id, meta] of Object.entries(secretKeys ?? {})) labels[id] = meta.label;
+  for (const [id, entry] of Object.entries(entries ?? {})) labels[id] = entry.label;
+  return labels;
+}
+
+/**
+ * Every set of environments whose encrypted variables can bind a slot of this
+ * workspace: its own, and each linked workspace's once the consumer's
+ * overrides (which can bind a variable to a slot) are applied. Feeds
+ * `findEncryptionKeys`, the same sets a send resolves against.
+ */
+export function slotBindingEnvironments(
+  synced: WorkspaceSynced,
+  linkedCollections: WorkspaceLocal['linkedCollections'],
+): Array<Record<string, Environment>> {
+  const sets: Array<Record<string, Environment>> = [synced.environments.items];
+  for (const [linkId, snapshot] of Object.entries(linkedCollections)) {
+    sets.push(applyLinkedEnvironmentOverrides(snapshot.environments, linkId, synced).items);
+  }
+  return sets;
+}
 
 export function addSecretEntry(
   local: WorkspaceLocal,

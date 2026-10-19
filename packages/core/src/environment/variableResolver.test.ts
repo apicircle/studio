@@ -271,3 +271,59 @@ describe('getVariableAutocomplete', () => {
     expect(out?.map((s) => s.key)).toEqual(['BASE_URL']);
   });
 });
+
+describe('encryption keys', () => {
+  // ADMIN_TOKEN_KEY is a vault slot that encrypts the ADMIN_TOKEN variable.
+  const keyed = (overrides: Partial<ResolutionScope> = {}): ResolutionScope =>
+    emptyScope({
+      secrets: { ADMIN_TOKEN_KEY: 'slot-value', PLAIN_SECRET: 'plain' },
+      encryptionKeys: { ADMIN_TOKEN_KEY: ['ADMIN_TOKEN'] },
+      ...overrides,
+    });
+
+  it('lookup never returns an encryption key from the secrets layer', () => {
+    expect(lookup(keyed(), 'ADMIN_TOKEN_KEY')).toBeUndefined();
+    expect(lookup(keyed(), 'PLAIN_SECRET')).toBe('plain');
+  });
+
+  it('a context or environment variable of the same name still resolves', () => {
+    expect(lookup(keyed({ contextVars: { ADMIN_TOKEN_KEY: 'ctx' } }), 'ADMIN_TOKEN_KEY')).toBe(
+      'ctx',
+    );
+    expect(lookup(keyed({ priorityEnvs: [{ ADMIN_TOKEN_KEY: 'env' }] }), 'ADMIN_TOKEN_KEY')).toBe(
+      'env',
+    );
+  });
+
+  it('resolveString leaves the placeholder as typed and reports it apart from missing', () => {
+    const r = resolveString('Bearer {{ADMIN_TOKEN_KEY}} {{PLAIN_SECRET}} {{NOPE}}', keyed());
+    expect(r.value).toBe('Bearer {{ADMIN_TOKEN_KEY}} plain {{NOPE}}');
+    expect(r.encryptionKeys).toEqual(['ADMIN_TOKEN_KEY']);
+    expect(r.missing).toEqual(['NOPE']);
+  });
+
+  it('resolveString reports no encryption keys when the scope lists none', () => {
+    expect(resolveString('{{X}}', emptyScope()).encryptionKeys).toEqual([]);
+  });
+
+  it('resolveStringMap collects encryption keys from keys and values', () => {
+    const r = resolveStringMap(
+      { '{{ADMIN_TOKEN_KEY}}': 'v', h: '{{ADMIN_TOKEN_KEY}} {{GONE}}' },
+      keyed(),
+    );
+    expect(r.encryptionKeys).toEqual(['ADMIN_TOKEN_KEY']);
+    expect(r.missing).toEqual(['GONE']);
+  });
+
+  it('buildScope carries encryptionKeys only when given', () => {
+    const base = { contextVars: [], environments: {}, activeEnvName: null, priorityOrder: [] };
+    expect(buildScope(base)).not.toHaveProperty('encryptionKeys');
+    expect(buildScope({ ...base, encryptionKeys: { K: ['V'] } }).encryptionKeys).toEqual({
+      K: ['V'],
+    });
+  });
+
+  it('collectVariableSuggestions does not offer an encryption key', () => {
+    expect(collectVariableSuggestions(keyed()).map((s) => s.key)).toEqual(['PLAIN_SECRET']);
+  });
+});

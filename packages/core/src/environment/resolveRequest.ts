@@ -35,6 +35,12 @@ export interface ResolveRequestArgs {
   /** Plaintext secrets keyed by their display label (vault-decrypted). */
   secrets?: Record<string, string>;
   /**
+   * Labels of the slots that encrypt environment variables
+   * (`findEncryptionKeys`). They never resolve, even when `secrets` holds
+   * them; the result lists the ones the request references.
+   */
+  encryptionKeys?: Readonly<Record<string, readonly string[]>>;
+  /**
    * `globalContext` (latest-write-wins extractions) + plan variables
    * (optional) — sit between request.contextVars and the env layer.
    */
@@ -48,6 +54,11 @@ export interface ResolvedRequestResult {
   request: ApiRequest;
   scope: ResolutionScope;
   missing: string[];
+  /**
+   * Encryption-key slots the request references. Each placeholder was left as
+   * typed; a caller must not send the request while this is non-empty.
+   */
+  encryptionKeys: string[];
 }
 
 export function resolveRequestForExecution(args: ResolveRequestArgs): ResolvedRequestResult {
@@ -84,12 +95,15 @@ export function resolveRequestForExecution(args: ResolveRequestArgs): ResolvedRe
     activeEnvName: null, // priorityOrder is the sole list the resolver consults.
     priorityOrder: refs.map(envPriorityKey),
     secrets: args.secrets ?? {},
+    encryptionKeys: args.encryptionKeys,
   });
 
   const missing = new Set<string>();
+  const encryptionKeys = new Set<string>();
   const interp = (s: string): string => {
     const r = resolveString(s, scope);
     for (const m of r.missing) missing.add(m);
+    for (const k of r.encryptionKeys) encryptionKeys.add(k);
     return r.value;
   };
 
@@ -138,6 +152,7 @@ export function resolveRequestForExecution(args: ResolveRequestArgs): ResolvedRe
     request: { ...args.request, url, headers, query, body, auth },
     scope,
     missing: [...missing],
+    encryptionKeys: [...encryptionKeys],
   };
 }
 

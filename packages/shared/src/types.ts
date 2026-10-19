@@ -1432,6 +1432,11 @@ export interface ExecutionPlan {
  * Stored on `WorkspaceLocal.history` (capped, IDB-only). Body fields are
  * truncated past `RUN_BODY_PREVIEW_LIMIT` so a hundred history rows can't
  * blow up the IDB record.
+ *
+ * Secrets are hidden before a run is stored (`hideRunSecrets` in
+ * `@apicircle/core`): a header keeps its name but its value becomes
+ * `RUN_HIDDEN_VALUE`, and a secret inside the URL or a body preview is
+ * replaced by it. `secretsHidden` says that happened.
  */
 export interface RequestRun {
   id: string;
@@ -1474,10 +1479,18 @@ export interface RequestRun {
     passed: boolean;
     detail?: string;
   }>;
+  /**
+   * True when at least one value was replaced by `RUN_HIDDEN_VALUE` before
+   * the run was stored. Absent when nothing was hidden.
+   */
+  secretsHidden?: true;
 }
 
 /** Soft cap for body previews stored on a RequestRun (each side). */
 export const RUN_BODY_PREVIEW_LIMIT = 64 * 1024;
+
+/** What a stored RequestRun holds in place of a secret value. */
+export const RUN_HIDDEN_VALUE = '[hidden]';
 
 /**
  * UI text-size scaling bounds. `fontSizePercent` on `WorkspaceLocal.ui`

@@ -61,6 +61,30 @@ describe('resolveRequestForExecution', () => {
     expect(out.missing).toEqual([]);
   });
 
+  it('never substitutes an encryption key, and reports every reference to one', () => {
+    const out = resolveRequestForExecution({
+      request: req({ url: 'https://api/{{KEY}}', auth: { type: 'bearer', token: '{{KEY}}' } }),
+      synced: synced(),
+      localEnvs: { dev: {} },
+      secrets: { KEY: 'slot-value', TOKEN: 't' },
+      encryptionKeys: { KEY: ['ADMIN_TOKEN'] },
+    });
+    expect(out.request.url).toBe('https://api/{{KEY}}');
+    expect((out.request.auth as { token: string }).token).toBe('{{KEY}}');
+    expect(out.encryptionKeys).toEqual(['KEY']);
+    expect(out.missing).not.toContain('KEY');
+    expect(out.scope.encryptionKeys).toEqual({ KEY: ['ADMIN_TOKEN'] });
+  });
+
+  it('reports no encryption keys when none are given', () => {
+    const out = resolveRequestForExecution({
+      request: req(),
+      synced: synced(),
+      localEnvs: { dev: {} },
+    });
+    expect(out.encryptionKeys).toEqual([]);
+  });
+
   it('reports missing placeholders without dropping the text', () => {
     const out = resolveRequestForExecution({
       request: req({ url: 'https://api/{{NOPE}}' }),

@@ -5,13 +5,14 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  EyeOff,
   Layers,
   RotateCw,
   Send,
   Trash2,
   XCircle,
 } from 'lucide-react';
-import type { PlanRun, RequestRun } from '@apicircle/shared';
+import { RUN_HIDDEN_VALUE, type PlanRun, type RequestRun } from '@apicircle/shared';
 import { requestRunToExecutionResult } from '@apicircle/core';
 import { useWorkspaceStore, type HistoryUiState } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
@@ -530,6 +531,7 @@ function RequestRunDetail({ run }: { run: RequestRun }) {
           </DetailRow>
         )}
       </DetailGrid>
+      {run.secretsHidden && <HiddenSecretsNote className="mt-3" />}
 
       <div className="mt-3 space-y-3">
         <DetailColumn title="Request">
@@ -666,6 +668,28 @@ function pickExtension(
   return 'txt';
 }
 
+/**
+ * Says that a stored run's secrets were hidden before it was saved
+ * (`RequestRun.secretsHidden`): each value shown as hidden held one.
+ */
+function HiddenSecretsNote({ className }: { className?: string }) {
+  return (
+    <p
+      role="note"
+      className={cn(
+        'flex items-start gap-1.5 rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted',
+        className,
+      )}
+    >
+      <EyeOff size={12} className="mt-0.5 shrink-0 text-text-dim" aria-hidden="true" />
+      <span>
+        Secrets were hidden before this run was saved: each value shown as hidden held one. Header
+        names are kept.
+      </span>
+    </p>
+  );
+}
+
 function HeaderTable({ headers }: { headers: Record<string, string> }) {
   const entries = Object.entries(headers);
   if (entries.length === 0) return <span className="text-text-dim">(none)</span>;
@@ -674,9 +698,18 @@ function HeaderTable({ headers }: { headers: Record<string, string> }) {
       {entries.map(([k, v]) => (
         <li key={k} className="grid grid-cols-[140px_1fr] gap-1 font-mono text-[0.625rem]">
           <span className="truncate text-text-muted">{k}</span>
-          <span className="break-all text-text-primary" title={v}>
-            {v}
-          </span>
+          {v === RUN_HIDDEN_VALUE ? (
+            <span
+              className="italic text-text-dim"
+              title="This value held a secret and was not saved"
+            >
+              hidden
+            </span>
+          ) : (
+            <span className="break-all text-text-primary" title={v}>
+              {v}
+            </span>
+          )}
         </li>
       ))}
     </ul>
@@ -983,12 +1016,15 @@ function PlanRunStep({
         <span className="font-mono text-text-dim">{childRun.durationMs} ms</span>
       </button>
       {open && (
-        <div className="h-80 border-t border-border-subtle">
-          <ResponseViewer
-            result={requestRunToExecutionResult(childRun)}
-            assertions={childRun.assertions}
-            isExecuting={false}
-          />
+        <div className="border-t border-border-subtle">
+          {childRun.secretsHidden && <HiddenSecretsNote className="m-2" />}
+          <div className="h-80">
+            <ResponseViewer
+              result={requestRunToExecutionResult(childRun)}
+              assertions={childRun.assertions}
+              isExecuting={false}
+            />
+          </div>
         </div>
       )}
     </li>

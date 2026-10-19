@@ -5,11 +5,16 @@
 // This deliberately avoids the full async decrypt path used at send time
 // (workspaceStore.resolveRequest). Autocomplete should be instant; secrets
 // stay encrypted at rest.
+//
+// Vault slots that encrypt environment variables are listed as the scope's
+// `encryptionKeys`, as at send time: they are not offered as variables, and
+// pre-send validation blocks a request that references one.
 
 import { useMemo } from 'react';
-import type { ResolutionScope } from '@apicircle/core';
+import { findEncryptionKeys, type ResolutionScope } from '@apicircle/core';
 import type { EnvPriorityRef, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { slotBindingEnvironments, vaultSlotLabels } from '../store/secretActions';
 
 const SECRET_MASK = '••••';
 
@@ -32,8 +37,18 @@ export function useVariableScope(
   const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const globalContext = useWorkspaceStore((s) => s.local?.globalContext ?? {});
   const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
+  const synced = useWorkspaceStore((s) => s.synced);
 
   const override = opts.envPriorityOrderOverride;
+
+  // The same slots and environments the send path reads.
+  const encryptionKeys = useMemo(() => {
+    if (!synced) return {};
+    return findEncryptionKeys({
+      slotLabels: vaultSlotLabels(synced.secretKeys, secretEntries),
+      environments: slotBindingEnvironments(synced, linkedCollections),
+    });
+  }, [synced, linkedCollections, secretEntries]);
 
   return useMemo(() => {
     // Workspace globalContext is the lowest contextVars layer; per-request
@@ -71,7 +86,7 @@ export function useVariableScope(
       if (entry.label) secrets[entry.label] = SECRET_MASK;
     }
 
-    return { contextVars: ctx, activeEnv: {}, priorityEnvs, secrets };
+    return { contextVars: ctx, activeEnv: {}, priorityEnvs, secrets, encryptionKeys };
   }, [
     environments,
     workspacePriorityOrder,
@@ -80,6 +95,7 @@ export function useVariableScope(
     request,
     globalContext,
     secretEntries,
+    encryptionKeys,
   ]);
 }
 

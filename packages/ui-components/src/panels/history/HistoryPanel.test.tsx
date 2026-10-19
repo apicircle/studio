@@ -1,7 +1,12 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { PlanRun, RequestRun, WorkspaceLocal } from '@apicircle/shared';
+import {
+  RUN_HIDDEN_VALUE,
+  type PlanRun,
+  type RequestRun,
+  type WorkspaceLocal,
+} from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { HistoryPanel } from './HistoryPanel';
 import { HistorySidebar } from './HistorySidebar';
@@ -184,6 +189,78 @@ describe('HistoryPanel — request rows', () => {
     expect(bodyEditor).toHaveValue('{\n  "id": 42\n}');
     await userEvent.click(screen.getByRole('tab', { name: /^Headers$/ }));
     expect(screen.getByText('content-type')).toBeInTheDocument();
+  });
+
+  it('shows a hidden header value as "hidden" and says secrets were hidden', async () => {
+    seedHistory({
+      requestNames: { 'req-admin': 'Admin users' },
+      requestRuns: [
+        makeRun({
+          id: 'run-h',
+          requestId: 'req-admin',
+          requestHeaders: { Authorization: RUN_HIDDEN_VALUE, Accept: 'application/json' },
+          secretsHidden: true,
+        }),
+      ],
+    });
+    renderHistory();
+    await userEvent.click(screen.getByText('Admin users'));
+
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Secrets were hidden before this run was saved: each value shown as hidden held one. Header names are kept.',
+    );
+    expect(screen.getByText('Authorization')).toBeInTheDocument();
+    const hidden = screen.getByText('hidden');
+    expect(hidden).toHaveAttribute('title', 'This value held a secret and was not saved');
+    expect(screen.queryByText(RUN_HIDDEN_VALUE)).not.toBeInTheDocument();
+    expect(screen.getByText('application/json')).toBeInTheDocument();
+  });
+
+  it('shows no notice for a run with nothing hidden', async () => {
+    seedHistory({
+      requestNames: { 'req-plain': 'Plain' },
+      requestRuns: [makeRun({ id: 'run-p', requestId: 'req-plain' })],
+    });
+    renderHistory();
+    await userEvent.click(screen.getByText('Plain'));
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});
+
+describe('HistoryPanel — plan rows', () => {
+  it('says secrets were hidden inside an expanded plan step', async () => {
+    await hydrate();
+    seedHistory({
+      requestNames: { 'req-step': 'Step one' },
+      requestRuns: [
+        makeRun({ id: 'run-step', requestId: 'req-step', secretsHidden: true }),
+        makeRun({ id: 'run-plain', requestId: 'req-step' }),
+      ],
+      planNames: { 'plan-h': 'Admin plan' },
+      planRuns: [
+        {
+          id: 'pr-h',
+          planId: 'plan-h',
+          startedAt: '2026-04-27T12:00:00.000Z',
+          durationMs: 10,
+          withAssertions: false,
+          steps: [
+            { requestRunId: 'run-step', passed: true },
+            { requestRunId: 'run-plain', passed: true },
+          ],
+        },
+      ],
+    });
+    renderHistory();
+    await userEvent.click(screen.getByRole('tab', { name: /^Plans/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Plan run "Admin plan" details' }));
+    const [hiddenStep, plainStep] = screen.getAllByRole('button', { name: /Step one/ });
+    await userEvent.click(plainStep);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    await userEvent.click(hiddenStep);
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Secrets were hidden before this run was saved',
+    );
   });
 });
 

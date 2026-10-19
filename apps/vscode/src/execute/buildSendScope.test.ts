@@ -10,7 +10,11 @@ import type {
 } from '@apicircle/shared';
 import type { WorkspaceState } from '@apicircle/core';
 import type { VsCodeVaultManager } from '../host/vaultManager';
-import { buildResolvedRequest, buildLinkedAttachmentResolver } from './buildSendScope';
+import {
+  buildResolvedRequest,
+  buildLinkedAttachmentResolver,
+  workspaceEncryptionKeys,
+} from './buildSendScope';
 import { linkedSecretStorageKey } from '../host/githubAuth';
 
 function makeRequest(over: Partial<ApiRequest> = {}): ApiRequest {
@@ -237,6 +241,125 @@ describe('buildResolvedRequest', () => {
       secrets,
     });
     expect(out.request.headers[0].value).toBe('super-secret');
+    expect(out.secretValues).toEqual(['super-secret']);
+  });
+
+  it('lists every plaintext it decrypted, for the stored run to hide', async () => {
+    const state = makeState({
+      environments: {
+        items: { dev: makeEnv('dev', [encryptedVar('path', 'enc:v1:c'), plainVar('p', 'x')]) },
+        activeName: 'dev',
+        priorityOrder: [{ kind: 'local', name: 'dev' }],
+      },
+    });
+    const vault = {
+      decryptValue: vi.fn(async () => 'decrypted-path'),
+    } as unknown as VsCodeVaultManager;
+    const out = await buildResolvedRequest({
+      state,
+      workspaceId: 'ws-1',
+      request: makeRequest(),
+      vault,
+      secrets: makeSecretStorage(),
+    });
+    expect(out.secretValues).toEqual(['decrypted-path']);
+    expect(out.encryptionKeys).toEqual([]);
+    expect(out.refusal).toBeNull();
+  });
+
+  it('never substitutes a linked slot that encrypts a linked variable, and reports it', async () => {
+    const link = {
+      id: 'link-1',
+      requiredSecretKeyIds: ['key-1'],
+    } as unknown as LinkedWorkspace;
+    const state = makeState(
+      { linkedWorkspaces: { 'link-1': link } },
+      {
+        linkedCollections: {
+          'link-1': {
+            secretKeys: { 'key-1': { id: 'key-1', label: 'LINK_KEY' } },
+            environments: {
+              items: {
+                prod: makeEnv('prod', [
+                  { key: 'DB_PASS', value: 'enc:v1:z', encrypted: true, secretKeyId: 'key-1' },
+                ]),
+              },
+              activeName: null,
+              priorityOrder: [],
+            },
+            collections: {
+              tree: { id: 'r', type: 'root', children: [] },
+              requests: {},
+              folders: {},
+            },
+          } as never,
+        },
+      },
+    );
+    const out = await buildResolvedRequest({
+      state,
+      workspaceId: 'ws-1',
+      request: makeRequest({
+        url: 'https://api',
+        headers: [{ key: 'X-Auth', value: '{{LINK_KEY}}', enabled: true }],
+      }),
+      vault: null,
+      secrets: makeSecretStorage({ [linkedSecretStorageKey('link-1', 'key-1')]: 'slot-value' }),
+    });
+    expect(out.request.headers[0].value).toBe('{{LINK_KEY}}');
+    expect(out.encryptionKeys).toEqual(['LINK_KEY']);
+    expect(out.scope.encryptionKeys).toEqual({ LINK_KEY: ['DB_PASS'] });
+    expect(out.refusal).toBe(
+      'Not sent. {{LINK_KEY}} is the encryption key of DB_PASS, not a variable, so its value ' +
+        'is never sent. Write {{DB_PASS}} to send the variable.',
+    );
+  });
+});
+
+describe('workspaceEncryptionKeys', () => {
+  it('finds the workspace slots that encrypt its own variables', () => {
+    const state = makeState({
+      environments: {
+        items: {
+          dev: makeEnv('dev', [
+            { key: 'ADMIN_TOKEN', value: 'enc:v1:a', encrypted: true, secretKeyId: 's1' },
+          ]),
+        },
+        activeName: null,
+        priorityOrder: [],
+      },
+      secretKeys: {
+        s1: { id: 's1', label: 'ADMIN_KEY', salt: 'x', createdAt: 't' },
+        s2: { id: 's2', label: 'UNBOUND', salt: 'x', createdAt: 't' },
+      },
+    });
+    expect(workspaceEncryptionKeys(state)).toEqual({ ADMIN_KEY: ['ADMIN_TOKEN'] });
+  });
+
+  it('copes with a workspace that declares no slots', () => {
+    expect(workspaceEncryptionKeys(makeState())).toEqual({});
+  });
+
+  it('copes with a linked snapshot cached before it carried slot labels', () => {
+    const state = makeState(
+      {},
+      {
+        linkedCollections: {
+          'link-1': {
+            environments: {
+              items: {
+                prod: makeEnv('prod', [
+                  { key: 'DB_PASS', value: 'enc:v1:z', encrypted: true, secretKeyId: 'key-1' },
+                ]),
+              },
+              activeName: null,
+              priorityOrder: [],
+            },
+          } as never,
+        },
+      },
+    );
+    expect(workspaceEncryptionKeys(state)).toEqual({});
   });
 });
 
