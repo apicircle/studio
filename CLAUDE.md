@@ -477,8 +477,8 @@ The install/uninstall logic lives in
 - **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top bar —
   behavioral toggles, theme + font pickers, and the **Community section**
   (`community/CommunitySection.tsx`) that fetches live GitHub stats with a
-  6h IndexedDB cache. Desktop builds get a native download CTA via the
-  `desktopDownload` primitive.
+  6h IndexedDB cache (an edition leaves it out with `App settingsCommunity={false}`,
+  §11). Desktop builds get a native download CTA via the `desktopDownload` primitive.
 - **MCP panel** (`panels/mcp/`) is two sections (`mcpPanelTypes`):
   **Connection** — the four-step `HowToConnect` setup flow that emits a
   per-client config snippet via the desktop bridge (Windows path encoding
@@ -688,6 +688,9 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       Help icon — an edition's account menu. A panel opened from the top bar is
       in place under every mode: an edition's sections list tabs only
       (`PANELS` without `topBar`), so opening Help never moves the mode.
+    - `settingsCommunity` (`boolean`, default `true`): `false` leaves the
+      Settings popover's Community section out — its divider, its GitHub stats
+      fetch, its repository links and the ask to star the open-source repo.
     - `gitHostAccess` (`GitHostAccess`, `layout/gitHostAccess.ts`): the registered
       Git hosts the user may not use. Each is shown locked, and its use is refused
       by the edition's own provider factory.

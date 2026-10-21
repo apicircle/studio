@@ -226,6 +226,7 @@ export function App({
   gitHostAccess = DEFAULT_GIT_HOST_ACCESS,
   workspaceStatus,
   topBarEnd,
+  settingsCommunity = true,
   branchChangeSources = NO_BRANCH_CHANGE_SOURCES,
   repoDisconnectNotice = null,
 }: {
@@ -257,6 +258,13 @@ export function App({
    * menu. Omitted in Studio → strict no-op.
    */
   topBarEnd?: ReactNode;
+  /**
+   * Whether the Settings popover ends with Studio's Community section (GitHub
+   * stars, issues, releases and repository links for the open-source Studio).
+   * An edition that is not the open-source Studio passes `false` to leave the
+   * section out. Omitted in Studio → strict no-op: the section is there.
+   */
+  settingsCommunity?: boolean;
   /**
    * Changes an edition makes on the working branch besides Studio's own (the
    * Lens edition's code). They join the working-branch card's preview, push and
@@ -473,7 +481,12 @@ export function App({
             <ExtraPanelsProvider value={extraPanels}>
               <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
                 <div className="flex h-full flex-col bg-surface text-text-primary">
-                  <TopBar brand={brand} workspaceStatus={workspaceStatus} topBarEnd={topBarEnd} />
+                  <TopBar
+                    brand={brand}
+                    workspaceStatus={workspaceStatus}
+                    topBarEnd={topBarEnd}
+                    settingsCommunity={settingsCommunity}
+                  />
                   <PanelTabs />
                   <div className="flex flex-1 overflow-hidden">
                     <BodyArea />

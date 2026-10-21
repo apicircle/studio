@@ -97,6 +97,16 @@ describe('TopBar', () => {
     expect(switcher.closest('.relative')!.nextElementSibling).toBe(status);
     expect(status.nextElementSibling).toBe(settings.closest('.relative'));
   });
+
+  it("hands an edition's settingsCommunity={false} to Settings, which then has no Community section", async () => {
+    const user = userEvent.setup();
+    await renderWithStore(<TopBar settingsCommunity={false} />);
+    await user.click(screen.getByRole('button', { name: /Open workspace settings/ }));
+    expect(screen.getByRole('dialog', { name: 'Workspace settings' })).toBeInTheDocument();
+    expect(screen.getByText('Behavior')).toBeInTheDocument();
+    expect(screen.queryByText('Community')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Star on GitHub/ })).toBeNull();
+  });
 });
 
 describe('TopBar far end', () => {

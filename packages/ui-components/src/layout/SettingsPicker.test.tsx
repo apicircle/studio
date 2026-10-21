@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { SettingsPicker } from './SettingsPicker';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { renderWithStore } from '../../test/renderWithStore';
 
-async function openSettings() {
-  await renderWithStore(<SettingsPicker />);
+async function openSettings(ui = <SettingsPicker />) {
+  await renderWithStore(ui);
   fireEvent.click(screen.getByRole('button', { name: /Open workspace settings/ }));
 }
 
@@ -48,6 +48,31 @@ describe('SettingsPicker — Community section', () => {
       'https://github.com/apicircle/studio/stargazers',
     );
     expect(screen.getByRole('button', { name: /Refresh community stats/ })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Workspace settings' });
+    expect(dialog.querySelectorAll(':scope > .h-px')).toHaveLength(2);
+    // With no cached stats, the section asks GitHub for them.
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+  });
+
+  it('leaves the Community section out, and asks GitHub nothing, for an edition that passes false', async () => {
+    await openSettings(<SettingsPicker community={false} />);
+    // The rest of the popover is unchanged: it ends with the snapshot cap.
+    expect(screen.getByRole('radiogroup', { name: 'Workspace snapshot cap' })).toBeInTheDocument();
+    expect(screen.queryByText('Community')).toBeNull();
+    expect(screen.queryByText(/API Circle Studio is open source/)).toBeNull();
+    expect(screen.queryByText(/Studio helping you ship/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /Star on GitHub/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Refresh community stats/ })).toBeNull();
+    // Its divider goes with it: the one left is between Appearance and Behavior.
+    const dialog = screen.getByRole('dialog', { name: 'Workspace settings' });
+    expect(dialog.querySelectorAll(':scope > .h-px')).toHaveLength(1);
+    expect(dialog.lastElementChild).toContainElement(
+      screen.getByRole('radiogroup', { name: 'Workspace snapshot cap' }),
+    );
+    // The section fetches its stats once it has read its cache (see the test
+    // above); with no section, nothing asks GitHub.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

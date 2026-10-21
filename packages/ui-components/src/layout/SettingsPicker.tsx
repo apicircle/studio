@@ -55,7 +55,18 @@ const SIDE_POPOVER_GAP_PX = 6;
 const SIDE_POPOVER_WIDTH_PX = 256;
 const SIDE_POPOVER_VIEWPORT_PADDING_PX = 8;
 
-export function SettingsPicker() {
+export function SettingsPicker({
+  community = true,
+}: {
+  /**
+   * Whether the popover ends with the Community section — Studio's GitHub
+   * stars, issues and releases, and the ask to star the open-source repo. It
+   * fetches those stats from GitHub when the popover first opens. An edition
+   * that is not the open-source Studio passes `false`: the section, its divider
+   * and the fetch are then left out.
+   */
+  community?: boolean;
+} = {}) {
   const validateOnSend = useWorkspaceStore((s) => s.local?.settings?.validateOnSend ?? true);
   const setValidateOnSend = useWorkspaceStore((s) => s.setValidateOnSend);
   const monacoConsumesWheel = useWorkspaceStore(
@@ -211,8 +222,12 @@ export function SettingsPicker() {
           />
           <SnapshotCapRow current={snapshotMaxBytes} onChange={setSnapshotMaxBytes} />
 
-          <div className="my-1 h-px bg-border-subtle" aria-hidden="true" />
-          <CommunitySection />
+          {community && (
+            <>
+              <div className="my-1 h-px bg-border-subtle" aria-hidden="true" />
+              <CommunitySection />
+            </>
+          )}
         </div>
       )}
     </div>

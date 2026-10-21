@@ -218,6 +218,16 @@ describe('App', () => {
     );
   });
 
+  it("leaves Settings' Community section out for an edition that passes settingsCommunity={false}", async () => {
+    render(<App settingsCommunity={false} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    await userEvent.click(screen.getByRole('button', { name: /Open workspace settings/ }));
+    expect(screen.getByRole('dialog', { name: 'Workspace settings' })).toBeInTheDocument();
+    expect(screen.getByText('Behavior')).toBeInTheDocument();
+    expect(screen.queryByText('Community')).toBeNull();
+    expect(screen.queryByText(/API Circle Studio is open source/)).toBeNull();
+  });
+
   it("renders an edition's node at the far end of the top bar, after Help", async () => {
     render(<App topBarEnd={<button type="button">ACCOUNT MENU</button>} />);
     await waitFor(() => screen.getByText('API Circle Studio'));

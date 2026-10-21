@@ -22,6 +22,7 @@ export function TopBar({
   brand,
   workspaceStatus,
   topBarEnd,
+  settingsCommunity = true,
 }: {
   brand?: BrandDef;
   /**
@@ -36,6 +37,11 @@ export function TopBar({
    * the bar.
    */
   topBarEnd?: ReactNode;
+  /**
+   * Whether the Settings popover ends with Studio's Community section. An
+   * additive seam: Studio passes nothing and the section is there.
+   */
+  settingsCommunity?: boolean;
 } = {}) {
   const name = brand?.name ?? 'API Circle Studio';
   const tagline = brand?.tagline === undefined ? 'Built in India. Open to world' : brand.tagline;
@@ -58,7 +64,7 @@ export function TopBar({
         </div>
         <WorkspaceSwitcher />
         {workspaceStatus}
-        <SettingsPicker />
+        <SettingsPicker community={settingsCommunity} />
       </div>
       <div data-top-bar-end="" className="ml-auto flex shrink-0 items-center gap-1 pl-3">
         {TOP_BAR_PANELS.map((panel) => (

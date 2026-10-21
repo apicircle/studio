@@ -556,6 +556,14 @@
 
 ### Added
 
+- **An edition can leave Settings' Community section out.** The new `App`
+  `settingsCommunity` prop (default `true`) says whether the Settings popover
+  ends with the Community section — the open-source Studio's GitHub stars,
+  open issues and latest release, its repository, issue and release links, and
+  the ask to star it. With `false` the section and the divider above it are
+  left out, and the popover asks GitHub for no stats; Appearance and Behavior
+  are unchanged. `TopBar` takes the same prop and hands it to `SettingsPicker`
+  as `community`. Studio passes nothing, so its Settings popover is unchanged.
 - **A response body can be copied, saved, and seen as it came.** The response
   pane's header has **Copy** (the body as shown; it reads "Copied" for two
   seconds, or "Couldn’t copy", and says so to a screen reader once), **Save**

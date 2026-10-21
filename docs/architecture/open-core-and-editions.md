@@ -70,6 +70,14 @@ unaffected:
   so that opening it never moves the mode, and the shell does not move a reader
   off it when the workspace changes. Additive and a no-op when omitted: Studio
   passes nothing, and Help is then the last thing in its top bar.
+- **Settings community** — the optional `App` `settingsCommunity` prop (a
+  boolean, default `true`) says whether the Settings popover ends with the
+  Community section: the open-source Studio's GitHub stars, open issues and
+  latest release, its repository, issue and release links, and the ask to star
+  it. An edition that is not the open-source Studio passes `false`; the section
+  and the divider above it are then left out, and the popover asks GitHub for
+  no stats. Additive and a no-op when omitted: Studio passes nothing and its
+  Settings popover is unchanged.
 - **Git host access** — the optional `App` `gitHostAccess` prop
   (`GitHostAccess`, `layout/gitHostAccess.ts`) names the hosts an edition
   registered that the current user may not use, plus an optional notice that
