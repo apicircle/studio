@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { BrandLoader } from '../../primitives/BrandLoader';
 import { DisabledReason } from '../../primitives/DisabledReason';
+import { countMissingRefs, missingRefsLabel } from '../../store/specSource';
 
 // Standalone "Create mock server" modal. Driven by `mocksCreateModalOpen`
 // in the store so the sidebar's CTA + the empty-state CTA + any other
@@ -15,9 +16,10 @@ import { DisabledReason } from '../../primitives/DisabledReason';
 //     sidebar's per-server + button after creation.
 //   • Paste spec — verbatim OpenAPI / Postman / Insomnia text. The spec is
 //     parsed at create time so the endpoint table is materialized right
-//     away. On Desktop the parse runs in the Node main process (full
-//     external-`$ref` resolution); in the browser it resolves in-document
-//     refs only and warns about external references it can't follow.
+//     away. Both surfaces resolve in-document refs only and warn about
+//     external references they can't follow; a spec ASSET is first bundled
+//     with the files mapped to its references, so that path reads a split
+//     spec in full.
 
 export function CreateMockServerModal() {
   const open = useWorkspaceStore((s) => s.mocksCreateModalOpen);
@@ -264,6 +266,7 @@ export function CreateMockServerModal() {
                       <option key={f.id} value={f.id}>
                         {f.name} — {f.spec?.dialect === 'swagger-2' ? 'Swagger 2' : 'OpenAPI 3'} ·{' '}
                         {f.spec?.operationCount ?? 0} ops
+                        {missingRefsLabel(countMissingRefs(f, files))}
                       </option>
                     ))}
                   </select>
@@ -285,7 +288,8 @@ export function CreateMockServerModal() {
                   <p className="text-xs text-text-dim">
                     Spec parsing resolves in-document <code className="font-mono">$ref</code>s only,
                     on every surface. A reference to another file or URL is reported as a warning
-                    and left unresolved — inline the definition into this document to mock it.
+                    and left unresolved — inline the definition into this document, or upload the
+                    spec under Assets → Files, where you can add the files it references.
                   </p>
                 </div>
               )}

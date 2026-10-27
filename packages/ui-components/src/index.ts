@@ -9,6 +9,9 @@ export type { FontFamilyId, FontFamilyDef } from './theme/applyFont';
 export { applyFontSize, clampFontSizePercent } from './theme/applyFontSize';
 export { useWorkspaceStore } from './store/workspaceStore';
 export { readAttachmentBytes } from './persistence/attachments';
+// A spec asset's text bundled with the files its `$ref`s point at — what an
+// edition's drift reader compares code against.
+export { readSpecAssetSource, countMissingRefs, type SpecAssetSource } from './store/specSource';
 export {
   Button,
   Input,

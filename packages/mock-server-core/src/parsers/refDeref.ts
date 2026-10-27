@@ -17,21 +17,50 @@
 //     or alias fan-out can no longer expand past memory here. Whoever walks the
 //     result as a tree bounds that walk itself: `faker/schemaToExample.ts`
 //     spends a per-operation budget,
-//   • breaks reference cycles by substituting `{}` where the walk meets a node
-//     it is still copying, so the result never contains a cycle,
+//   • breaks reference cycles where the walk meets a node it is still copying,
+//     so the result never contains a cycle. The break is the schema
+//     `{ "x-apicircle-unresolved": "cycle" }` — an empty schema to every
+//     validator and example generator (an unknown keyword constrains nothing),
+//     and a marker a contract reader can tell apart from a schema that really
+//     is `{}`. A pointer that leads nowhere becomes
+//     `{ "x-apicircle-unresolved": "missing" }` the same way,
 //   • leaves external refs (anything not starting with `#/`) in place and
 //     reports each once as a warning. No surface follows them: a spec always
 //     reaches us as an in-memory string with no trustworthy base directory,
 //     so the Node build disables external resolution too (`openapiNode.ts`).
+//     The files a split spec points at reach the parsers only as text someone
+//     supplied, bundled into the document first (`specBundle.ts`).
 
 export interface DereferenceResult {
   doc: unknown;
   warnings: string[];
 }
 
-/** Decode a single JSON Pointer segment (`~1` → `/`, `~0` → `~`). */
-function decodeSegment(seg: string): string {
-  return seg.replace(/~1/g, '/').replace(/~0/g, '~');
+/** The key a schema the resolver could not produce carries, with the reason. */
+export const UNRESOLVED_KEY = 'x-apicircle-unresolved';
+
+/** Why a schema was left unresolved: a reference cycle was broken there, an
+ *  in-document pointer led nowhere, or (stamped by the request-body reader in
+ *  `openapi.ts`) an external `$ref` named a document nobody supplied. */
+export type UnresolvedReason = 'cycle' | 'missing' | 'external-ref';
+
+/** The schema standing in for one the resolver could not produce. */
+function unresolved(reason: UnresolvedReason): Record<string, unknown> {
+  return { [UNRESOLVED_KEY]: reason };
+}
+
+/**
+ * Decode one JSON Pointer segment taken from a URI fragment: percent-decoding
+ * first, then `~1` → `/` and `~0` → `~` (RFC 6901 §4, §6). A stray `%` stays literal.
+ */
+export function decodePointerSegment(seg: string): string {
+  let decoded = seg;
+  try {
+    decoded = decodeURIComponent(seg);
+  } catch {
+    // not a valid percent-encoding: the segment is read as written
+  }
+  return decoded.replace(/~1/g, '/').replace(/~0/g, '~');
 }
 
 /**
@@ -48,7 +77,7 @@ export function dereferenceInternal(root: unknown): DereferenceResult {
 
   const resolvePointer = (ref: string): unknown => {
     // Strip the leading "#/" then walk the remaining pointer segments.
-    const segments = ref.slice(2).split('/').map(decodeSegment);
+    const segments = ref.slice(2).split('/').map(decodePointerSegment);
     let cur: unknown = root;
     for (const seg of segments) {
       if (cur && typeof cur === 'object' && seg in (cur as Record<string, unknown>)) {
@@ -74,9 +103,9 @@ export function dereferenceInternal(root: unknown): DereferenceResult {
       if (!externalSeen.has(ref)) {
         externalSeen.add(ref);
         warnings.push(
-          `External $ref not resolved in the web app: "${ref}". Spec parsing never reads ` +
-            `files or opens network connections on any surface — inline the referenced ` +
-            `definition into this document.`,
+          `External $ref not resolved: "${ref}". Spec parsing never reads files or opens ` +
+            `network connections — upload the file it points at under the spec's ` +
+            `Referenced files, or inline the definition into this document.`,
         );
       }
       return obj;
@@ -87,7 +116,7 @@ export function dereferenceInternal(root: unknown): DereferenceResult {
         unresolvedSeen.add(ref);
         warnings.push(`Unresolved internal $ref: "${ref}"`);
       }
-      return {};
+      return unresolved('missing');
     }
     return walk(target);
   };
@@ -107,7 +136,7 @@ export function dereferenceInternal(root: unknown): DereferenceResult {
   const walk = (node: unknown): unknown => {
     if (!node || typeof node !== 'object') return node;
     // Circular reference — break the cycle.
-    if (onPath.has(node)) return {};
+    if (onPath.has(node)) return unresolved('cycle');
     if (copies.has(node)) return copies.get(node);
     onPath.add(node);
     const out = copy(node);

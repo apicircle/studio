@@ -12,7 +12,9 @@
 // `@apicircle/mock-server-core/parsing` subpath instead, which never pulls in
 // the Node runtime. Both resolve IN-DOCUMENT refs only — a spec arrives as an
 // in-memory string with no base directory to trust, so neither entry reads a
-// file or opens a connection for a ref (see `parsers/openapiNode.ts`).
+// file or opens a connection for a ref (see `parsers/openapiNode.ts`). A spec
+// split across files is bundled with the files supplied for it first
+// (`bundleSpec`), which makes its external refs in-document ones.
 
 import type { MockServer, MockServerSource } from '@apicircle/shared';
 import type { Hono } from 'hono';
@@ -34,7 +36,10 @@ export type { ParseOpenApiRequestBodiesResult, OpenApiRequestBodySpec } from './
 export { parsePostmanToEndpoints } from './parsers/postman';
 export { parseInsomniaToEndpoints } from './parsers/insomnia';
 export { schemaToExample } from './faker/schemaToExample';
-export { dereferenceInternal } from './parsers/refDeref';
+export { dereferenceInternal, decodePointerSegment, UNRESOLVED_KEY } from './parsers/refDeref';
+export type { UnresolvedReason } from './parsers/refDeref';
+export { bundleSpec, parseSpecText, BUNDLED_DOCUMENTS_KEY } from './parsers/specBundle';
+export type { BundleSpecOptions, BundleSpecResult, SpecReference } from './parsers/specBundle';
 export { summarizeSpec } from './specSummary';
 export type { SpecSummary } from './specSummary';
 export type { ParseSourceResult } from './parsing';

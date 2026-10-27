@@ -70,7 +70,8 @@ async function swaggerDereference(root: unknown) {
     const warnings = collectExternalRefs(root).map(
       (ref) =>
         `External $ref not resolved: "${ref}". Spec parsing never reads files or opens ` +
-        `network connections — inline the referenced definition into this document.`,
+        `network connections — upload the file it points at under the spec's ` +
+        `Referenced files, or inline the definition into this document.`,
     );
     // swagger-parser mutates `$ref` chains in place and returns the doc.
     // Its types assume a path input + an `info` block, narrower than our

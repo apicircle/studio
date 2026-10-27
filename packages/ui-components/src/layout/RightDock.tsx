@@ -65,7 +65,9 @@ export function RightDock() {
   // shouldn't dismiss. We also ignore clicks inside any open modal/dialog
   // (e.g. the passphrase setup modal launched from the Vault tab's CTA) —
   // submitting inside the modal would otherwise dismiss the dock behind
-  // it, leaving the user with no Vault to interact with on close.
+  // it, leaving the user with no Vault to interact with on close. A toast
+  // floats over the dock as well (an upload made in the dock announces
+  // itself there): dismissing it is not leaving the dock either.
   // We listen on `pointerdown` so dismissal happens before any click
   // handlers on the target run.
   useEffect(() => {
@@ -76,7 +78,9 @@ export function RightDock() {
       if (dockRef.current?.contains(target)) return;
       const rail = document.querySelector('nav[aria-label="Workspace inspector rail"]');
       if (rail?.contains(target)) return;
-      if (target instanceof Element && target.closest('[role="dialog"]')) return;
+      if (target instanceof Element && target.closest('[role="dialog"], [data-toast-viewport]')) {
+        return;
+      }
       closeDock();
     };
     // Defer one tick so the same pointerdown that opened the overlay

@@ -7,6 +7,8 @@ import type { AssetUsage, WorkspaceLocal, WorkspaceSynced } from '@apicircle/sha
 //     bodies (`body.attachment.globalFileAssetId`)
 //   - mock-server endpoints: `defaultResponse.body`, every
 //     `requestValidation[].failResponse.body`, every `responseRules[].response.body`
+//   - split specs: a file mapped as one of a spec asset's referenced files
+//     (`spec.externalRefs[].assetId`)
 //
 // Mirrors the `usedInAggregator.ts` pattern verbatim:
 //   1. `aggregateAssetUsage(synced)` is pure and walks the synced doc.
@@ -113,6 +115,24 @@ export function aggregateAssetUsage(synced: WorkspaceSynced): Record<string, Ass
   }
   for (const req of Object.values(synced.collections.requests)) {
     if (req.specAssetId) pushSpec(req.specAssetId, 'importedRequest', req.id);
+  }
+
+  // A file mapped as one of a split spec's referenced files is used BY that
+  // spec: deleting it makes the reference missing again.
+  for (const spec of Object.values(synced.globalAssets.files ?? {})) {
+    for (const ref of spec.spec?.externalRefs ?? []) {
+      if (!ref.assetId) continue;
+      let entry = out[ref.assetId];
+      if (!entry) {
+        entry = { requests: [], mockEndpoints: [], total: 0 };
+        out[ref.assetId] = entry;
+      }
+      if (!entry.specRefs) entry.specRefs = [];
+      if (!entry.specRefs.includes(spec.id)) {
+        entry.specRefs.push(spec.id);
+        entry.total += 1;
+      }
+    }
   }
 
   return out;
@@ -236,6 +256,13 @@ function sameUsageIndex(
     if (xImp.length !== yImp.length) return false;
     for (let i = 0; i < xImp.length; i++) {
       if (xImp[i] !== yImp[i]) return false;
+    }
+    // Equal totals with every other list equal leave the spec lists the same
+    // length, so only their order and members can differ.
+    const xSpecs = x.specRefs ?? [];
+    const ySpecs = y.specRefs ?? [];
+    for (let i = 0; i < xSpecs.length; i++) {
+      if (xSpecs[i] !== ySpecs[i]) return false;
     }
   }
   return true;

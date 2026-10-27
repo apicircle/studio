@@ -113,7 +113,7 @@ test.describe('Mock spec import materializes endpoints (MK)', () => {
       await app.getByRole('button', { name: /Create mock server/i }).click();
 
       // Warnings present → the modal stays open and shows the advisory.
-      await expect(app.getByText(/External \$ref not resolved in the web app/i)).toBeVisible({
+      await expect(app.getByText(/External \$ref not resolved: /i)).toBeVisible({
         timeout: 5000,
       });
       expect(await endpointCountFor(app, 'External ref import')).toBe(1);

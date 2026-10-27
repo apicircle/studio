@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { RightDock } from './RightDock';
 import { renderWithStore } from '../../test/renderWithStore';
@@ -24,6 +24,34 @@ describe('RightDock', () => {
     act(() => {
       useWorkspaceStore.setState({ activePanel: 'lens.discover' as never });
     });
+    expect(dock()).toBeNull();
+  });
+
+  it('as an overlay, closes on a press outside it but not on a toast or a dialog', async () => {
+    await renderWithStore(
+      <>
+        <RightDock />
+        <div data-toast-viewport="">
+          <button type="button">Dismiss</button>
+        </div>
+        <div role="dialog">
+          <button type="button">Inside a dialog</button>
+        </div>
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+    act(() => {
+      useWorkspaceStore.getState().setRightDockMode('overlay');
+      useWorkspaceStore.getState().toggleRightDockTab('assets');
+    });
+    // The listener is attached a tick after opening.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Dismiss' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Inside a dialog' }));
+    expect(dock()).toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Elsewhere' }));
     expect(dock()).toBeNull();
   });
 });

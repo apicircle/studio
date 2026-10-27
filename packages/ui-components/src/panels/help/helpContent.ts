@@ -1123,7 +1123,7 @@ Snapshots live only on this machine. They are kept within a size budget — pick
 ## Creating a mock server
 
 - **Empty** — a blank server you add endpoints to by hand.
-- **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints the moment you create the mock, so the endpoint table is populated right away. The parse runs in the native process on the Desktop app and in the browser on the web app, but both resolve in-document \`$ref\`s only and warn about any reference to another file or URL — inline such a definition into the spec if you want it mocked.
+- **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints the moment you create the mock, so the endpoint table is populated right away. The parse runs in the native process on the Desktop app and in the browser on the web app, but both resolve in-document \`$ref\`s only and warn about any reference to another file or URL — inline such a definition into the spec, or upload the spec to Global Assets → Files and add the files it references there (see Global Assets → Split specs).
 - **From a spec asset** — import an OpenAPI/Swagger file you uploaded to Global Assets → Files as **editable** endpoints (materialized). Modify them freely; a refresh-from-spec re-import pulls changes when the asset updates.
 - **Serve OpenAPI contract** (a separate action in the Mocks header) — stand up a **live, read-only** server straight from an uploaded contract (linked): pick the contract, name it, choose a port, and start/stop it from the mock's panel. Endpoints derive from the contract and stay in sync — re-uploading the spec updates the server, and the panel shows a "Served directly from contract" callout. Use this when you just want to run a contract; use From a spec asset when you want to tweak the endpoints. Changed your mind after creating it? **Convert to editable mock** (the ⋯ menu, the read-only banner, or the panel callout) flips a live contract into an editable copy in place — the spec link stays, so you can still re-import. And when the contract itself changes, **Update spec…** (the ⋯ menu or the panel callout) re-uploads the revised file — replacing the shared asset and live-refreshing the mock's endpoints.
 
@@ -1348,6 +1348,19 @@ Every file you drop — into the Global Assets sidebar, a binary request body, a
 
 When the file you drop is an OpenAPI 3.x or Swagger 2.0 document (\`.json\` / \`.yaml\` / \`.yml\`), Studio recognises it on upload and tags the asset with a **spec badge** ("OpenAPI 3 · N ops"). Selecting the asset shows the parsed title, version, operation count, and any parse warnings — so the workspace knows which of its files are API contracts.
 
+### Split specs and referenced files
+
+A spec can point at other files with \`$ref\` — \`$ref: './schemas/user.yaml#/User'\`, or a whole path item in \`./paths/pets.yaml\`. Studio never reads a file or opens a connection for a reference, so it asks you for those files instead: uploading such a spec says how many it points at, and the spec's card lists them under **Referenced files**, each one **Missing** until you supply it. Until then, whatever those files hold reads as an unknown shape — in mocks, imports, and code-vs-spec checks.
+
+- **Upload…** on a row supplies that one file; **Choose existing** maps a file you already uploaded.
+- **Upload files…** takes several at once and matches each to a reference by name; **Upload folder…** takes the spec's folder and matches by path, which also settles two references to files with the same name.
+- A file you supply can point at more files: they join the list, and an upload of several or a folder keeps matching until nothing more fits. A file that matches no reference is not uploaded — the notice names it.
+- A reference to a URL is never fetched. Upload a copy of the file it points at.
+
+The referenced files are ordinary file assets, pushed with the workspace, and the Files list shows them inside their spec (\`+N files\`). Replacing one re-reads the spec, and so does deleting one, which turns its reference back to Missing.
+
+Once nothing is missing, **Download one file** saves the spec with every referenced file inside it — the references rewritten to point into the same document — and **Save as new spec** keeps that as a new spec asset. One self-contained file is what a tool that cannot see your other files needs, such as a CLI's \`--openapi\`.
+
 Each asset shows a small status pill next to its name. The pill tells you where the bytes live:
 
 - **Uploaded locally** — bytes are in your local IDB; the next push uploads them.
@@ -1375,6 +1388,10 @@ A single source of truth: update the "User" asset once and every request that re
       'sdl',
       'introspection',
       'library',
+      'split spec',
+      '$ref',
+      'referenced files',
+      'bundle',
     ],
   },
   {

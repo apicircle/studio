@@ -31,6 +31,9 @@ export function ToastViewport({ toasts, onDismiss }: ToastViewportProps) {
     <div
       // aria-live region; per-toast role overrides this for assertive cases.
       aria-live="polite"
+      // Marks the layer for the overlay dock's outside-click check: a toast
+      // floats over the dock, and dismissing one does not close it.
+      data-toast-viewport=""
       className="pointer-events-none fixed bottom-3 right-3 z-[60] flex max-w-sm flex-col gap-2"
     >
       {toasts.map((t) => (

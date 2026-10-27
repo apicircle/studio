@@ -387,9 +387,7 @@ describe('parseOpenApiToEndpoints', () => {
     });
     const { endpoints, warnings } = await parseOpenApiToEndpoints(spec, 'json');
     expect(endpoints).toHaveLength(1);
-    expect(warnings.some((w) => w.includes('External $ref not resolved in the web app'))).toBe(
-      true,
-    );
+    expect(warnings.some((w) => w.includes('External $ref not resolved'))).toBe(true);
   });
 
   it('uses an injected dereferencer when provided', async () => {
@@ -1036,7 +1034,7 @@ describe('parseOpenApiRequestBodies — unresolved external references', () => {
     );
     expect(requestBodies[0].schema).toEqual({
       type: 'object',
-      properties: { id: { type: 'string' }, pet: {} },
+      properties: { id: { type: 'string' }, pet: { 'x-apicircle-unresolved': 'external-ref' } },
     });
     const unknownShape = warnings.find((w) => w.includes('POST /pets'));
     expect(unknownShape).toContain('./pet.yaml');
@@ -1089,13 +1087,13 @@ describe('parseOpenApiRequestBodies — unresolved external references', () => {
     });
     const schema = requestBodies[0].schema as unknown as Record<string, unknown>;
     const props = schema.properties as Record<string, unknown>;
-    expect(props.pet).toEqual({});
+    expect(props.pet).toEqual({ 'x-apicircle-unresolved': 'external-ref' });
     expect(props.self).toBe(schema);
   });
 });
 
 // A dereferenced document can be cyclic: the browser resolver cuts an
-// in-document cycle with `{}`, and swagger-parser (the Node surfaces) leaves it
+// in-document cycle with a `{ "x-apicircle-unresolved": "cycle" }` schema, and swagger-parser (the Node surfaces) leaves it
 // as a real object cycle. Either way, creating a mock from it must work.
 describe('parseOpenApiToEndpoints — recursive schemas', () => {
   // Category { name, children: Category[] }, no `required`.

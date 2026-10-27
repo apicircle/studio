@@ -290,7 +290,12 @@ studio/
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
 │   │                       (root = Node + swagger-parser; `/parsing` subpath =
 │   │                       browser-safe, in-document `$ref` only — used by the
-│   │                       web/desktop renderer to materialize endpoints at import)
+│   │                       web/desktop renderer to materialize endpoints at import).
+│   │                       A spec split across files is first bundled with the
+│   │                       files the user supplied for it (`bundleSpec`; a spec
+│   │                       asset's `spec.externalRefs` maps each reference to a
+│   │                       file asset, read via `readSpecAssetSource`) — no
+│   │                       surface ever reads a file or fetches a URL for a ref
 │   ├── desktop-shell/      Reusable Electron main-process building blocks —
 │   │                       OS-keychain secrets, mock / MCP / workspace-file IPC
 │   │                       bridges, OAuth2 callback server, window-state. Composed

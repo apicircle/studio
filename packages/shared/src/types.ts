@@ -469,12 +469,31 @@ export interface SpecAssetMeta {
   title?: string;
   /** `info.version`, when present. */
   version?: string;
-  /** Operations declared — the sum of HTTP methods across `paths`. */
+  /** Operations declared — the sum of HTTP methods across `paths`, path items in
+   *  the files listed under `externalRefs` included once those are supplied. */
   operationCount: number;
   /** ISO timestamp of the parse; re-derived whenever the bytes (sha256) change. */
   parsedAt: string;
   /** Non-fatal structural warnings surfaced in the Assets panel. */
   warnings: string[];
+  /**
+   * The other documents this spec's `$ref`s reach — through the files already
+   * supplied for it too — each with the file asset that supplies it. Absent (or
+   * empty) when the spec is self-contained. Optional because this summary also
+   * arrives from Git and from other builds: read a missing list as empty.
+   */
+  externalRefs?: SpecExternalRef[];
+}
+
+/** One document a split spec points at, and the file asset supplying it. */
+export interface SpecExternalRef {
+  /** Where the spec's `$ref`s point: a POSIX path relative to the spec's own
+   *  folder (`schemas/user.yaml`, `../common/errors.json`), or an absolute URL —
+   *  which is never fetched; a file uploaded for it stands in. */
+  target: string;
+  /** The Global File Asset supplying it. Absent while the file is missing, and a
+   *  mapping whose asset was deleted reads as missing again. */
+  assetId?: string;
 }
 
 export interface GlobalFileAsset {
@@ -550,6 +569,12 @@ export interface AssetUsage {
   mockServers?: string[];
   /** Request ids imported from this spec asset (`Request.specAssetId`) — spec assets only (Increment E). */
   importedRequests?: string[];
+  /**
+   * Spec assets that read this file as one of their referenced files
+   * (`SpecAssetMeta.externalRefs[].assetId`). Deleting it turns that reference
+   * back to missing, so the delete confirmation names the specs.
+   */
+  specRefs?: string[];
   /** Total reference count — denormalised for cheap badge rendering. */
   total: number;
 }

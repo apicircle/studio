@@ -439,4 +439,62 @@ describe('recomputeAssetUsage', () => {
     expect(next.assetUsageIndex?.[asset.id]?.requests).toEqual(['r1']);
     expect(next.assetUsageIndex?.[asset.id]?.total).toBe(1);
   });
+
+  it('counts a file a split spec reads as used by that spec, and notices when it changes', () => {
+    const part = makeAsset('part');
+    const specMeta = (externalRefs: Array<{ target: string; assetId?: string }>) => ({
+      dialect: 'openapi-3' as const,
+      format: 'json' as const,
+      operationCount: 1,
+      parsedAt: T,
+      warnings: [],
+      externalRefs,
+    });
+    const spec = (id: string, refs: Array<{ target: string; assetId?: string }>) => ({
+      ...makeAsset(id),
+      spec: specMeta(refs),
+    });
+    const files = {
+      part,
+      s1: spec('s1', [
+        { target: 'part.json', assetId: 'part' },
+        { target: 'same.json', assetId: 'part' }, // the same file for two targets counts once
+        { target: 'missing.json' },
+      ]),
+      s2: spec('s2', [{ target: 'part.json', assetId: 'part' }]),
+    };
+    const synced = makeSynced({ globalAssets: { schemas: {}, graphql: {}, files } });
+    expect(aggregateAssetUsage(synced).part).toMatchObject({ specRefs: ['s1', 's2'], total: 2 });
+
+    // The same index again is the same reference; a different spec list is not.
+    const local = recomputeAssetUsage(synced, makeLocal());
+    expect(recomputeAssetUsage(synced, local)).toBe(local);
+    const fewer = makeSynced({
+      globalAssets: { schemas: {}, graphql: {}, files: { ...files, s2: spec('s2', []) } },
+    });
+    expect(recomputeAssetUsage(fewer, local).assetUsageIndex?.part?.specRefs).toEqual(['s1']);
+    // Same assets, same count, a different spec reading `part`.
+    const three = (s2Refs: boolean, s3Refs: boolean) =>
+      makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: {
+            part,
+            s1: spec('s1', [{ target: 'part.json', assetId: 'part' }]),
+            s2: spec('s2', s2Refs ? [{ target: 'part.json', assetId: 'part' }] : []),
+            s3: spec('s3', s3Refs ? [{ target: 'part.json', assetId: 'part' }] : []),
+          },
+        },
+      });
+    const before = recomputeAssetUsage(three(true, false), makeLocal());
+    expect(recomputeAssetUsage(three(false, true), before).assetUsageIndex?.part?.specRefs).toEqual(
+      ['s1', 's3'],
+    );
+  });
+
+  it('reads a workspace with no file map as using nothing', () => {
+    const synced = makeSynced({ globalAssets: { schemas: {}, graphql: {} } });
+    expect(aggregateAssetUsage(synced)).toEqual({});
+  });
 });

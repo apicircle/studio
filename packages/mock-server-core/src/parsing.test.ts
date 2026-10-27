@@ -47,9 +47,7 @@ describe('parseSourceToEndpoints (browser dispatch)', () => {
       },
     });
     const { warnings } = await parseSourceToEndpoints({ kind: 'openapi', spec, format: 'json' });
-    expect(warnings.some((w) => w.includes('External $ref not resolved in the web app'))).toBe(
-      true,
-    );
+    expect(warnings.some((w) => w.includes('External $ref not resolved'))).toBe(true);
   });
 
   it('dispatches to the Postman parser', async () => {

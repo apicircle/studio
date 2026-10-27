@@ -100,4 +100,64 @@ describe('resolveMockEndpoints', () => {
     expect(out.endpoints).toEqual([]);
     expect(out.warnings[0]).toMatch(/not available locally/);
   });
+
+  it('reads a split spec with its mapped files, and names one it could not read', async () => {
+    const split = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Split', version: '1' },
+      paths: { '/pets': { $ref: 'pets.json' }, '/tags': { $ref: 'tags.json' } },
+    });
+    const put = (slotId: string, text: string) =>
+      putAttachment({
+        slotId,
+        filename: `${slotId}.json`,
+        mimeType: 'application/json',
+        size: text.length,
+        sha256: 'sha',
+        savedAt: 't',
+        bytes: new TextEncoder().encode(text),
+      });
+    await put('slot-split', split);
+    await put(
+      'slot-pets',
+      JSON.stringify({ get: { responses: { '200': { description: 'ok' } } } }),
+    );
+    await put('slot-tags', '{ not json: [');
+    const asset = (id: string, slotId: string) => ({
+      id,
+      name: id,
+      slotId,
+      filename: `${id}.json`,
+      size: 1,
+      mimeType: 'application/json',
+      createdAt: 't',
+      updatedAt: 't',
+    });
+    const synced = baseSynced({
+      split: {
+        ...asset('split', 'slot-split'),
+        spec: {
+          dialect: 'openapi-3',
+          format: 'json',
+          operationCount: 0,
+          parsedAt: 't',
+          warnings: [],
+          externalRefs: [
+            { target: 'pets.json', assetId: 'pets' },
+            { target: 'tags.json', assetId: 'tags' },
+          ],
+        },
+      },
+      pets: asset('pets', 'slot-pets'),
+      tags: asset('tags', 'slot-tags'),
+    });
+    const out = await resolveMockEndpoints(
+      { kind: 'openapi-asset', assetId: 'split', format: 'json', mode: 'linked' },
+      synced,
+    );
+    expect(out.endpoints.map((e) => e.pathPattern)).toEqual(['/pets']);
+    // The bundler's finding comes first, then the parser names the path it skipped.
+    expect(out.warnings[0]).toBe('Referenced file "tags.json" could not be read as JSON or YAML.');
+    expect(out.warnings.some((w) => w.includes('path item for /tags'))).toBe(true);
+  });
 });

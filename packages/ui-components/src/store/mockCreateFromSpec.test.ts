@@ -136,9 +136,7 @@ describe('workspaceStore.createMockServer — spec import materializes endpoints
       source: { kind: 'openapi', spec: OPENAPI_WITH_EXTERNAL_REF, format: 'json' },
     });
     expect(endpointCount(id)).toBe(1);
-    expect(warnings.some((w) => w.includes('External $ref not resolved in the web app'))).toBe(
-      true,
-    );
+    expect(warnings.some((w) => w.includes('External $ref not resolved: '))).toBe(true);
   });
 
   it('degrades gracefully (warning + zero endpoints) for an unparseable spec', async () => {

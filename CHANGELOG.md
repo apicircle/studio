@@ -129,6 +129,16 @@
 
 ### Fixed
 
+- **Dismissing a toast no longer closes the inspector dock.** In overlay mode
+  the dock closed on any press outside it, and a toast floats over the dock —
+  so clicking a notice's Dismiss (an upload made in the Assets tab announces
+  itself there) closed the panel the user was working in. The toast viewport
+  is now exempt (`data-toast-viewport`), as dialogs already were.
+- **An open file asset scrolls inside the dock.** Its detail had no scroll of its
+  own, so a tall one (a spec with its referenced files) ran past the dock, and
+  reaching a control at its foot scrolled the clipped editor area behind it —
+  the request editor slid up and stayed cut off. It now scrolls in place, like
+  the schema editor beside it.
 - **A move to the top level no longer drops an item out of the sidebar.**
   `applyMutation`'s `folder.move`, and `request.update` with a `folderId`,
   changed the parent but not the root list (`collections.tree.children`), which
@@ -556,6 +566,51 @@
 
 ### Added
 
+- **A spec split across files is read in full, from files you supply.** A spec
+  whose `$ref`s point at other documents (`./schemas/user.yaml#/User`, a path
+  item in `./paths/pets.yaml`) used to be read with every such reference left
+  unresolved: its schemas read as unknown, a spec of path-item references
+  counted 0 operations, and nothing said which files were wanted. Studio still
+  never reads a file or opens a connection for a reference; it asks for them
+  instead. Uploading such a spec says how many files it points at, and the
+  spec's card in Assets → Files lists them under **Referenced files**, each
+  **Missing** until supplied — one at a time (**Upload…**, **Choose
+  existing**), several at once matched by name (**Upload files…**), or the
+  spec's folder matched by path (**Upload folder…**). A supplied file can
+  point at more files; they join the list, and an upload keeps matching round
+  after round. A URL reference is never fetched — upload a copy. The files are
+  ordinary file assets, listed inside their spec's row (`+N files`); replacing
+  or deleting one re-reads the spec, and the delete confirmation names the
+  specs that read it. Every reader of a spec asset — linked and imported mocks,
+  **Import to collection**, an edition's drift check — reads the spec bundled
+  with its files (`readSpecAssetSource`, exported from `@apicircle/ui-components`),
+  and the operation count includes path items held in them. The mock pickers
+  say how many referenced files a spec misses.
+- **A split spec can be taken away as one file.** Once nothing is missing,
+  **Download one file** saves the spec with every referenced file embedded
+  under `x-apicircle-documents` and every reference rewritten to point into the
+  same document — valid OpenAPI / Swagger, recursive schemas intact, nothing
+  renamed — in the spec's own format (`<name>.bundled.yaml|json`). **Save as
+  new spec** keeps it as a new spec asset, `<name> (one file)`.
+- **`@apicircle/mock-server-core`: `bundleSpec`, `parseSpecText`.** `bundleSpec`
+  turns a spec and the documents its `$ref`s reach into one self-contained
+  document (refs inside a supplied file resolve against that file's folder; a
+  ref back to the root becomes `#/…`; `example`, `default`, `enum`, `const` and
+  example values are data, not references) and reports every document reached,
+  supplied or not. It never reads or fetches anything: the documents are text
+  the caller supplies. Exported from the package root and `/parsing`.
+  `summarizeSpec` counts operations behind in-document path-item refs and lists
+  the documents a spec names (`SpecAssetMeta.externalRefs`, new and optional;
+  `AssetUsage.specRefs` likewise).
+- **An unresolved schema says why.** The in-document resolver stands in for a
+  schema it cannot produce with `{ "x-apicircle-unresolved": "cycle" | "missing" }`
+  instead of `{}`, and a request-body schema that is an unresolved external
+  reference becomes `{ "x-apicircle-unresolved": "external-ref" }`. Both are an
+  empty schema to every validator and example generator; a contract reader can
+  now tell "a recursive schema was cut here" or "a file is missing" from a
+  schema that really is `{}`. JSON Pointer segments are percent-decoded before
+  the `~` escapes (RFC 6901 §6). The external-reference warnings now say where
+  to supply the file.
 - **An edition can leave Settings' Community section out.** The new `App`
   `settingsCommunity` prop (default `true`) says whether the Settings popover
   ends with the Community section — the open-source Studio's GitHub stars,

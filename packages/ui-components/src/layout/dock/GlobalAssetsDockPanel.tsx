@@ -34,10 +34,11 @@ import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
 import { deriveFileAssetState, FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
 import { SpecAssetBadge } from '../../primitives/SpecAssetBadge';
-import { getAttachment } from '../../persistence/attachments';
+import { readSpecAssetSource } from '../../store/specSource';
+import { SpecReferencedFiles } from './SpecReferencedFiles';
 
 interface FileAssetConsumer {
-  kind: 'request' | 'mock' | 'spec-mock' | 'spec-request';
+  kind: 'request' | 'mock' | 'spec-mock' | 'spec-request' | 'spec-ref';
   /** Friendly label for the row ("My request", "Petstore · GET /pets"). */
   label: string;
   /** Stable id for the list `key`. */
@@ -48,6 +49,7 @@ function consumersFromIndex(
   usage: AssetUsage | null | undefined,
   requestNames: Record<string, string>,
   mockNames: Record<string, { server: string; endpoint: string }>,
+  fileNames: Record<string, string> = {},
 ): FileAssetConsumer[] {
   if (!usage) return [];
   const out: FileAssetConsumer[] = [];
@@ -71,6 +73,10 @@ function consumersFromIndex(
   }
   for (const id of usage.importedRequests ?? []) {
     out.push({ kind: 'spec-request', id: `spec-req:${id}`, label: requestNames[id] ?? id });
+  }
+  // A split spec reading this file as one of its referenced files.
+  for (const id of usage.specRefs ?? []) {
+    out.push({ kind: 'spec-ref', id: `spec-ref:${id}`, label: fileNames[id] ?? id });
   }
   return out;
 }
@@ -419,6 +425,23 @@ function FileAssetList({
     () => items.filter((f) => (usageIndex[f.id]?.total ?? 0) === 0).length,
     [items, usageIndex],
   );
+  // A split spec's referenced files are listed inside its row rather than as
+  // rows of their own — a spec can point at dozens. A file two specs read is
+  // listed under both; one whose spec is not shown keeps a row of its own.
+  const grouped = useMemo(() => {
+    const byId = new Map(items.map((f) => [f.id, f]));
+    const nestedIds = new Set<string>();
+    const rows = visible.map((file) => {
+      const nested = new Map<string, GlobalFileAsset>();
+      for (const ref of file.spec?.externalRefs ?? []) {
+        const child = ref.assetId ? byId.get(ref.assetId) : undefined;
+        if (child && child.id !== file.id) nested.set(child.id, child);
+      }
+      for (const id of nested.keys()) nestedIds.add(id);
+      return { file, nested: [...nested.values()] };
+    });
+    return rows.filter(({ file }) => !nestedIds.has(file.id));
+  }, [items, visible]);
 
   const onPick = (file: File) => {
     void addFileAsset(file)
@@ -499,11 +522,12 @@ function FileAssetList({
         </p>
       )}
       <ul className="flex flex-col gap-1">
-        {visible.map((file) => (
+        {grouped.map(({ file, nested }) => (
           <FileAssetListRow
             key={file.id}
             file={file}
-            selected={selectedId === file.id}
+            nestedFiles={nested}
+            selectedId={selectedId}
             onSelect={onSelect}
           />
         ))}
@@ -514,19 +538,26 @@ function FileAssetList({
 
 function FileAssetListRow({
   file,
-  selected,
+  nestedFiles = [],
+  nested = false,
+  selectedId,
   onSelect,
 }: {
   file: GlobalFileAsset;
-  selected: boolean;
+  /** The referenced files of a split spec, listed inside its row. */
+  nestedFiles?: GlobalFileAsset[];
+  /** This row is one of those, drawn indented under its spec. */
+  nested?: boolean;
+  selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) {
   // Pull the asset's reference count straight from the local index so the
   // list row can show "Unused" / "Used in N" inline. Read is O(1).
   const usage = useWorkspaceStore((s) => s.local?.assetUsageIndex?.[file.id] ?? null);
   const total = usage?.total ?? 0;
+  const selected = selectedId === file.id;
   return (
-    <li>
+    <li className={cn(nested && 'ml-3 border-l border-border-subtle pl-2')}>
       <button
         type="button"
         onClick={() => onSelect(file.id)}
@@ -541,6 +572,14 @@ function FileAssetListRow({
           <FileArchive size={12} className="shrink-0" aria-hidden="true" />
           <span className="truncate font-medium">{file.name}</span>
           <span className="ml-auto flex shrink-0 items-center gap-1">
+            {nestedFiles.length > 0 && (
+              <span
+                className="rounded-sm border border-border bg-surface px-1 text-[0.625rem] text-text-dim"
+                title={`${nestedFiles.length} referenced file${nestedFiles.length === 1 ? '' : 's'}`}
+              >
+                +{nestedFiles.length} file{nestedFiles.length === 1 ? '' : 's'}
+              </span>
+            )}
             {file.spec && <SpecAssetBadge spec={file.spec} iconOnly />}
             <FileAssetStatusPill assetId={file.id} iconOnly />
           </span>
@@ -554,6 +593,19 @@ function FileAssetListRow({
           </span>
         </span>
       </button>
+      {nestedFiles.length > 0 && (
+        <ul className="mt-1 flex flex-col gap-1" aria-label={`Files referenced by ${file.name}`}>
+          {nestedFiles.map((child) => (
+            <FileAssetListRow
+              key={child.id}
+              file={child}
+              nested
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ))}
+        </ul>
+      )}
     </li>
   );
 }
@@ -752,9 +804,11 @@ function FileAssetEditor({ id }: { id: string | null }) {
   const importOpenApiToCollection = useWorkspaceStore((s) => s.importOpenApiToCollection);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
   const importSpecToCollection = async (): Promise<void> => {
-    if (!file?.spec) return;
-    const record = await getAttachment(file.slotId);
-    if (!record) {
+    const synced = useWorkspaceStore.getState().synced;
+    if (!file?.spec || !synced) return;
+    // Bundled with the files a split spec points at, so the requests carry its full schemas.
+    const source = await readSpecAssetSource(synced, file.id);
+    if (!source) {
       pushToast({
         tone: 'error',
         title: 'Spec bytes are not available locally — re-upload the file.',
@@ -763,8 +817,8 @@ function FileAssetEditor({ id }: { id: string | null }) {
       return;
     }
     const res = await importOpenApiToCollection({
-      spec: new TextDecoder().decode(record.bytes),
-      format: file.spec.format,
+      spec: source.text,
+      format: source.format,
       specAssetId: file.id,
       title: file.spec.title,
     });
@@ -783,10 +837,12 @@ function FileAssetEditor({ id }: { id: string | null }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const refillInput = useRef<HTMLInputElement | null>(null);
 
-  const consumers = useMemo(
-    () => consumersFromIndex(usage, requestNames, mockNames),
-    [usage, requestNames, mockNames],
-  );
+  const allFiles = useWorkspaceStore((s) => s.synced?.globalAssets.files);
+  const consumers = useMemo(() => {
+    const fileNames: Record<string, string> = {};
+    for (const f of Object.values(allFiles ?? {})) fileNames[f.id] = f.name;
+    return consumersFromIndex(usage, requestNames, mockNames, fileNames);
+  }, [usage, requestNames, mockNames, allFiles]);
 
   // "Missing" surface — both refs null and no pending bytes. Most
   // common cause: an MCP `globalAssets.files.create` call registered
@@ -804,7 +860,9 @@ function FileAssetEditor({ id }: { id: string | null }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    // Its own scroll: a spec with many referenced files is taller than the dock, and without
+    // one a focused control lower down scrolled the whole editor behind the dock.
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
       <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
         <input
           aria-label="File asset name"
@@ -913,6 +971,7 @@ function FileAssetEditor({ id }: { id: string | null }) {
               ))}
             </ul>
           )}
+          <SpecReferencedFiles spec={file} />
         </div>
       )}
 

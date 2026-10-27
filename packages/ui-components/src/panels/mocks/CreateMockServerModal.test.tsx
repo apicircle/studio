@@ -98,7 +98,7 @@ describe('CreateMockServerModal', () => {
     await pasteSpec(user, 'External', OPENAPI_EXTERNAL_REF);
     await user.click(screen.getByRole('button', { name: /Create mock server/i }));
     // Warnings present → result panel shown, modal stays open.
-    await screen.findByText(/External \$ref not resolved in the web app/i);
+    await screen.findByText(/External \$ref not resolved: /i);
     expect(useWorkspaceStore.getState().mocksCreateModalOpen).toBe(true);
     // The endpoint is still materialized despite the unresolved ref.
     const created = Object.values(useWorkspaceStore.getState().synced!.mockServers).find(
@@ -156,5 +156,27 @@ describe('CreateMockServerModal', () => {
     await user.click(screen.getByRole('button', { name: /From spec asset/i }));
     expect(screen.queryByLabelText('Run live')).not.toBeInTheDocument();
     expect(screen.getByText(/Serve OpenAPI contract/i)).toBeInTheDocument();
+  });
+
+  it('says how many referenced files a split spec is missing, and where to add them', async () => {
+    const user = userEvent.setup();
+    const split = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Split', version: '1' },
+      paths: { '/pets': { $ref: 'paths/pets.json' }, '/tags': { get: { responses: {} } } },
+    });
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(new File([split], 'split.json', { type: 'application/json' }));
+    });
+    await user.click(screen.getByRole('button', { name: /From spec asset/i }));
+    expect(
+      screen.getByRole('option', {
+        name: /split\.json — OpenAPI 3 · 1 ops · 1 referenced file missing/,
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Paste spec/i }));
+    expect(screen.getByText(/where you can add the files it references/)).toBeInTheDocument();
   });
 });

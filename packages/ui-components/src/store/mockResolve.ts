@@ -1,15 +1,17 @@
 // Resolve a MockServerSource to its endpoint table.
 //
 // `openapi-asset` sources (a spec-typed Global File Asset drives the mock)
-// resolve the asset's bytes from IDB into an inline OpenAPI source first, so
+// resolve the asset's bytes from IDB into an inline OpenAPI source first —
+// bundled with the files a split spec points at (`readSpecAssetSource`) — so
 // the SAME parser path serves paste-spec mocks, asset-backed "run live"
 // (linked) mocks, and "import & edit" (materialized) mocks. On Desktop the
-// parse runs in the Node main process (full external-`$ref` resolution); in the
-// browser it uses `@apicircle/mock-server-core/parsing` (in-document refs only).
+// parse runs in the Node main process (swagger-parser); in the browser it uses
+// `@apicircle/mock-server-core/parsing`. Both resolve in-document refs only,
+// which is all a bundled spec has.
 
 import type { MockEndpoint, MockServerSource, WorkspaceSynced } from '@apicircle/shared';
-import { getAttachment } from '../persistence/attachments';
 import { getDesktopMockBridge } from '../desktop/bridge';
+import { readSpecAssetSource } from './specSource';
 
 // `requestShapeFromMockEndpoint` moved to `@apicircle/shared` (Increment K) so
 // the store, the MCP server, and the VS Code extension all share one mapper.
@@ -34,22 +36,25 @@ export async function resolveMockEndpoints(
     if (!asset) {
       return { endpoints: [], warnings: [`Spec asset "${source.assetId}" was not found.`] };
     }
-    const record = await getAttachment(asset.slotId);
-    if (!record) {
+    const spec = await readSpecAssetSource(synced, source.assetId);
+    if (!spec) {
       return {
         endpoints: [],
         warnings: ['The spec asset bytes are not available locally — re-upload the file.'],
       };
     }
-    parseSource = {
-      kind: 'openapi',
-      spec: new TextDecoder().decode(record.bytes),
-      format: source.format,
-    };
+    parseSource = { kind: 'openapi', spec: spec.text, format: spec.format };
+    // The bundler's own findings (a referenced file that would not parse) come
+    // first; the parser then names every reference still left unresolved.
+    const parsed = await parse(parseSource);
+    return { ...parsed, warnings: [...spec.warnings, ...parsed.warnings] };
   }
+  return parse(parseSource);
+}
 
+async function parse(source: MockServerSource): Promise<ResolvedMockEndpoints> {
   const bridge = getDesktopMockBridge();
-  if (bridge?.parseSpec) return bridge.parseSpec(parseSource);
+  if (bridge?.parseSpec) return bridge.parseSpec(source);
   const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core/parsing');
-  return parseSourceToEndpoints(parseSource);
+  return parseSourceToEndpoints(source);
 }

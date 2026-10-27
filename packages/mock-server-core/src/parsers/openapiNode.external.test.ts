@@ -214,9 +214,10 @@ describe('parseOpenApiRequestBodiesNode — external $refs are never followed', 
     expect(JSON.stringify(requestBodies)).not.toContain(MARKER);
     expect(requests).toEqual([]);
     // The schema is a PUBLIC export consumers compare against real code, so an
-    // unresolved reference is reported as the empty schema — "shape unknown" —
-    // and never as `{ $ref: … }`, which reads as a property named `$ref`.
-    expect(requestBodies[0].schema).toEqual({});
+    // unresolved reference is reported as an empty schema — "shape unknown",
+    // marked with why — and never as `{ $ref: … }`, which reads as a property
+    // named `$ref`.
+    expect(requestBodies[0].schema).toEqual({ 'x-apicircle-unresolved': 'external-ref' });
     expect(warnings.filter((w) => w.includes(refs.fileUrl))).toHaveLength(2);
     expect(warnings.some((w) => w.includes('POST /pets'))).toBe(true);
   });

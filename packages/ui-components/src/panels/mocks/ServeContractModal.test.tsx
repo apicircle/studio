@@ -209,4 +209,41 @@ describe('ServeContractModal — a contract the parser could only partly read', 
     expect(toast?.tone).toBe('error');
     expect(toast?.title).toContain('Split contract');
   });
+
+  it('warns that a split contract misses referenced files, one or several', async () => {
+    await renderWithStore(<ServeContractModal />);
+    const seed = async (name: string, refs: string[]): Promise<string> => {
+      const paths = Object.fromEntries(refs.map((r, i) => [`/p${i}`, { $ref: r }]));
+      let id = '';
+      await act(async () => {
+        id = await useWorkspaceStore.getState().addGlobalFileAsset(
+          new File([JSON.stringify({ openapi: '3.0.0', paths })], name, {
+            type: 'application/json',
+          }),
+        );
+      });
+      return id;
+    };
+    const one = await seed('one.json', ['a.json']);
+    const two = await seed('two.json', ['a.json', 'b.json']);
+    await openModal();
+    const user = userEvent.setup();
+    const picker = await screen.findByLabelText('OpenAPI / Swagger contract');
+    expect(
+      screen.getByRole('option', { name: /two\.json .* · 2 referenced files missing/ }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(picker, one);
+    expect(
+      await screen.findByText(
+        /1 file this spec references is missing, so what it holds is served empty/,
+      ),
+    ).toBeInTheDocument();
+    await user.selectOptions(picker, two);
+    expect(
+      await screen.findByText(
+        /2 files this spec references are missing, so what they hold is served empty/,
+      ),
+    ).toBeInTheDocument();
+  });
 });

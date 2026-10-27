@@ -39,7 +39,7 @@ import {
 } from '../faker/schemaToExample';
 import { paramDef } from './buildEndpoint';
 import { buildMockEndpoint } from './buildEndpoint';
-import { dereferenceInternal, type DereferenceResult } from './refDeref';
+import { dereferenceInternal, UNRESOLVED_KEY, type DereferenceResult } from './refDeref';
 
 /**
  * A `$ref` dereferencer: takes the parsed spec object and returns a
@@ -111,15 +111,17 @@ function firstUnresolvedRef(value: unknown): string | null {
   return null;
 }
 
-/** A copy of `value` with every unresolved reference replaced by `{}` — the
- *  empty schema, which says "any shape" instead of naming a property that does
- *  not exist. A node met twice yields the same copy, so cycles terminate. */
+/** A copy of `value` with every unresolved reference replaced by
+ *  `{ "x-apicircle-unresolved": "external-ref" }` — an empty schema to every
+ *  validator ("any shape", an unknown keyword constrains nothing) instead of a
+ *  property that does not exist, and a marker a contract reader can tell from a
+ *  real `{}`. A node met twice yields the same copy, so cycles terminate. */
 function withoutUnresolvedRefs(value: unknown, seen = new Map<object, unknown>()): unknown {
   if (!value || typeof value !== 'object') return value;
   const already = seen.get(value);
   if (already !== undefined) return already;
   if (unresolvedRef(value) !== null) {
-    const empty: Record<string, unknown> = {};
+    const empty: Record<string, unknown> = { [UNRESOLVED_KEY]: 'external-ref' };
     seen.set(value, empty);
     return empty;
   }
@@ -140,8 +142,9 @@ function withoutUnresolvedRefs(value: unknown, seen = new Map<object, unknown>()
 function unresolvedRefWarning(subject: string, ref: string, consequence: string): string {
   return (
     `${subject} is an unresolved external $ref ("${ref}") — ${consequence}. ` +
-    'Spec parsing never reads files or opens network connections; inline the ' +
-    'referenced definition into this document.'
+    'Spec parsing never reads files or opens network connections; upload the file ' +
+    "it points at under the spec's Referenced files, or inline the definition into " +
+    'this document.'
   );
 }
 
@@ -230,7 +233,8 @@ export interface OpenApiRequestBodySpec {
   /** The chosen media type — a JSON one is preferred when several are present. */
   contentType: string;
   /** The body's schema, with every definition the parser could not resolve
-   *  replaced by the empty schema `{}` — "shape unknown". A `$ref` never
+   *  replaced by an empty schema carrying `x-apicircle-unresolved` (the reason:
+   *  `cycle`, `missing`, `external-ref`) — "shape unknown". A `$ref` never
    *  survives into this field, so a property here is always a real property; the
    *  result's warnings name what was dropped. */
   schema: JsonSchemaLike;

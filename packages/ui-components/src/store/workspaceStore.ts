@@ -30,6 +30,7 @@ import type {
   RequestRun,
   RetiredBranch,
   SecretKeyMeta,
+  SpecAssetMeta,
   ThemeId,
   WorkingBranch,
   WorkspaceLocal,
@@ -66,6 +67,16 @@ import type { BranchChangeSource } from '../layout/branchChanges';
 import { beforeAnyWrite } from './nothingWritten';
 import { splitRepoFullName } from './repoCoordinate';
 import { summarizeUploadedSpec } from './specUpload';
+import {
+  bundledSpecFile,
+  fileAssetIds,
+  matchUploadsToTargets,
+  mergeExternalRefs,
+  missingRefs,
+  pickedPath,
+  readSpecAssetSource,
+  specsMapping,
+} from './specSource';
 import { resolveMockEndpoints, requestShapeFromMockEndpoint } from './mockResolve';
 import { mockSpecWarningToast } from './mockSpecWarnings';
 import { applyFont } from '../theme/applyFont';
@@ -1569,9 +1580,14 @@ type WorkspaceStore = {
     patch: Partial<Omit<GlobalGraphQL, 'id' | 'createdAt'>>,
   ) => void;
   removeGlobalGraphQL: (id: string) => void;
+  /**
+   * Upload a file as a Global File Asset. A spec whose `$ref`s point at other
+   * files toasts how many it is missing, unless `quiet` (set while those very
+   * files are being uploaded for a spec).
+   */
   addGlobalFileAsset: (
     file: File,
-    init?: { name?: string; description?: string },
+    init?: { name?: string; description?: string; quiet?: boolean },
   ) => Promise<string>;
   updateGlobalFileAsset: (
     id: string,
@@ -1592,6 +1608,37 @@ type WorkspaceStore = {
    * No-op when `id` is not in the registry.
    */
   fillGlobalFileAssetBytes: (id: string, file: File) => Promise<void>;
+  /**
+   * Re-read spec asset `id` together with every file mapped to its references
+   * (`spec.externalRefs`), and refresh what is derived from that: the reference
+   * list (the files a newly mapped file points at join it; a mapping whose
+   * asset is gone turns missing again), the operation count and warnings, then
+   * every linked mock reading the spec. No-op for a non-spec asset, or one
+   * whose bytes are not on this device.
+   */
+  resolveSpecAsset: (id: string) => Promise<void>;
+  /** Map one of a spec's references to a file asset (`null` unmaps it), then re-resolve the spec. */
+  mapSpecExternalRef: (specId: string, target: string, fileAssetId: string | null) => Promise<void>;
+  /**
+   * Upload files for a spec's missing references and map them. With `target`
+   * the first file is uploaded for that reference. Otherwise each file is
+   * matched by its path inside a picked folder, then by a unique name
+   * (`matchUploadsToTargets`), again after each round as newly mapped files
+   * reveal references of their own. A file that matches no reference is not
+   * uploaded. Returns the targets mapped and the names of the files left out.
+   */
+  uploadSpecExternalRefs: (
+    specId: string,
+    files: File[],
+    opts?: { target?: string },
+  ) => Promise<{ mapped: string[]; unmatched: string[] }>;
+  /**
+   * Save spec `specId`, bundled with all its referenced files, as a NEW spec
+   * asset named `<name> (one file)`: one self-contained file, for a tool that
+   * reads a single spec file. Returns its id, or `null` while a reference is
+   * still missing (or the bytes are not on this device).
+   */
+  saveBundledSpecAsset: (specId: string) => Promise<string | null>;
   setFormRowGlobalFileAsset: (
     requestId: string,
     rowIndex: number,
@@ -4631,6 +4678,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // surfaces (Global Assets sidebar, form-data row, binary body,
     // mock-response body).
     recordPendingFileUpload(set, get, createdFileId);
+    // A split spec reads as unknown wherever it points at a file Studio does
+    // not have — say so now, while the user is looking at the upload.
+    const refCount = spec?.externalRefs?.length ?? 0;
+    if (refCount > 0 && !init?.quiet) {
+      get().pushToast({
+        tone: 'info',
+        title: `This spec points to ${refCount} file${refCount === 1 ? '' : 's'} Studio doesn't have`,
+        detail:
+          "Upload them under the spec's Referenced files (Assets → Files). Until then, " +
+          'the schemas they hold read as unknown.',
+        ttlMs: 10000,
+      });
+    }
     return createdFileId;
   },
   updateGlobalFileAsset: (id, patch) =>
@@ -4647,6 +4707,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // be removed from `workspace.json` but the orphan blob would
     // persist on the remote tree forever.
     const hadRemoteRef = Boolean(asset.workingBranchRef || asset.baseBranchRef);
+    // The split specs reading this file as a referenced file, captured before
+    // the asset leaves the registry.
+    const dependentSpecs = specsMapping(synced, id);
     commitSynced(set, get, (s) => removeGlobalFileAssetAction(s, id));
     // Drop the pending-upload entry (if the asset never got pushed) AND
     // free the IDB bytes. The cascade-unbind on consumers already
@@ -4656,6 +4719,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       queueAttachmentDelete(set, get, asset.slotId);
     }
     await deleteAttachment(asset.slotId);
+    // Each of those specs now misses the file again: re-resolve them, so the
+    // reference reads missing and their linked mocks lose what it supplied.
+    for (const specId of dependentSpecs) await get().resolveSpecAsset(specId);
   },
   fillGlobalFileAssetBytes: async (id, file) => {
     enforceAttachmentSize(file);
@@ -4670,13 +4736,32 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
     // Re-parse on re-upload: keep the spec summary in sync with the new bytes
-    // (and clear it when a non-spec file replaces a spec).
-    const spec = await summarizeUploadedSpec(
+    // (and clear it when a non-spec file replaces a spec). A split spec keeps
+    // every file the user mapped — those its new bytes name directly AND those
+    // only reached through another file; the re-resolve below then drops the
+    // ones the new bytes no longer reach.
+    const summarized = await summarizeUploadedSpec(
       record.bytes,
       record.filename,
       record.mimeType,
       new Date().toISOString(),
     );
+    const previousRefs = get().synced?.globalAssets.files?.[id]?.spec?.externalRefs;
+    const direct = summarized?.externalRefs ?? [];
+    const carried = (previousRefs ?? []).filter(
+      (r) => r.assetId && !direct.some((d) => d.target === r.target),
+    );
+    const spec =
+      summarized && direct.length > 0 && previousRefs
+        ? {
+            ...summarized,
+            externalRefs: mergeExternalRefs(
+              previousRefs,
+              [...direct, ...carried].map(({ target }) => ({ target, supplied: false })),
+              fileAssetIds(get().synced),
+            ),
+          }
+        : summarized;
     // Race-safe: reducer runs against LIVE state. If the user deleted
     // the asset between our await and now, the reducer no-ops by
     // returning `s` unchanged. If the user renamed the asset, the
@@ -4709,29 +4794,102 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (get().synced?.globalAssets.files?.[id]) {
       recordPendingFileUpload(set, get, id);
     }
-    // Auto-refresh any "run live" (linked) mocks that read this spec asset so
-    // they reflect the new bytes immediately.
-    const linkedMockIds = Object.values(get().synced?.mockServers ?? {})
-      .filter(
-        (m) =>
-          m.source.kind === 'openapi-asset' &&
-          m.source.mode === 'linked' &&
-          m.source.assetId === id,
-      )
-      .map((m) => m.id);
-    for (const mockId of linkedMockIds) {
-      const { warnings } = await get().refreshMockServer(mockId);
-      // This refresh happens on the user's behalf, with no modal or panel of its
-      // own to report into: a revised spec the parser can only partly read would
-      // otherwise rebuild a working endpoint table silently.
-      const refreshed = get().synced?.mockServers[mockId];
-      const toast = mockSpecWarningToast(
-        refreshed?.name ?? mockId,
-        refreshed?.endpoints.length ?? 0,
-        warnings,
-      );
-      if (toast) get().pushToast(toast);
+    // A split spec is re-resolved with its mapped files (which also refreshes
+    // its linked mocks); any other spec's linked mocks are refreshed directly
+    // so they reflect the new bytes immediately.
+    if (spec?.externalRefs?.some((r) => r.assetId)) await get().resolveSpecAsset(id);
+    else await refreshLinkedMocks(get, id);
+    // New bytes for a file a split spec reads: every such spec changes too.
+    for (const specId of specsMapping(get().synced, id)) {
+      await get().resolveSpecAsset(specId);
     }
+  },
+  resolveSpecAsset: async (id) => {
+    const synced = get().synced;
+    const asset = synced?.globalAssets.files?.[id];
+    if (!synced || !asset?.spec) return;
+    const source = await readSpecAssetSource(synced, id);
+    if (!source) return;
+    const { summarizeSpec } = await import('@apicircle/mock-server-core/parsing');
+    // Counted on the bundle, so the operations held in the supplied files count.
+    const bundled = summarizeSpec(source.text, asset.filename);
+    commitSynced(set, get, (s) => {
+      const live = s.globalAssets.files?.[id];
+      if (!live?.spec) return s;
+      const externalRefs = mergeExternalRefs(
+        live.spec.externalRefs,
+        source.references,
+        fileAssetIds(s),
+      );
+      const next: SpecAssetMeta = {
+        ...live.spec,
+        operationCount: bundled?.operationCount ?? live.spec.operationCount,
+        warnings: [...(bundled?.warnings ?? live.spec.warnings), ...source.warnings],
+        parsedAt: new Date().toISOString(),
+        externalRefs,
+      };
+      if (externalRefs.length === 0) delete next.externalRefs;
+      return updateGlobalFileAssetAction(s, id, { spec: next });
+    });
+    await refreshLinkedMocks(get, id);
+  },
+  mapSpecExternalRef: async (specId, target, fileAssetId) => {
+    commitSynced(set, get, (s) => {
+      const live = s.globalAssets.files?.[specId];
+      if (!live?.spec?.externalRefs?.some((r) => r.target === target)) return s;
+      const externalRefs = live.spec.externalRefs.map((r) =>
+        r.target !== target ? r : fileAssetId ? { target, assetId: fileAssetId } : { target },
+      );
+      return updateGlobalFileAssetAction(s, specId, { spec: { ...live.spec, externalRefs } });
+    });
+    await get().resolveSpecAsset(specId);
+  },
+  uploadSpecExternalRefs: async (specId, files, opts) => {
+    const spec = get().synced?.globalAssets.files?.[specId];
+    if (!spec?.spec || files.length === 0) return { mapped: [], unmatched: [] };
+    if (opts?.target) {
+      const fileAssetId = await get().addGlobalFileAsset(files[0], { quiet: true });
+      await get().mapSpecExternalRef(specId, opts.target, fileAssetId);
+      return { mapped: [opts.target], unmatched: [] };
+    }
+    const mapped: string[] = [];
+    let pending: File[] = files;
+    // Each round can reveal references of the files it mapped; stop once a
+    // round maps nothing (bounded by the number of files, one per round at least).
+    for (let round = 0; round < files.length && pending.length > 0; round += 1) {
+      const synced = get().synced;
+      const live = synced?.globalAssets.files?.[specId];
+      if (!synced || !live) break;
+      const missing = missingRefs(synced, live).map((r) => r.target);
+      const { matched, unmatched } = matchUploadsToTargets(pending, missing, live.filename);
+      pending = unmatched;
+      if (matched.size === 0) break;
+      for (const [target, file] of matched) {
+        const fileAssetId = await get().addGlobalFileAsset(file, { quiet: true });
+        commitSynced(set, get, (s) => {
+          const current = s.globalAssets.files?.[specId];
+          if (!current?.spec?.externalRefs) return s;
+          const externalRefs = current.spec.externalRefs.map((r) =>
+            r.target === target ? { target, assetId: fileAssetId } : r,
+          );
+          return updateGlobalFileAssetAction(s, specId, {
+            spec: { ...current.spec, externalRefs },
+          });
+        });
+        mapped.push(target);
+      }
+      await get().resolveSpecAsset(specId);
+    }
+    return { mapped, unmatched: pending.map((f) => pickedPath(f)) };
+  },
+  saveBundledSpecAsset: async (specId) => {
+    const synced = get().synced;
+    const asset = synced?.globalAssets.files?.[specId];
+    if (!synced || !asset) return null;
+    const bundled = await bundledSpecFile(synced, specId);
+    if (!bundled) return null;
+    const file = new File([bundled.text], bundled.filename, { type: bundled.mimeType });
+    return get().addGlobalFileAsset(file, { name: `${asset.name} (one file)` });
   },
   setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {
     const synced = get().synced;
@@ -10129,6 +10287,35 @@ function commitSynced(
 // (plans now travel through Git). Other local-only mutations use raw
 // `set` + `saveLocal` paths — keep this comment as a breadcrumb in
 // case a future feature wants the symmetry helper back.
+
+/**
+ * Re-derive every "run live" (linked) mock that reads spec asset `assetId`, so
+ * it reflects the asset's current bytes (and the files mapped to it). The
+ * refresh happens on the user's behalf, with no modal or panel of its own to
+ * report into, so whatever the parser could not read is toasted — a spec read
+ * only in part would otherwise rebuild a working endpoint table silently.
+ */
+async function refreshLinkedMocks(get: GetState, assetId: string): Promise<void> {
+  /* v8 ignore next -- a workspace is loaded whenever an asset action reaches here */
+  const linkedMockIds = Object.values(get().synced?.mockServers ?? {})
+    .filter(
+      (m) =>
+        m.source.kind === 'openapi-asset' &&
+        m.source.mode === 'linked' &&
+        m.source.assetId === assetId,
+    )
+    .map((m) => m.id);
+  for (const mockId of linkedMockIds) {
+    const { warnings } = await get().refreshMockServer(mockId);
+    const refreshed = get().synced?.mockServers[mockId];
+    const toast = mockSpecWarningToast(
+      refreshed?.name ?? mockId,
+      refreshed?.endpoints.length ?? 0,
+      warnings,
+    );
+    if (toast) get().pushToast(toast);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // pendingFileUploads helpers

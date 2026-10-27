@@ -133,6 +133,7 @@ export type {
   GlobalGraphQL,
   GlobalFileAsset,
   SpecAssetMeta,
+  SpecExternalRef,
   AssetGitRef,
   PendingFileUpload,
   AssetUsage,

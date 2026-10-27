@@ -116,3 +116,56 @@ describe('summarizeSpec', () => {
     expect(summarizeSpec('{ this is neither json nor: [yaml')).toBeNull();
   });
 });
+
+describe('summarizeSpec — a spec split across files', () => {
+  const split = {
+    openapi: '3.0.3',
+    paths: {
+      '/pets': { $ref: 'paths/pets.yaml' },
+      '/owners': { $ref: 'paths/owners.yaml' },
+      '/health': { get: { responses: { '200': {} } } },
+    },
+    components: { schemas: { Pet: { $ref: './schemas/pet.yaml#/Pet' } } },
+  };
+
+  it('lists the files its refs name, counts what it can read, and names what it cannot', () => {
+    const summary = summarizeSpec(JSON.stringify(split), 'openapi.json');
+    expect(summary?.operationCount).toBe(1);
+    expect(summary?.externalRefs).toEqual([
+      { target: 'paths/pets.yaml' },
+      { target: 'paths/owners.yaml' },
+      { target: 'schemas/pet.yaml' },
+    ]);
+    expect(summary?.warnings).toEqual([
+      '2 path items live in other files — upload them under Referenced files to count their operations.',
+    ]);
+  });
+
+  it('says "lives" for one path item, even when it holds every operation', () => {
+    const doc = { openapi: '3.0.3', paths: { '/pets': { $ref: 'paths/pets.yaml' } } };
+    expect(summarizeSpec(JSON.stringify(doc), 'openapi.json')?.warnings).toEqual([
+      '1 path item lives in other files — upload them under Referenced files to count their operations.',
+    ]);
+  });
+
+  it('counts operations behind in-document path-item refs, as a bundled spec has them', () => {
+    const bundled = {
+      openapi: '3.0.3',
+      paths: {
+        '/pets': { $ref: '#/x-apicircle-documents/paths~1pets.yaml' },
+        '/gone': { $ref: '#/x-apicircle-documents/nowhere' },
+      },
+      'x-apicircle-documents': {
+        'paths/pets.yaml': {
+          get: { responses: { '200': {} } },
+          post: { responses: { '201': {} } },
+        },
+      },
+    };
+    const summary = summarizeSpec(JSON.stringify(bundled), 'openapi.json');
+    expect(summary?.operationCount).toBe(2);
+    expect(summary?.warnings).toEqual([]);
+    // Fully in-document now: nothing left to list.
+    expect(summary?.externalRefs).toBeUndefined();
+  });
+});

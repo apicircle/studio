@@ -143,11 +143,29 @@ The Desktop app runs its parse in the Node main process (via the
 `apicircle:mock:parse` IPC bridge) and the pure-web build parses in the
 renderer, but both surface the same warning naming any external reference, so a
 spec behaves identically everywhere. To mock a definition that lives in another
-file, inline it into the document.
+file, inline it into the document — or upload the spec as a file asset and
+supply the files it references.
+
+**A spec split across files.** A spec asset whose `$ref`s point at other
+documents lists them under **Referenced files** in Assets → Files, each one
+missing until you upload it (row by row, several at once matched by name, or a
+folder matched by path) or map a file you already uploaded. Every reader of the
+asset — linked (run live) and imported mocks, **Import to collection** — then
+reads the spec bundled with those files: `bundleSpec` embeds each supplied
+document under `x-apicircle-documents/<path>` and rewrites every reference into
+it as an in-document pointer, so the two resolvers above read it like any
+single file, cycles across files included. A reference to a URL is never
+fetched; a file uploaded for it stands in. Once nothing is missing, **Download
+one file** / **Save as new spec** produce that bundle as one self-contained
+spec. `bundleSpec` reads nothing itself — the documents are text its caller
+supplies — so a Node host can use it the same way with files it chose to read.
 
 **Recursive and very large schemas.** A schema that contains itself (a
 `Category` whose `children` are `Category[]`) is sampled once, and the place it
-recurs gets an empty `{}` / `[]` — on both entry points. Every example an
+recurs gets an empty `{}` / `[]` — on both entry points. In the browser
+resolver's output the cut is the schema `{ "x-apicircle-unresolved": "cycle" }`
+(an empty schema to everything that samples or validates it), so a contract
+reader can tell a cut recursion from a schema that really is `{}`. Every example an
 operation gets (its response body, response headers and parameter examples) is
 built on a budget of its own — 10,000 nodes and 64 levels of nesting — so a few
 KB of `$ref` or YAML-alias fan-out can no longer exhaust memory. An operation

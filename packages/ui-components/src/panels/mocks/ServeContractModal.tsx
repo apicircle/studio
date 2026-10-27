@@ -5,6 +5,7 @@ import { mockSpecWarningToast } from '../../store/mockSpecWarnings';
 import { Modal } from '../../primitives/Modal';
 import { BrandLoader } from '../../primitives/BrandLoader';
 import { DisabledReason } from '../../primitives/DisabledReason';
+import { countMissingRefs, missingRefsLabel } from '../../store/specSource';
 
 // "Serve OpenAPI contract" — the dedicated run-live entry point. It stands up a
 // mock server that serves an OpenAPI/Swagger contract DIRECTLY from a spec
@@ -36,6 +37,7 @@ export function ServeContractModal() {
   const [submitting, setSubmitting] = useState(false);
 
   const selected = useMemo(() => specAssets.find((f) => f.id === assetId), [specAssets, assetId]);
+  const selectedMissing = selected ? countMissingRefs(selected, files) : 0;
 
   const reset = () => {
     setAssetId('');
@@ -153,6 +155,7 @@ export function ServeContractModal() {
                   <option key={f.id} value={f.id}>
                     {f.name} — {f.spec?.dialect === 'swagger-2' ? 'Swagger 2' : 'OpenAPI 3'} ·{' '}
                     {f.spec?.operationCount ?? 0} ops
+                    {missingRefsLabel(countMissingRefs(f, files))}
                   </option>
                 ))}
               </select>
@@ -176,6 +179,14 @@ export function ServeContractModal() {
                   {selected.spec.operationCount === 1 ? '' : 's'} · served live from{' '}
                   <span className="font-mono">{selected.filename}</span>
                 </p>
+                {selectedMissing > 0 && (
+                  <p className="mt-1 text-xs text-warning">
+                    {selectedMissing === 1
+                      ? '1 file this spec references is missing, so what it holds is served empty.'
+                      : `${selectedMissing} files this spec references are missing, so what they hold is served empty.`}{' '}
+                    Upload them under the spec&apos;s Referenced files (Assets → Files).
+                  </p>
+                )}
               </div>
             )}
 

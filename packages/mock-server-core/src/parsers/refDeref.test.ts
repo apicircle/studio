@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import yaml from 'js-yaml';
-import { dereferenceInternal } from './refDeref';
+import { decodePointerSegment, dereferenceInternal, UNRESOLVED_KEY } from './refDeref';
 
 describe('dereferenceInternal', () => {
   it('returns primitives and null untouched', () => {
@@ -53,7 +53,7 @@ describe('dereferenceInternal', () => {
     expect((doc as { ref: unknown }).ref).toEqual({ note: 'slashy' });
   });
 
-  it('breaks reference cycles with {} instead of looping', () => {
+  it('breaks reference cycles with a cycle marker instead of looping', () => {
     const root = {
       components: {
         schemas: {
@@ -68,8 +68,8 @@ describe('dereferenceInternal', () => {
     const { doc } = dereferenceInternal(root);
     const entry = (doc as { entry: { properties: { next: unknown } } }).entry;
     expect(entry).toMatchObject({ type: 'object' });
-    // The self-reference is broken to {} — no infinite structure.
-    expect(entry.properties.next).toEqual({});
+    // The self-reference is broken to an empty schema that says why — no infinite structure.
+    expect(entry.properties.next).toEqual({ [UNRESOLVED_KEY]: 'cycle' });
   });
 
   it('warns once for an external $ref and leaves it in place', () => {
@@ -82,14 +82,15 @@ describe('dereferenceInternal', () => {
     expect((doc as typeof root).a).toEqual({ $ref: './other.yaml#/Foo' });
     // De-duplicated: one warning per distinct external ref (2 distinct here).
     expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toContain('External $ref not resolved in the web app');
+    expect(warnings[0]).toContain('External $ref not resolved');
+    expect(warnings[0]).toContain("under the spec's Referenced files");
     expect(warnings[0]).toContain('./other.yaml#/Foo');
   });
 
-  it('warns for an unresolved in-document $ref and substitutes {}', () => {
+  it('warns for an unresolved in-document $ref and substitutes a missing marker', () => {
     const root = { ref: { $ref: '#/components/schemas/Missing' } };
     const { doc, warnings } = dereferenceInternal(root);
-    expect((doc as { ref: unknown }).ref).toEqual({});
+    expect((doc as { ref: unknown }).ref).toEqual({ [UNRESOLVED_KEY]: 'missing' });
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('Unresolved internal $ref');
   });
@@ -124,15 +125,15 @@ describe('dereferenceInternal', () => {
     expect(out.a).not.toBe(root.a);
   });
 
-  it('breaks an object or array that contains itself with {}', () => {
+  it('breaks an object or array that contains itself with a cycle marker', () => {
     const node: Record<string, unknown> = { a: 1 };
     node.self = node;
     const list: unknown[] = ['x'];
     list.push(list);
     const { doc, warnings } = dereferenceInternal({ node, list });
     expect(warnings).toEqual([]);
-    expect((doc as { node: unknown }).node).toEqual({ a: 1, self: {} });
-    expect((doc as { list: unknown }).list).toEqual(['x', {}]);
+    expect((doc as { node: unknown }).node).toEqual({ a: 1, self: { [UNRESOLVED_KEY]: 'cycle' } });
+    expect((doc as { list: unknown }).list).toEqual(['x', { [UNRESOLVED_KEY]: 'cycle' }]);
   });
 
   it('breaks a chain of $refs that leads back to itself', () => {
@@ -147,7 +148,7 @@ describe('dereferenceInternal', () => {
     };
     const { doc, warnings } = dereferenceInternal(root);
     expect(warnings).toEqual([]);
-    expect((doc as { entry: unknown }).entry).toEqual({});
+    expect((doc as { entry: unknown }).entry).toEqual({ [UNRESOLVED_KEY]: 'cycle' });
   });
 
   it('resolves mutually recursive schemas once, cutting where the walk comes back', () => {
@@ -165,10 +166,26 @@ describe('dereferenceInternal', () => {
     // A was reached first, so the walk came back to it from inside B.
     expect(paths.a).toEqual({
       type: 'object',
-      properties: { b: { type: 'object', properties: { a: {} } } },
+      properties: { b: { type: 'object', properties: { a: { [UNRESOLVED_KEY]: 'cycle' } } } },
     });
     // B resolved once, inside A, and every later use shares that object.
     expect(paths.b).toBe((paths.a as { properties: { b: unknown } }).properties.b);
+  });
+
+  it('percent-decodes a pointer segment before the ~ escapes, as a URI fragment needs', () => {
+    const root = {
+      'x-apicircle-documents': { 'schemas/my pet.yaml': { Pet: { type: 'object' } } },
+      a: { $ref: '#/x-apicircle-documents/schemas~1my%20pet.yaml/Pet' },
+      b: { $ref: '#/components/schemas/100%25' },
+      components: { schemas: { '100%': { type: 'integer' } } },
+    };
+    const { doc, warnings } = dereferenceInternal(root);
+    expect(warnings).toEqual([]);
+    expect((doc as { a: unknown }).a).toEqual({ type: 'object' });
+    expect((doc as { b: unknown }).b).toEqual({ type: 'integer' });
+    expect(decodePointerSegment('a~1b~0c')).toBe('a/b~c');
+    // A stray `%` is not a percent-encoding: the segment is read as written.
+    expect(decodePointerSegment('50%')).toBe('50%');
   });
 
   it('does not mutate the input document', () => {

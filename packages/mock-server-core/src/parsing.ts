@@ -5,7 +5,9 @@
 // from browser/renderer code (the web + desktop UI in `@apicircle/ui-
 // components`); import the package root (`index.ts`) from Node surfaces
 // (CLI, MCP, Desktop main, VS Code host) to resolve `$ref`s with
-// swagger-parser instead. Either way, only in-document refs resolve.
+// swagger-parser instead. Either way, only in-document refs resolve; a spec
+// split across files is first bundled with the files supplied for it
+// (`bundleSpec`), which turns its external refs into in-document ones.
 //
 // Subpath: `@apicircle/mock-server-core/parsing`.
 
@@ -27,7 +29,15 @@ export { parsePostmanToEndpoints } from './parsers/postman';
 export { parseInsomniaToEndpoints } from './parsers/insomnia';
 export { schemaToExample } from './faker/schemaToExample';
 export type { JsonSchemaLike } from './faker/schemaToExample';
-export { dereferenceInternal, type DereferenceResult } from './parsers/refDeref';
+export {
+  dereferenceInternal,
+  decodePointerSegment,
+  UNRESOLVED_KEY,
+  type DereferenceResult,
+  type UnresolvedReason,
+} from './parsers/refDeref';
+export { bundleSpec, parseSpecText, BUNDLED_DOCUMENTS_KEY } from './parsers/specBundle';
+export type { BundleSpecOptions, BundleSpecResult, SpecReference } from './parsers/specBundle';
 export { summarizeSpec } from './specSummary';
 export type { SpecSummary } from './specSummary';
 
