@@ -149,6 +149,58 @@ describe('a spec split across files', () => {
     ]);
   });
 
+  it('supplies files for known targets, reads the spec once, and says what is still missing', async () => {
+    const id = await upload(file(root, 'openapi.json'));
+    type Supplied = Awaited<ReturnType<ReturnType<typeof store>['supplySpecExternalRefs']>>;
+    let out: Supplied = null;
+    // Round one: the only reference the spec names. The file it points at joins as missing.
+    await act(async () => {
+      out = await store().supplySpecExternalRefs(id, [
+        { target: 'paths/pets.json', file: file(pets, 'pets.json') },
+        { target: 'nowhere.json', file: file(pet, 'nowhere.json') },
+      ]);
+    });
+    expect(out).toEqual({
+      mapped: ['paths/pets.json'],
+      missing: ['schemas/pet.json'],
+      operationCount: 2,
+    });
+    // Round two: that file, and a target already mapped (the user's), which is skipped.
+    await act(async () => {
+      out = await store().supplySpecExternalRefs(id, [
+        { target: 'schemas/pet.json', file: file(pet, 'pet.json') },
+        { target: 'paths/pets.json', file: file(root, 'other.json') },
+      ]);
+    });
+    expect(out).toEqual({ mapped: ['schemas/pet.json'], missing: [], operationCount: 2 });
+    const refs = asset(id)?.spec?.externalRefs ?? [];
+    expect(refs.map((r) => asset(r.assetId ?? '')?.filename)).toEqual(['pets.json', 'pet.json']);
+  });
+
+  it('supplies nothing for a non-spec asset, and reads nothing when no file maps', async () => {
+    const png = await upload(new File([new Uint8Array([1])], 'x.png', { type: 'image/png' }));
+    let out: Awaited<ReturnType<ReturnType<typeof store>['supplySpecExternalRefs']>> = {
+      mapped: ['x'],
+      missing: [],
+      operationCount: 1,
+    };
+    await act(async () => {
+      out = await store().supplySpecExternalRefs(png, [
+        { target: 'a.json', file: file(pet, 'a.json') },
+      ]);
+    });
+    expect(out).toBeNull();
+    await act(async () => {
+      out = await store().supplySpecExternalRefs('gone', []);
+    });
+    expect(out).toBeNull();
+    const id = await upload(file(root, 'openapi.json'));
+    await act(async () => {
+      out = await store().supplySpecExternalRefs(id, []);
+    });
+    expect(out).toEqual({ mapped: [], missing: ['paths/pets.json'], operationCount: 1 });
+  });
+
   it('does nothing for a non-spec asset or no files', async () => {
     const id = await upload(file(root, 'openapi.json'));
     const png = await upload(new File([new Uint8Array([1])], 'x.png', { type: 'image/png' }));

@@ -159,6 +159,10 @@ fetched; a file uploaded for it stands in. Once nothing is missing, **Download
 one file** / **Save as new spec** produce that bundle as one self-contained
 spec. `bundleSpec` reads nothing itself — the documents are text its caller
 supplies — so a Node host can use it the same way with files it chose to read.
+What the asset's record becomes once it is read again — the references the
+bundle reached with the user's mappings kept, and the operation count of the
+bundle — is `resolvedSpecMeta`, which the Assets panel and such a host both
+apply, so a spec mapped either way records the same thing.
 
 **Recursive and very large schemas.** A schema that contains itself (a
 `Category` whose `children` are `Category[]`) is sampled once, and the place it

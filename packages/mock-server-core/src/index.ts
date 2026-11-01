@@ -42,6 +42,7 @@ export { bundleSpec, parseSpecText, BUNDLED_DOCUMENTS_KEY } from './parsers/spec
 export type { BundleSpecOptions, BundleSpecResult, SpecReference } from './parsers/specBundle';
 export { summarizeSpec } from './specSummary';
 export type { SpecSummary } from './specSummary';
+export { mergeExternalRefs, resolvedSpecMeta } from './specRefs';
 export type { ParseSourceResult } from './parsing';
 export { getFreePort, isPortFree } from './runtime/portFinder';
 export { buildRouter };

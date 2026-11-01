@@ -10,7 +10,10 @@
 // byte as uploaded.
 //
 // The pure helpers below decide which uploaded file stands for which missing
-// reference, and carry the user's mappings across a re-resolve.
+// reference. What a re-read makes of the spec's reference list and summary —
+// the user's mappings carried over, the operation count of the bundle — is
+// `resolvedSpecMeta` in `@apicircle/mock-server-core`, shared with headless
+// readers.
 
 import type { GlobalFileAsset, SpecExternalRef, WorkspaceSynced } from '@apicircle/shared';
 import type { SpecReference } from '@apicircle/mock-server-core/parsing';
@@ -103,24 +106,6 @@ export async function readSpecAssetSource(
     ...out,
     missing: out.references.filter((r) => !r.supplied).map((r) => r.target),
   };
-}
-
-/**
- * The spec's reference list after a re-resolve: every reference the bundle
- * reached, in its order, keeping the file the user mapped to each — unless
- * that file asset is gone, which makes the reference missing again. A mapping
- * whose target the spec no longer reaches is dropped.
- */
-export function mergeExternalRefs(
-  previous: readonly SpecExternalRef[] | undefined,
-  references: readonly SpecReference[],
-  liveAssetIds: ReadonlySet<string>,
-): SpecExternalRef[] {
-  const mapped = new Map((previous ?? []).map((r) => [r.target, r.assetId]));
-  return references.map(({ target }) => {
-    const assetId = mapped.get(target);
-    return assetId && liveAssetIds.has(assetId) ? { target, assetId } : { target };
-  });
 }
 
 /** The last path segment of a target (a URL's path included). */

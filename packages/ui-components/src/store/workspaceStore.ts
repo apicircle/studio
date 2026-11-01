@@ -30,7 +30,6 @@ import type {
   RequestRun,
   RetiredBranch,
   SecretKeyMeta,
-  SpecAssetMeta,
   ThemeId,
   WorkingBranch,
   WorkspaceLocal,
@@ -71,7 +70,6 @@ import {
   bundledSpecFile,
   fileAssetIds,
   matchUploadsToTargets,
-  mergeExternalRefs,
   missingRefs,
   pickedPath,
   readSpecAssetSource,
@@ -1632,6 +1630,20 @@ type WorkspaceStore = {
     files: File[],
     opts?: { target?: string },
   ) => Promise<{ mapped: string[]; unmatched: string[] }>;
+  /**
+   * Supply files for references whose targets the caller already knows — a
+   * reader that found each file at its target, such as the Lens MCP server
+   * reading the repository beside the spec. Each file becomes a file asset
+   * mapped to its target, then the spec is read again ONCE. A target the spec
+   * does not reach, or one already mapped, is skipped: a mapping is the user's.
+   * Returns the targets mapped, every reference still missing afterwards (the
+   * supplied files' own references included, for the caller's next round) and
+   * the operation count; `null` when `specId` is not a spec asset.
+   */
+  supplySpecExternalRefs: (
+    specId: string,
+    files: ReadonlyArray<{ target: string; file: File }>,
+  ) => Promise<{ mapped: string[]; missing: string[]; operationCount: number } | null>;
   /**
    * Save spec `specId`, bundled with all its referenced files, as a NEW spec
    * asset named `<name> (one file)`: one self-contained file, for a tool that
@@ -4746,6 +4758,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       record.mimeType,
       new Date().toISOString(),
     );
+    const { mergeExternalRefs } = await import('@apicircle/mock-server-core/parsing');
     const previousRefs = get().synced?.globalAssets.files?.[id]?.spec?.externalRefs;
     const direct = summarized?.externalRefs ?? [];
     const carried = (previousRefs ?? []).filter(
@@ -4810,25 +4823,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced || !asset?.spec) return;
     const source = await readSpecAssetSource(synced, id);
     if (!source) return;
-    const { summarizeSpec } = await import('@apicircle/mock-server-core/parsing');
-    // Counted on the bundle, so the operations held in the supplied files count.
-    const bundled = summarizeSpec(source.text, asset.filename);
+    const { resolvedSpecMeta } = await import('@apicircle/mock-server-core/parsing');
+    const parsedAt = new Date().toISOString();
     commitSynced(set, get, (s) => {
       const live = s.globalAssets.files?.[id];
       if (!live?.spec) return s;
-      const externalRefs = mergeExternalRefs(
-        live.spec.externalRefs,
-        source.references,
-        fileAssetIds(s),
-      );
-      const next: SpecAssetMeta = {
-        ...live.spec,
-        operationCount: bundled?.operationCount ?? live.spec.operationCount,
-        warnings: [...(bundled?.warnings ?? live.spec.warnings), ...source.warnings],
-        parsedAt: new Date().toISOString(),
-        externalRefs,
-      };
-      if (externalRefs.length === 0) delete next.externalRefs;
+      // Counted on the bundle, so the operations held in the supplied files count.
+      const next = resolvedSpecMeta(live.spec, source, asset.filename, fileAssetIds(s), parsedAt);
       return updateGlobalFileAssetAction(s, id, { spec: next });
     });
     await refreshLinkedMocks(get, id);
@@ -4866,21 +4867,34 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (matched.size === 0) break;
       for (const [target, file] of matched) {
         const fileAssetId = await get().addGlobalFileAsset(file, { quiet: true });
-        commitSynced(set, get, (s) => {
-          const current = s.globalAssets.files?.[specId];
-          if (!current?.spec?.externalRefs) return s;
-          const externalRefs = current.spec.externalRefs.map((r) =>
-            r.target === target ? { target, assetId: fileAssetId } : r,
-          );
-          return updateGlobalFileAssetAction(s, specId, {
-            spec: { ...current.spec, externalRefs },
-          });
-        });
+        commitRefMapping(set, get, specId, target, fileAssetId);
         mapped.push(target);
       }
       await get().resolveSpecAsset(specId);
     }
     return { mapped, unmatched: pending.map((f) => pickedPath(f)) };
+  },
+  supplySpecExternalRefs: async (specId, files) => {
+    const mapped: string[] = [];
+    for (const { target, file } of files) {
+      const synced = get().synced;
+      const live = synced?.globalAssets.files?.[specId];
+      if (!synced || !live?.spec) return null;
+      // Only a reference the spec reaches that still has no file: a mapped one is the user's.
+      if (!missingRefs(synced, live).some((r) => r.target === target)) continue;
+      const fileAssetId = await get().addGlobalFileAsset(file, { quiet: true });
+      commitRefMapping(set, get, specId, target, fileAssetId);
+      mapped.push(target);
+    }
+    if (mapped.length > 0) await get().resolveSpecAsset(specId);
+    const synced = get().synced;
+    const live = synced?.globalAssets.files?.[specId];
+    if (!synced || !live?.spec) return null;
+    return {
+      mapped,
+      missing: missingRefs(synced, live).map((r) => r.target),
+      operationCount: live.spec.operationCount,
+    };
   },
   saveBundledSpecAsset: async (specId) => {
     const synced = get().synced;
@@ -10287,6 +10301,28 @@ function commitSynced(
 // (plans now travel through Git). Other local-only mutations use raw
 // `set` + `saveLocal` paths — keep this comment as a breadcrumb in
 // case a future feature wants the symmetry helper back.
+
+/**
+ * Map reference `target` of spec asset `specId` to file asset `fileAssetId`,
+ * against the LIVE state (a spec deleted meanwhile is left alone). The caller
+ * re-reads the spec afterwards (`resolveSpecAsset`), once per batch.
+ */
+function commitRefMapping(
+  set: SetState,
+  get: GetState,
+  specId: string,
+  target: string,
+  fileAssetId: string,
+): void {
+  commitSynced(set, get, (s) => {
+    const current = s.globalAssets.files?.[specId];
+    if (!current?.spec?.externalRefs) return s;
+    const externalRefs = current.spec.externalRefs.map((r) =>
+      r.target === target ? { target, assetId: fileAssetId } : r,
+    );
+    return updateGlobalFileAssetAction(s, specId, { spec: { ...current.spec, externalRefs } });
+  });
+}
 
 /**
  * Re-derive every "run live" (linked) mock that reads spec asset `assetId`, so

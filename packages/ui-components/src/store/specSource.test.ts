@@ -7,7 +7,6 @@ import {
   fileAssetIds,
   mappedAsset,
   matchUploadsToTargets,
-  mergeExternalRefs,
   missingRefs,
   missingRefsLabel,
   pickedPath,
@@ -180,31 +179,6 @@ describe('spec reference bookkeeping', () => {
     expect(missingRefsLabel(0)).toBe('');
     expect(missingRefsLabel(1)).toBe(' · 1 referenced file missing');
     expect(missingRefsLabel(3)).toBe(' · 3 referenced files missing');
-  });
-
-  it('carries the user’s mappings to the references still reached, dropping a deleted file’s', () => {
-    expect(
-      mergeExternalRefs(
-        [
-          { target: 'keep.json', assetId: 'k' },
-          { target: 'deleted.json', assetId: 'd' },
-          { target: 'gone.json', assetId: 'g' },
-        ],
-        [
-          { target: 'new.json', supplied: false },
-          { target: 'keep.json', supplied: true },
-          { target: 'deleted.json', supplied: false },
-        ],
-        new Set(['k', 'g']),
-      ),
-    ).toEqual([
-      { target: 'new.json' },
-      { target: 'keep.json', assetId: 'k' },
-      { target: 'deleted.json' },
-    ]);
-    expect(mergeExternalRefs(undefined, [{ target: 'a', supplied: false }], new Set())).toEqual([
-      { target: 'a' },
-    ]);
   });
 });
 

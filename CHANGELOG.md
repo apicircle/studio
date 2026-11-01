@@ -602,6 +602,19 @@
   `summarizeSpec` counts operations behind in-document path-item refs and lists
   the documents a spec names (`SpecAssetMeta.externalRefs`, new and optional;
   `AssetUsage.specRefs` likewise).
+- **`@apicircle/mock-server-core`: `resolvedSpecMeta`, `mergeExternalRefs`.** What
+  a split spec's record becomes once it is read again with its files: the
+  references the bundle reached, each keeping the file the user mapped to it
+  (unless that file is gone), the operation count of the bundle, its warnings
+  and `parsedAt`. The Assets panel's store applies it, and a headless reader that
+  supplies the files itself can too, so a spec mapped either way records the
+  same thing. `mergeExternalRefs` moved here from `ui-components`.
+- **Store: `supplySpecExternalRefs(specId, files)`.** Supplies files for
+  references whose targets the caller already knows — a reader that found each
+  file at its target, such as the Lens MCP server reading the repository beside
+  the spec. Each becomes a file asset mapped to its reference, the spec is read
+  again once, and what is still missing comes back for the next round. A target
+  the spec does not reach, or one the user already mapped, is skipped.
 - **An unresolved schema says why.** The in-document resolver stands in for a
   schema it cannot produce with `{ "x-apicircle-unresolved": "cycle" | "missing" }`
   instead of `{}`, and a request-body schema that is an unresolved external

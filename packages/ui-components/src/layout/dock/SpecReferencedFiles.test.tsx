@@ -113,11 +113,15 @@ describe('Referenced files', () => {
         within(section()).getByText('All 2 referenced files are here: the spec is read in full.'),
       ).toBeInTheDocument(),
     );
-    expect(store().toasts.map((t) => t.title)).toEqual(
-      expect.arrayContaining([
-        'Mapped 1 referenced file',
-        '1 file matched no reference and was not uploaded',
-      ]),
+    // The section says so as soon as the mapping lands; the toasts follow once the upload
+    // returns, after the spec has been read again — so they are waited for, not read at once.
+    await waitFor(() =>
+      expect(store().toasts.map((t) => t.title)).toEqual(
+        expect.arrayContaining([
+          'Mapped 1 referenced file',
+          '1 file matched no reference and was not uploaded',
+        ]),
+      ),
     );
     expect(store().synced?.globalAssets.files?.[id]?.spec?.operationCount).toBe(1);
     // Nothing left to supply.
