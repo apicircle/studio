@@ -64,6 +64,23 @@ describe('Input', () => {
     });
   });
 
+  it("turns its edge and ring to the tone's readable colour on focus, accent or danger", () => {
+    // Measured on every theme by apps/web's theme-contrast test (`FIELD_PARTS`):
+    // the old 30% / 40% rings were under 3:1 on all 60 themes.
+    render(
+      <>
+        <Input aria-label="good" />
+        <Input invalid aria-label="bad" />
+      </>,
+    );
+    const good = screen.getByLabelText('good');
+    expect(good).toHaveClass('focus:ring-1', 'focus:border-accent-fg', 'focus:ring-accent-fg');
+    expect(good).not.toHaveClass('focus:border-accent', 'focus:ring-accent/30');
+    const bad = screen.getByLabelText('bad');
+    expect(bad).toHaveClass('focus:border-danger-fg', 'focus:ring-danger-fg');
+    expect(bad).not.toHaveClass('focus:border-danger', 'focus:ring-danger/40');
+  });
+
   it('lets a call-site className override the base height', () => {
     render(<Input size="lg" className="h-7" aria-label="o" />);
     const el = screen.getByLabelText('o');

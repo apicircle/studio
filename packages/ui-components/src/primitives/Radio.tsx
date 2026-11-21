@@ -33,14 +33,18 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(
         className={cn(
           'pointer-events-none absolute inset-0 rounded-full border transition-colors',
           'border-border bg-card',
-          'peer-checked:border-accent',
-          'peer-focus-visible:ring-2 peer-focus-visible:ring-accent/50',
+          // What says "chosen" and "focused" is the accent's readable colour
+          // (`accent-fg`), measured on every theme by apps/web's theme-contrast
+          // test: the bare accent's dot is under 3:1 on Ayu Light, and a ring at
+          // 50% of it under 3:1 on 51 themes.
+          'peer-checked:border-accent-fg',
+          'peer-focus-visible:ring-2 peer-focus-visible:ring-accent-fg',
           'peer-disabled:opacity-50',
         )}
       />
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 m-auto h-1.5 w-1.5 rounded-full bg-accent opacity-0 peer-checked:opacity-100"
+        className="pointer-events-none absolute inset-0 m-auto h-1.5 w-1.5 rounded-full bg-accent-fg opacity-0 peer-checked:opacity-100"
       />
     </span>
   );

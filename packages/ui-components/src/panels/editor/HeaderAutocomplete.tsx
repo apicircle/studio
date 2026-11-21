@@ -124,7 +124,7 @@ export function HeaderKeyAutocomplete({
         aria-controls={visible ? `${ariaLabel}-listbox` : undefined}
         autoComplete="off"
         spellCheck={false}
-        className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+        className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
       />
       <AnchoredPopover
         ref={listRef}

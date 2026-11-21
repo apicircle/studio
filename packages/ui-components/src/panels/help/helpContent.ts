@@ -30,7 +30,7 @@ export const HELP_SECTIONS: HelpSection[] = [
   {
     id: 'welcome',
     title: 'Welcome',
-    body: `API Circle Studio is a workspace for designing, running, sharing, and mocking HTTP request collections. It runs in the browser and as a desktop app, and ships a companion command-line tool.
+    body: `API Circle is a free workspace for designing, running, sharing, and mocking HTTP request collections. It runs in the browser and as a desktop app. The command-line tool and the MCP server are part of Lens, its paid features.
 
 ## The two-document workspace model
 
@@ -454,7 +454,7 @@ Worked example — Client Credentials:
     Scope:          reports:read
     Get token   ->  access token stored on the request, expiry tracked
 
-Once a token is on file, Send injects it as \`Authorization: Bearer ...\`. When the token is near expiry and a refresh token exists, Studio refreshes it automatically before the request goes out — you rarely press Refresh by hand. (Implicit grants have no refresh token, per the spec.) Authorization Code and PKCE need a browser redirect: on the [Desktop App](https://github.com/apicircle/studio/releases/latest) a loopback callback server catches it; on the web a popup window relays the result back over a BroadcastChannel.
+Once a token is on file, Send injects it as \`Authorization: Bearer ...\`. When the token is near expiry and a refresh token exists, Studio refreshes it automatically before the request goes out — you rarely press Refresh by hand. (Implicit grants have no refresh token, per the spec.) Authorization Code and PKCE need a browser redirect: on the [Desktop App](https://apicircle.dev/download) a loopback callback server catches it; on the web a popup window relays the result back over a BroadcastChannel.
 
 ## OAuth and the CLI — the limitation
 
@@ -790,7 +790,7 @@ What actually travels in \`workspace.json\`:
 
 The encryption is identical; only how the master key is protected differs:
 
-- **[Desktop](https://github.com/apicircle/studio/releases/latest)** — the key is wrapped by the OS keychain through Electron \`safeStorage\` (macOS Keychain, Windows Credential Manager, Linux libsecret). It never sits unprotected on disk, and a payload encrypted by one machine/user will not decrypt on another.
+- **[Desktop](https://apicircle.dev/download)** — the key is wrapped by the OS keychain through Electron \`safeStorage\` (macOS Keychain, Windows Credential Manager, Linux libsecret). It never sits unprotected on disk, and a payload encrypted by one machine/user will not decrypt on another.
 - **Web** — there is no OS keychain, so a workspace passphrase model is used: you set a passphrase of 12+ characters, the app derives the key from it, and holds the key in memory only for the session. After a reload you re-enter the passphrase.
 
 In both cases the passphrase and key are never written to Git and never persisted in plaintext. The trade-off: there is **no recovery** — lose the passphrase and the encrypted values cannot be read; teammates need the same passphrase to decrypt shared encrypted variables.`,
@@ -1118,7 +1118,7 @@ Snapshots live only on this machine. They are kept within a size budget — pick
   {
     id: 'mocks',
     title: 'Mock servers',
-    body: `A mock server stands in for a real API — describe the endpoints and Studio answers requests on \`localhost\`. Definitions are data and live in the synced doc; running one needs the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the VS Code extension.
+    body: `A mock server stands in for a real API — describe the endpoints and Studio answers requests on \`localhost\`. Definitions are data and live in the synced doc; running one needs the [Desktop App](https://apicircle.dev/download) or the VS Code extension.
 
 ## Creating a mock server
 
@@ -1160,7 +1160,7 @@ The **web app cannot run a mock server** — a browser tab cannot open a listeni
     VS Code       Start/Stop on a mock in the API Circle Mock view
                   (F6 / Shift+F6); its port shows in the status bar
 
-Whichever you use, point your requests at the printed \`localhost\` address. Don't have the desktop build yet? [Download the Desktop App](https://github.com/apicircle/studio/releases/latest).`,
+Whichever you use, point your requests at the printed \`localhost\` address. Don't have the desktop build yet? [Download the Desktop App](https://apicircle.dev/download).`,
     keywords: [
       'mock',
       'mock server',
@@ -1181,11 +1181,11 @@ Whichever you use, point your requests at the printed \`localhost\` address. Don
 
 ## Why running a mock needs the Desktop app or VS Code
 
-A server has to open a network port and listen on it, and a browser tab is not allowed to do that. So the **web app cannot run a mock** — it can only create and edit the definition, which is why the Mocks panel shows a "run it elsewhere" banner. To actually serve traffic, use the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the API Circle Studio extension for VS Code. The definition is the same either way; only the thing that runs it differs.
+A server has to open a network port and listen on it, and a browser tab is not allowed to do that. So the **web app cannot run a mock** — it can only create and edit the definition, which is why the Mocks panel shows a "run it elsewhere" banner. To actually serve traffic, use the [Desktop App](https://apicircle.dev/download) or the API Circle Studio extension for VS Code. The definition is the same either way; only the thing that runs it differs.
 
 ## Run a mock in the Desktop app
 
-[Grab the latest Desktop build](https://github.com/apicircle/studio/releases/latest), then open the Mocks panel, select the mock server, and press **Start**. Studio boots it and shows the address it is listening on:
+[Download the desktop app](https://apicircle.dev/download), then open the Mocks panel, select the mock server, and press **Start**. Studio boots it and shows the address it is listening on:
 
     Started "Payments mock" on http://127.0.0.1:4100
 
@@ -1231,7 +1231,7 @@ For each incoming request the mock checks, in order: validation rules, then resp
 - **"Port already in use"** — another process holds that port. Stop it, or give the mock a different Default port.
 - **A browser client gets a CORS error** — turn CORS on for the server: a toggle on the server card, or \`cors\` in the VS Code \`.mock.yaml\`.
 - **The mock stops answering** — the Desktop app or the VS Code window that ran it was closed. A mock runs only as long as its host is alive.
-- **Don't have the Desktop app?** [Download it from GitHub Releases](https://github.com/apicircle/studio/releases/latest).`,
+- **Don't have the Desktop app?** [Download it from apicircle.dev](https://apicircle.dev/download).`,
     keywords: [
       'mock runtime',
       'run mock',
@@ -1249,15 +1249,15 @@ For each incoming request the mock checks, in order: validation rules, then resp
   {
     id: 'desktop',
     title: 'Desktop App',
-    body: `The desktop app is the Electron build of API Circle Studio. It runs the same interface as the browser build and adds the things a browser tab cannot do — running mock servers, OS-keychain secret storage, and sending requests without browser CORS or stripped cookies.
+    body: `The desktop app runs the same interface as the browser build and adds the things a browser tab cannot do — running mock servers, OS-keychain secret storage, and sending requests without browser CORS or stripped cookies.
 
 ## Download
 
-[Get the latest build from GitHub Releases](https://github.com/apicircle/studio/releases/latest) — macOS, Windows, and Linux binaries are published on every release. Per-platform install steps live alongside each release.
+[Download the API Circle desktop app](https://apicircle.dev/download) for Windows, macOS or Linux. This free workspace is part of it and needs no account, and the download page gives each system's install steps.
 
-## Early Access — the desktop builds are not code-signed
+## The standalone desktop build is not code-signed
 
-API Circle Studio is pre-launch and self-funded. Code signing needs paid certificates that renew every year — an Apple Developer Program membership for macOS and an EV code-signing certificate for Windows — and the project cannot fund them yet. So the desktop binaries ship **unsigned**.
+The rest of this article is about the standalone desktop build published on this project's GitHub Releases, which installs as "API Circle Studio". Code signing needs paid certificates that renew every year — an Apple Developer Program membership for macOS and an EV code-signing certificate for Windows — so that build ships **unsigned**.
 
 That is expected, not a sign of a tampered download. What you will see:
 
@@ -1276,20 +1276,20 @@ If the app is still wedged, run the recursive variant with \`sudo\` — it clear
 
     sudo xattr -rd com.apple.quarantine /Applications/API\\ Circle\\ Studio.app
 
-If Terminal answers \`No such xattr\` the flag was already absent — ignore the message. You will need to repeat this step once after every auto-update until signed builds ship.
+If Terminal answers \`No such xattr\` the flag was already absent — ignore the message. You will need to repeat this step once after every auto-update of the standalone build.
 
-The binaries are built in the open by this repository's GitHub Actions, and nothing about being unsigned touches your workspace data. Per-platform steps live in the install guide on the GitHub Releases page. Signed builds will ship once the project can afford the certificates.
+The standalone binaries are built in the open by this repository's GitHub Actions, and nothing about being unsigned touches your workspace data.
 
 ## What the desktop app adds over the browser build
 
 - **Mock servers** — Start and Stop a mock from the Mocks panel; a browser tab cannot open a listening port.
-- **Lens-compatible workspace files** — open the same \`.apicircle\` workspace in API Circle Lens when you need the deprecated Studio MCP workflow now provided by Lens.
+- **Lens-compatible workspace files** — open the same \`.apicircle\` workspace with Lens, the paid features of the API Circle desktop app, when you need the MCP workflow that moved there from Studio.
 - **OS-keychain secrets** — the master key is wrapped by macOS Keychain, Windows Credential Manager, or Linux libsecret instead of a workspace passphrase.
 - **No browser limits** — requests send the \`Cookie\` header and are not blocked by CORS.
 
 ## Auto-update
 
-The desktop app checks for updates and shows a banner when one is ready — click **Restart to install**. Because the build is unsigned the OS may show its security warning again for the new binary; approve it once more. An update replaces the app binary in place and never touches your workspace.`,
+The desktop app checks for updates and shows a banner when one is ready — click **Restart to install**. On the unsigned standalone build the OS may show its security warning again for the new binary; approve it once more. An update replaces the app binary in place and never touches your workspace.`,
     keywords: [
       'desktop',
       'electron',
@@ -1486,7 +1486,7 @@ The passphrase does not match the one the encrypted values were created with. En
 
 ## Cookies are not being sent
 
-In the browser build the Fetch API strips the \`Cookie\` header. The [Desktop App](https://github.com/apicircle/studio/releases/latest) and the CLI do send it — run cookie-dependent requests there.
+In the browser build the Fetch API strips the \`Cookie\` header. The [Desktop App](https://apicircle.dev/download) and the CLI do send it — run cookie-dependent requests there.
 
 ## A variable is sent literally as \`{{NAME}}\`
 
@@ -1494,7 +1494,7 @@ No layer resolved it. Check the variable exists in an active environment, the co
 
 ## A request fails with a network or CORS error
 
-The target server is unreachable, or a browser CORS policy blocked it. Try the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the CLI (no browser CORS), and confirm the URL and that the host is up.
+The target server is unreachable, or a browser CORS policy blocked it. Try the [Desktop App](https://apicircle.dev/download) or the CLI (no browser CORS), and confirm the URL and that the host is up.
 
 ## "Couldn't load your workspace"
 
@@ -1508,7 +1508,7 @@ A workspace pushed to Git is safe there whichever you pick: connect the reposito
 
 ## A mock server will not start
 
-Common causes: the port is already in use (stop the other server, or give the mock a different Default port); the spec failed to parse (check the OpenAPI / Postman / Insomnia text is valid); or an OAuth2 callback never fired (browser-redirect grants need the [Desktop App](https://github.com/apicircle/studio/releases/latest)).
+Common causes: the port is already in use (stop the other server, or give the mock a different Default port); the spec failed to parse (check the OpenAPI / Postman / Insomnia text is valid); or an OAuth2 callback never fired (browser-redirect grants need the [Desktop App](https://apicircle.dev/download)).
 
 ## A plan step fails but the run continues
 

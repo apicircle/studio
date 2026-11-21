@@ -275,7 +275,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void onSearch();
               }}
-              className="h-8 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-8 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
             />
             <button
               type="button"
@@ -1694,7 +1694,7 @@ function RepoCombobox({
             aria-expanded={showList}
             role="combobox"
             disabled={loading}
-            className="h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
+            className="h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none disabled:opacity-50"
           />
           {showList && repos.length > 0 && (
             <ul
@@ -1783,7 +1783,7 @@ function BranchPicker({
             value={selected}
             onChange={(e) => onPick(e.target.value)}
             aria-label="Pick a branch"
-            className="h-8 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-8 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           >
             {branches.map((b) => (
               <option key={b.name} value={b.name}>
@@ -1861,7 +1861,7 @@ function PinPicker({
             checked={pinChoice === 'currentVersion'}
             onChange={() => onPinChoiceChange('currentVersion')}
             aria-label="Pin to source currentVersion"
-            style={{ accentColor: 'rgb(var(--accent))' }}
+            style={{ accentColor: 'rgb(var(--accent-fg))' }}
           />
           {probe.currentVersion
             ? `Pin to currentVersion (v${probe.currentVersion})`
@@ -1876,7 +1876,7 @@ function PinPicker({
             onChange={() => onPinChoiceChange('specific')}
             disabled={sortedVersions.length === 0}
             aria-label="Pin to a specific version"
-            style={{ accentColor: 'rgb(var(--accent))' }}
+            style={{ accentColor: 'rgb(var(--accent-fg))' }}
           />
           Pin to a specific version
           {sortedVersions.length === 0 && (
@@ -1888,7 +1888,7 @@ function PinPicker({
             value={specificPin || sortedVersions[0]}
             onChange={(e) => onSpecificPinChange(e.target.value)}
             aria-label="Specific version to pin"
-            className="ml-5 h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+            className="ml-5 h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
           >
             {sortedVersions.map((v) => (
               <option key={v} value={v}>
@@ -1970,7 +1970,7 @@ function RequiredSecretKeysPicker({
                 onChange={(e) => onChange({ ...values, [meta.id]: e.target.value })}
                 placeholder="Skip to fill later"
                 aria-label={`Value for ${meta.label || meta.id}`}
-                className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
               />
               <button
                 type="button"
@@ -2021,7 +2021,7 @@ function ManualLinkInputs({
           onChange={(e) => setRepo(e.target.value)}
           placeholder={REPO_PLACEHOLDER[host]}
           aria-label="Linked repo full name"
-          className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -2034,7 +2034,7 @@ function ManualLinkInputs({
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
             aria-label="Linked branch"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
         <div>
@@ -2047,7 +2047,7 @@ function ManualLinkInputs({
             onChange={(e) => setPin(e.target.value)}
             placeholder="1.0.0"
             aria-label="Pin version"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
       </div>
@@ -2173,7 +2173,7 @@ function RequiredKeyRow({
             onChange={(e) => setValue(e.target.value)}
             placeholder="value"
             aria-label={`Value for ${keyId}`}
-            className="h-6 w-32 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+            className="h-6 w-32 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === 'Enter') void onSave();
               if (e.key === 'Escape') setEditing(false);
@@ -2284,7 +2284,7 @@ function LinkSessionPicker({
             name="link-session-mode"
             checked={mode === 'workspace'}
             onChange={() => onModeChange('workspace')}
-            className="mt-0.5 accent-accent"
+            className="mt-0.5 accent-accent-fg"
           />
           <div>
             <div className="text-text-primary">Use workspace session</div>
@@ -2300,7 +2300,7 @@ function LinkSessionPicker({
             name="link-session-mode"
             checked={mode === 'dedicated'}
             onChange={() => onModeChange('dedicated')}
-            className="mt-0.5 accent-accent"
+            className="mt-0.5 accent-accent-fg"
           />
           <div className="min-w-0 flex-1">
             <div className="text-text-primary">Add a dedicated session</div>
@@ -2315,7 +2315,7 @@ function LinkSessionPicker({
                 onChange={(e) => onTokenChange(e.target.value)}
                 placeholder="ghp_… or github_pat_…"
                 aria-label="Dedicated linking session PAT"
-                className="mt-1.5 h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                className="mt-1.5 h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
               />
             )}
           </div>
@@ -2525,7 +2525,7 @@ function DedicatedTokenForm({
         onChange={(e) => onTokenChange(e.target.value)}
         placeholder="ghp_… or github_pat_…"
         aria-label="Dedicated linking session PAT"
-        className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+        className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
       />
       {error && (
         <p className="text-xs text-danger" role="alert">

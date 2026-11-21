@@ -77,7 +77,7 @@ export async function launchElectron(opts: LaunchOpts = {}): Promise<{
   }
   const window = await app.firstWindow();
   // Hydration completion sentinel — same wait the web app fixture uses.
-  await expect(window.getByText('API Circle Studio', { exact: true })).toBeVisible({
+  await expect(window.getByText('API Circle', { exact: true })).toBeVisible({
     timeout: 30_000,
   });
   // Suppress the first-run onboarding tour. It renders a full-screen
@@ -92,7 +92,7 @@ export async function launchElectron(opts: LaunchOpts = {}): Promise<{
     }
   });
   await window.reload();
-  await expect(window.getByText('API Circle Studio', { exact: true })).toBeVisible({
+  await expect(window.getByText('API Circle', { exact: true })).toBeVisible({
     timeout: 30_000,
   });
   return { app, window, userDataDir };

@@ -190,7 +190,7 @@ export function CreateMockServerModal() {
               placeholder="Payments mock"
               aria-label="Mock server name"
               autoFocus
-              className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
             />
           </div>
 
@@ -259,7 +259,7 @@ export function CreateMockServerModal() {
                     value={assetId}
                     onChange={(ev) => setAssetId(ev.target.value)}
                     aria-label="Spec asset"
-                    className="h-7 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   >
                     <option value="">Select a spec…</option>
                     {specAssets.map((f) => (
@@ -300,7 +300,7 @@ export function CreateMockServerModal() {
                     setSpecKind(ev.target.value as 'openapi' | 'postman' | 'insomnia')
                   }
                   aria-label="Spec source kind"
-                  className="h-7 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                  className="h-7 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
                 >
                   <option value="openapi">OpenAPI</option>
                   <option value="postman">Postman</option>
@@ -311,7 +311,7 @@ export function CreateMockServerModal() {
                     value={specFormat}
                     onChange={(ev) => setSpecFormat(ev.target.value as 'json' | 'yaml')}
                     aria-label="OpenAPI spec format"
-                    className="h-7 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   >
                     <option value="json">JSON</option>
                     <option value="yaml">YAML</option>
@@ -324,7 +324,7 @@ export function CreateMockServerModal() {
                 placeholder="Paste the spec content here…"
                 aria-label="Spec text"
                 rows={10}
-                className="w-full resize-y rounded-sm border border-border bg-card px-2 py-1 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                className="w-full resize-y rounded-sm border border-border bg-card px-2 py-1 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
               />
             </div>
           )}

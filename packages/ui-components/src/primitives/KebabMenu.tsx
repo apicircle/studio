@@ -274,7 +274,7 @@ export function KebabMenu({
                     : item.tone === 'danger'
                       ? 'text-danger hover:bg-danger/10 focus:bg-danger/10'
                       : 'text-text-primary hover:bg-surface focus:bg-surface',
-                  'focus:outline-none focus:ring-1 focus:ring-accent/40',
+                  'focus:outline-none focus:ring-1 focus:ring-accent-fg',
                 )}
               >
                 {item.icon && (

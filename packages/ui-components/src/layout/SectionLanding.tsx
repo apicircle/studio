@@ -84,10 +84,13 @@ export function SectionLanding() {
                 className={cn(
                   'flex flex-col items-start gap-2 rounded-md border border-border bg-surface p-4 text-left transition-colors',
                   'hover:border-accent/50 hover:bg-accent/5',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70',
+                  // The ring and the icon take the accent's readable colour
+                  // (`accent-fg`), measured on every theme: a ring at 70% of the
+                  // accent is under 3:1 on 22, the bare accent icon on Ayu Light.
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fg',
                 )}
               >
-                <Icon size={22} className="text-accent" />
+                <Icon size={22} className="text-accent-fg" />
                 <span className="text-sm font-medium text-text-primary">{section.label}</span>
                 {section.description && (
                   <span className="text-xs text-text-muted">{section.description}</span>

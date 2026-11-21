@@ -196,7 +196,7 @@ function SectionGroup({
           aria-current={current ? 'true' : undefined}
           onClick={onPress}
           variant={current ? 'primary' : 'ghost'}
-          leftIcon={<Icon size={14} aria-hidden="true" className="shrink-0 text-accent" />}
+          leftIcon={<Icon size={14} aria-hidden="true" className="shrink-0 text-accent-fg" />}
           rightIcon={
             <ChevronRight
               size={14}
@@ -208,13 +208,13 @@ function SectionGroup({
                 unfolded
                   ? 'rotate-180 group-hover/mode:-translate-x-0.5'
                   : 'group-hover/mode:translate-x-0.5',
-                current ? 'text-accent' : 'text-text-muted group-hover/mode:text-accent',
+                current ? 'text-accent-fg' : 'text-text-muted group-hover/mode:text-accent-fg',
               )}
             />
           }
           className={cn(
             'group/mode px-2 font-semibold active:bg-accent/30',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-1 focus-visible:ring-offset-card',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-1 focus-visible:ring-offset-card',
             // Both neutral states carry the same strong outline: it is what
             // says "a mode switch" apart from the tabs, which have none.
             !current && 'border-border-strong hover:bg-accent/10',
@@ -261,14 +261,16 @@ function PanelTab({ tab }: { tab: VisibleTab }) {
       type="button"
       data-tour={`nav-${id}`}
       onClick={() => setActivePanel(id)}
-      // Always-visible focus ring — themes can override `accent`,
-      // so we use accent at high opacity to remain visible on every
-      // theme palette (audit gap A17).
+      // Always-visible focus ring (audit gap A17). Its colour, and the active
+      // label's, is the accent's generated readable colour (`accent-fg`): the
+      // bare accent as a label on its 15% tint is under 4.5:1 on 34 themes, and
+      // a ring at 70% of it is under 3:1 against the bar on 23. Measured on every
+      // theme by apps/web's theme-contrast.test.ts.
       className={cn(
         'inline-flex h-7 items-center gap-2 rounded-sm px-3 text-xs font-medium transition-colors',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-1 focus-visible:ring-offset-card',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-1 focus-visible:ring-offset-card',
         active
-          ? 'bg-accent/15 text-accent border border-accent/40'
+          ? 'bg-accent/15 text-accent-fg border border-accent/40'
           : 'text-text-muted hover:text-text-primary hover:bg-surface border border-transparent',
       )}
       aria-current={active ? 'page' : undefined}

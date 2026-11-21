@@ -23,8 +23,11 @@ const workspaceAccess = import.meta.env.DEV
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('#root not found');
 
+// The standalone app (this web build, which the desktop app also loads) shows
+// the header's "Lens" link to the website's page about the paid features. The
+// Lens editions render `<App>` themselves and leave it out.
 createRoot(rootEl).render(
   <StrictMode>
-    <App workspaceAccess={workspaceAccess} />
+    <App workspaceAccess={workspaceAccess} lensLink />
   </StrictMode>,
 );

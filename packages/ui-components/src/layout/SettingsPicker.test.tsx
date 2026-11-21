@@ -59,7 +59,7 @@ describe('SettingsPicker — Community section', () => {
     // The rest of the popover is unchanged: it ends with the snapshot cap.
     expect(screen.getByRole('radiogroup', { name: 'Workspace snapshot cap' })).toBeInTheDocument();
     expect(screen.queryByText('Community')).toBeNull();
-    expect(screen.queryByText(/API Circle Studio is open source/)).toBeNull();
+    expect(screen.queryByText(/free workspace is open source/)).toBeNull();
     expect(screen.queryByText(/Studio helping you ship/)).toBeNull();
     expect(screen.queryByRole('link', { name: /Star on GitHub/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Refresh community stats/ })).toBeNull();

@@ -30,7 +30,7 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     // Brand text appears once the workspace has hydrated from IDB.
     await page
-      .getByText('API Circle Studio', { exact: true })
+      .getByText('API Circle', { exact: true })
       .waitFor({ state: 'visible', timeout: 30_000 });
 
     // Trigger Monaco's lazy import. The Editor's Body tab → JSON radio

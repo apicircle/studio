@@ -84,7 +84,7 @@ test.describe('Workspace management', () => {
         .first()
         .textContent();
       await app.reload();
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       const after = await app
         .getByRole('button', { name: /^Switch workspace/ })
         .first()
@@ -107,7 +107,7 @@ test.describe('Workspace management', () => {
       await expect(mocksTab).toHaveAttribute('aria-current', 'page');
 
       await app.reload();
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 
       await expect(mocksTab).toHaveAttribute('aria-current', 'page');
       await expect(app.getByRole('button', { name: 'Editor', exact: true })).not.toHaveAttribute(
@@ -130,7 +130,7 @@ test.describe('Workspace management', () => {
     await app.goto(initialUrl);
     await app.goBack();
     await app.goForward();
-    await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
   });
 
   // ---------------------------------------------------------------
@@ -299,7 +299,7 @@ test.describe('Workspace management', () => {
         ).toBeVisible({ timeout: 5_000 });
 
         await app.reload();
-        await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+        await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 
         await openSwitcher(app);
         const optionNames = await app
@@ -485,7 +485,7 @@ test.describe('Workspace management', () => {
       // dragging the dropped request along.
       await app.waitForTimeout(300);
       await app.reload();
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
     },
   );
 });
@@ -569,8 +569,8 @@ test.describe('Workspace management — multi-tab', () => {
     tc(id('Multi-Tab'), 'two tabs of the same app load independently'),
     async ({ twoTabs }) => {
       const { tabA, tabB } = twoTabs;
-      await expect(tabA.getByText('API Circle Studio', { exact: true })).toBeVisible();
-      await expect(tabB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(tabA.getByText('API Circle', { exact: true })).toBeVisible();
+      await expect(tabB.getByText('API Circle', { exact: true })).toBeVisible();
     },
   );
 

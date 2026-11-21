@@ -36,7 +36,7 @@ export function SecretInput({
         aria-label={ariaLabel}
         autoComplete="off"
         spellCheck={false}
-        className="h-8 w-full rounded-sm border border-border bg-card pl-2 pr-8 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+        className="h-8 w-full rounded-sm border border-border bg-card pl-2 pr-8 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
       />
       <button
         type="button"

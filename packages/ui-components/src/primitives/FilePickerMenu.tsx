@@ -195,7 +195,7 @@ export function FilePickerMenu({
         );
   const triggerToneClass = disabled
     ? 'text-text-faint cursor-not-allowed'
-    : 'text-text-muted hover:border-accent hover:text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
+    : 'text-text-muted hover:border-accent hover:text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg';
 
   const icon =
     triggerIcon === undefined ? (
@@ -269,7 +269,7 @@ export function FilePickerMenu({
                 setOpen(false);
                 onPickLocal();
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent/40"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent-fg"
             >
               <Upload size={12} aria-hidden="true" className="shrink-0 text-text-faint" />
               Upload new file…
@@ -293,7 +293,7 @@ export function FilePickerMenu({
                       onPickLibrary(file.id);
                     }}
                     title={`${file.filename} · ${file.mimeType}`}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent/40"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent-fg"
                   >
                     <FileArchive
                       size={12}

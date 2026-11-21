@@ -75,11 +75,13 @@ describe('assertSecretsProtected — web build (no passphrase, no desktop)', () 
   });
 
   it('error message guides the user to set a passphrase or switch to Desktop', async () => {
-    try {
-      await assertSecretsProtected(null);
-    } catch (err) {
-      expect((err as Error).message).toMatch(/passphrase/i);
-      expect((err as Error).message).toMatch(/Desktop/i);
-    }
+    const err = await assertSecretsProtected(null).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SecretsNotProtectedError);
+    expect((err as Error).message).toMatch(/passphrase/i);
+    expect((err as Error).message).toMatch(/Desktop/i);
+    // The desktop app is fetched from the website's download page, never a
+    // GitHub release of the standalone build.
+    expect((err as Error).message).toContain('(https://apicircle.dev/download)');
+    expect((err as Error).message).not.toContain('github.com');
   });
 });

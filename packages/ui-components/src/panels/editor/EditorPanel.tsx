@@ -786,8 +786,8 @@ function RequestNameInput({ requestId, initial }: { requestId: string; initial: 
         className={cn(
           'w-full rounded-sm border bg-transparent px-2 py-1 text-base font-medium text-text-primary focus:outline-none focus:ring-1',
           duplicate
-            ? 'border-danger focus:border-danger focus:ring-danger/40'
-            : 'border-transparent hover:border-border focus:border-accent focus:ring-accent/30',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-transparent hover:border-border focus:border-accent-fg focus:ring-accent-fg',
         )}
       />
       {duplicate ? (

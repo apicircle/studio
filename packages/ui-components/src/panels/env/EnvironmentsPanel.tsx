@@ -121,7 +121,7 @@ export function EnvironmentsPanel() {
             }
           }}
           aria-label="Environment name"
-          className="rounded-sm border border-transparent bg-transparent px-2 py-1 text-base font-medium text-text-primary hover:border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="rounded-sm border border-transparent bg-transparent px-2 py-1 text-base font-medium text-text-primary hover:border-border focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
         />
         {layerPos >= 0 ? (
           <span
@@ -376,8 +376,8 @@ function VariableRow({
           className={cn(
             'h-7 min-w-0 rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
             duplicate
-              ? 'border-danger focus:border-danger focus:ring-danger/40'
-              : 'border-border focus:border-accent focus:ring-accent/30',
+              ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+              : 'border-border focus:border-accent-fg focus:ring-accent-fg',
           )}
         />
         {row.encrypted && row.secretKeyId ? (
@@ -409,7 +409,7 @@ function VariableRow({
             onBlur={onValueBlur}
             placeholder="value"
             aria-label="Variable value"
-            className="h-7 min-w-0 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-7 min-w-0 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
           />
         )}
         {row.encrypted && row.secretKeyId ? (
@@ -532,7 +532,7 @@ function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter labels…"
             aria-label="Filter labels"
-            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
           {filtered.length === 0 ? (
             <p className="px-1 py-2 text-xs text-text-dim">
@@ -579,7 +579,7 @@ function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="Label (e.g. PROD_API_TOKEN)"
             aria-label="Secret key label"
-            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
           <input
             type="password"
@@ -587,7 +587,7 @@ function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
             onChange={(e) => setNewValue(e.target.value)}
             placeholder="Value (stays in your local vault)"
             aria-label="Secret key value"
-            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
           <div className="flex gap-1">
             <button

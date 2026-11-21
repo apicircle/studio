@@ -59,7 +59,7 @@ async function flushPersistAndReload(app: Page): Promise<void> {
     await w.__apicircleFlushPersist?.();
   });
   await app.reload();
-  await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+  await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 }
 
 test.describe('Context extraction (P16)', () => {

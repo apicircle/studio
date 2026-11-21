@@ -317,7 +317,7 @@ function ServerSummary({
           value={server.name}
           onChange={(e) => setMockServerName(server.id, e.target.value)}
           aria-label="Mock server name"
-          className="mt-1 h-8 w-full max-w-md rounded-sm border border-border bg-card px-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+          className="mt-1 h-8 w-full max-w-md rounded-sm border border-border bg-card px-2 text-sm text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
       <MockRunBar
@@ -573,7 +573,7 @@ function PortSection({
               commit((e.target as HTMLInputElement).value);
             }
           }}
-          className="h-7 w-32 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-32 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
         {isRunning && runtime ? (
           <span className="text-[0.6875rem] text-text-muted">
@@ -642,7 +642,7 @@ function CorsSection({ server }: { server: MockServer }) {
             checked={server.cors.enabled}
             onChange={(e) => setEnabled(e.target.checked)}
             aria-label="Enable CORS"
-            className="h-3.5 w-3.5 cursor-pointer accent-accent"
+            className="h-3.5 w-3.5 cursor-pointer accent-accent-fg"
           />
           {server.cors.enabled ? 'Enabled' : 'Disabled'}
         </label>
@@ -661,7 +661,7 @@ function CorsSection({ server }: { server: MockServer }) {
               }}
               placeholder="https://app.example.com or *"
               aria-label="Add allowed origin"
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
             />
             <DisabledReason reason={'Type an origin first.'}>
               <button

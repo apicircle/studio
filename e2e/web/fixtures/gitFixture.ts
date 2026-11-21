@@ -215,7 +215,7 @@ export const test = base.extend<GitFixture>({
       }
     });
     await page.goto('/');
-    await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(page.getByText('API Circle', { exact: true })).toBeVisible();
     // Pre-seed an OAuth token in localStorage so the app sees a
     // "logged in" GitHub session — sidesteps the device-flow UI.
     await page.evaluate(() => {

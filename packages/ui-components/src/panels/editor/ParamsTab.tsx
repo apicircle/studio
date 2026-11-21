@@ -213,7 +213,7 @@ function PathParams({ placeholders, values, onChange }: PathParamsProps) {
             onChange={(e) => update(name, e.target.value)}
             placeholder={`Value for ${name}`}
             aria-label={`Path param ${name} value`}
-            className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
           />
         </div>
       ))}

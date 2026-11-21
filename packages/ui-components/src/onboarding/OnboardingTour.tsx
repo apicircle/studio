@@ -49,7 +49,7 @@ interface TourStep extends SharingTagged {
 const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'welcome',
-    title: 'Welcome to API Circle Studio',
+    title: 'Welcome to API Circle',
     body: "Take a two-minute tour of the workspace. We'll stop on every panel and highlight what each one does. Use Next and Back to move — or press Esc to leave the tour anytime.",
   },
   {

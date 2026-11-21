@@ -24,6 +24,7 @@
 // change in behaviour.
 
 import type { SecretCryptoMeta } from '@apicircle/shared';
+import { DESKTOP_DOWNLOAD_URL } from '../primitives/externalLinks';
 
 interface DesktopBridgeShape {
   isEncryptionAvailable: () => Promise<boolean>;
@@ -43,7 +44,7 @@ export class SecretsNotProtectedError extends Error {
     super(
       'Secrets cannot be added on the web build until you set a workspace passphrase. ' +
         'Open the Secret Vault → "Set passphrase" first, or switch to the Desktop App ' +
-        '(https://github.com/apicircle/studio/releases/latest) where secrets are ' +
+        `(${DESKTOP_DOWNLOAD_URL}) where secrets are ` +
         'protected by the OS keychain.',
     );
     this.name = 'SecretsNotProtectedError';

@@ -13,6 +13,22 @@
  */
 export const PRICING_URL = 'https://apicircle.dev/pricing';
 
+/**
+ * The website's page about Lens: the paid features of the API Circle desktop
+ * app (the Code graph, PR Review drift, the Assistant, MCP and the CLI), what
+ * each plan includes and how it is delivered. The standalone app's header links
+ * here (`TopBar`'s `lensLink`).
+ */
+export const LENS_URL = 'https://apicircle.dev/lens';
+
+/**
+ * Where the desktop app is downloaded: the website's download page. It offers
+ * the API Circle desktop app, which includes this free workspace, with each
+ * system's own channel and install steps. Every "get the desktop app" link in
+ * the UI and the Help Center points here.
+ */
+export const DESKTOP_DOWNLOAD_URL = 'https://apicircle.dev/download';
+
 const GITHUB_REPO_BASE = 'https://github.com/apicircle/studio';
 
 /** Canonical owner/repo slug. Used by the GitHub REST client + tests. */
@@ -35,9 +51,6 @@ export const GITHUB_ISSUES_NEW_URL = `${GITHUB_REPO_BASE}/issues/new/choose`;
 /** Releases index — full changelog history. */
 export const GITHUB_RELEASES_URL = `${GITHUB_REPO_BASE}/releases`;
 
-/** Most-recent release. Desktop downloads land here. */
-export const GITHUB_RELEASES_LATEST_URL = `${GITHUB_REPO_BASE}/releases/latest`;
-
 /** Contributors graph. */
 export const GITHUB_CONTRIBUTORS_URL = `${GITHUB_REPO_BASE}/graphs/contributors`;
 
@@ -53,8 +66,9 @@ export const GITHUB_DISCUSSIONS_URL = `${GITHUB_REPO_BASE}/discussions`;
 export const GITHUB_API_REPO_URL = `https://api.github.com/repos/${GITHUB_REPO_SLUG}`;
 
 /**
- * Legacy alias — many call sites still import `DESKTOP_RELEASES_URL` from
- * `desktopDownload.tsx`. That file now re-exports this constant. New code
- * should reach for `GITHUB_RELEASES_LATEST_URL` directly.
+ * Legacy alias, kept because the package exports it (`DESKTOP_RELEASES_URL`
+ * from `desktopDownload.tsx`). It used to name the latest GitHub release and
+ * now names the download page. New code should reach for
+ * `DESKTOP_DOWNLOAD_URL` directly.
  */
-export const DESKTOP_RELEASES_URL = GITHUB_RELEASES_LATEST_URL;
+export const DESKTOP_RELEASES_URL = DESKTOP_DOWNLOAD_URL;

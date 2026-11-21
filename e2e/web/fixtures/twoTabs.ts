@@ -35,11 +35,11 @@ export const test = base.extend<TwoTabsFixture>({
     // context.
     const tabA = page;
     await tabA.goto('/');
-    await expect(tabA.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(tabA.getByText('API Circle', { exact: true })).toBeVisible();
 
     const tabB = await context.newPage();
     await tabB.goto('/');
-    await expect(tabB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(tabB.getByText('API Circle', { exact: true })).toBeVisible();
 
     await use({ tabA, tabB });
 
@@ -59,8 +59,8 @@ export const test = base.extend<TwoTabsFixture>({
     const pageB = await ctxB.newPage();
     await pageA.goto('/');
     await pageB.goto('/');
-    await expect(pageA.getByText('API Circle Studio', { exact: true })).toBeVisible();
-    await expect(pageB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(pageA.getByText('API Circle', { exact: true })).toBeVisible();
+    await expect(pageB.getByText('API Circle', { exact: true })).toBeVisible();
 
     await use({ ctxA, ctxB, pageA, pageB });
 

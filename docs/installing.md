@@ -1,5 +1,12 @@
 # Installing API Circle Studio (Early Access)
 
+> **Looking for the desktop app?** Get the API Circle desktop app from
+> **<https://apicircle.dev/download>**. It includes this free workspace, which
+> needs no account, and the download page gives each system's install steps.
+> The app's own links (the Help Center, the Mocks panel) lead there. This page
+> is only for the standalone desktop build that this repository's GitHub
+> Actions publish, which installs as "API Circle Studio".
+
 > ⚠️ **Early Access — the desktop builds are not code-signed.**
 > API Circle Studio is a pre-launch, self-funded project. Code signing requires
 > paid certificates that renew every year — an Apple Developer Program

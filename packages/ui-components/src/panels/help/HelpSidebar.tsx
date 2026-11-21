@@ -37,7 +37,7 @@ export function HelpSidebar() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search help…"
           aria-label="Search help"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
       <nav className="flex-1 overflow-y-auto">

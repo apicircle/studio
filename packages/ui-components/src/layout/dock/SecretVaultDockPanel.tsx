@@ -342,7 +342,7 @@ function VaultTab() {
               onChange={(e) => setDraftLabel(e.target.value)}
               placeholder="LABEL"
               aria-label="New secret label"
-              className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
             />
             <input
               type="password"
@@ -351,7 +351,7 @@ function VaultTab() {
               onChange={(e) => setDraftValue(e.target.value)}
               placeholder="value"
               aria-label="New secret value"
-              className="h-7 min-w-0 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 min-w-0 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void submit();
                 if (e.key === 'Escape') {
@@ -578,7 +578,7 @@ function ProvideSlotRow({ slot }: { slot: SecretKeyMeta }) {
         onChange={(e) => setValue(e.target.value)}
         placeholder="value"
         aria-label={`Value for ${slot.label}`}
-        className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !submitting && value) void submit();
         }}
@@ -642,7 +642,7 @@ function ProvideLinkedSlotRow({
         onChange={(e) => setValue(e.target.value)}
         placeholder="value"
         aria-label={`Value for ${label} (linked)`}
-        className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !submitting && value) void submit();
         }}
@@ -1557,7 +1557,7 @@ function ConnectForm({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               aria-label="Atlassian account email"
-              className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+              className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent-fg focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !submitting) void submit();
               }}
@@ -1582,7 +1582,7 @@ function ConnectForm({
                 : `${GIT_HOST_LABELS[host]} token`
           }
           aria-label={tokenFieldName(host, bitbucketKind)}
-          className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !submitting) void submit();
           }}
@@ -1605,7 +1605,7 @@ function ConnectForm({
               placeholder={baseUrlField.placeholder}
               aria-required={baseUrlField.required}
               aria-describedby="host-base-url-hint"
-              className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+              className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent-fg focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !submitting) void submit();
               }}
@@ -2235,7 +2235,7 @@ function ActiveSessionCard({
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="Atlassian account email"
               aria-label="New Atlassian account email"
-              className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+              className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent-fg focus:outline-none"
             />
           )}
           <input
@@ -2248,7 +2248,7 @@ function ActiveSessionCard({
                 : 'New PAT (must belong to the same account)'
             }
             aria-label={tokenFieldName(host, bitbucketKind, 'New ')}
-            className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
           <div className="flex gap-2">
             <DisabledReason reason={updateBlocker}>

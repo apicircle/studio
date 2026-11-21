@@ -176,6 +176,39 @@ describe('WorkspaceStatusChip', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent(
       "Bitbucket isn't available on this plan. Open Workspace for details.",
     );
+    // The warning label in the tone's readable colour: the bare warning on its
+    // tint is under 4.5:1 on 21 themes (measured in apps/web's theme-contrast test).
+    expect(chip()).toHaveClass('bg-warning/10', 'text-warning-fg');
+    expect(chip()).not.toHaveClass('text-warning');
+  });
+
+  it('draws its tone-coloured parts in readable colours, the count on the bar on the Workspace page', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderWithStore(<WorkspaceStatusChip />);
+    seed({ session: 'github', repo: true, branch: true });
+    markAllPulled();
+    act(() => {
+      useWorkspaceStore.getState().addRequest(null);
+    });
+    settleCount();
+    const count = () => chip().querySelector('[data-unpushed-count]');
+    expect(count()).toHaveTextContent(/\d+ unpushed/);
+    // Its focus ring is the accent's readable colour, never 70% of the accent.
+    expect(chip()).toHaveClass('focus-visible:ring-accent-fg');
+    expect(chip()).not.toHaveClass('focus-visible:ring-accent/70');
+    // Elsewhere the count is a tint of the accent on the chip's own surface.
+    expect(count()).toHaveClass('bg-accent/15', 'text-accent-fg');
+    expect(count()).not.toHaveClass('bg-card');
+
+    act(() => {
+      useWorkspaceStore.getState().setActivePanel('workspace');
+    });
+    // On the Workspace page the chip is the accent's tint, so the count drops a
+    // second tint for the bar, and both labels take the readable accent.
+    expect(chip()).toHaveClass('bg-accent/10', 'text-accent-fg');
+    expect(chip()).not.toHaveClass('text-accent');
+    expect(count()).toHaveClass('bg-card', 'text-accent-fg');
+    expect(count()).not.toHaveClass('bg-accent/15');
   });
 
   it('opens the Workspace page on click and marks itself current there', async () => {

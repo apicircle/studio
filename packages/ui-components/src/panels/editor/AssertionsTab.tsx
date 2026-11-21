@@ -372,7 +372,7 @@ function ExpectedInput({
         className={cn(
           'h-7 w-full rounded-sm border bg-card px-2 text-xs',
           error
-            ? 'border-danger focus:border-danger focus:outline-none focus:ring-1 focus:ring-danger/40'
+            ? 'border-danger focus:border-danger-fg focus:outline-none focus:ring-1 focus:ring-danger-fg'
             : 'border-border',
         )}
       />

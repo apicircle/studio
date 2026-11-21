@@ -445,7 +445,7 @@ export function ImportModal({
             placeholder='Paste Postman / Insomnia / API Circle JSON, an OpenAPI spec (JSON or YAML), or a "curl …" command'
             spellCheck={false}
             aria-label="Import source"
-            className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
           />
           <p className="text-xs text-text-dim">
             Auto-detect picks the right parser; force a format above if a file looks ambiguous.
@@ -764,7 +764,7 @@ function BindStep({
               placeholder="Value (leave blank to skip)"
               aria-label={`Secret value for ${b.label}`}
               disabled={binding || vaultBlocked}
-              className="h-8 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-8 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg disabled:cursor-not-allowed disabled:opacity-60"
             />
           </li>
         ))}

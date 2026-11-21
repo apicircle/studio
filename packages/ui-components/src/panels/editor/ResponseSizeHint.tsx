@@ -51,7 +51,7 @@ export function ResponseSizeHint({ body, contentType }: ResponseSizeHintProps) {
           onClick={() => setOpenCandidate(best)}
           className={cn(
             'inline-flex items-center gap-1 rounded-sm border border-accent/30 bg-accent/5 px-1.5 py-0.5',
-            'text-[0.6875rem] text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent/50',
+            'text-[0.6875rem] text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent-fg',
           )}
           aria-label={`Preview as ${TRANSFORM_FORMAT_LABELS[best.format]} — ${best.percentSaved}% smaller than minified JSON`}
           title={describeAllCandidates(savings.candidates)}

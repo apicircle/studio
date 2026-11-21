@@ -219,7 +219,7 @@ test.describe('A11y — workbook AL rows', () => {
     async ({ app }) => {
       await app.emulateMedia({ reducedMotion: 'reduce' });
       await app.reload();
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       const longAnim = await app.evaluate(() => {
         const sidebar = document.querySelector('[role="navigation"]') ?? document.body;
         const cs = getComputedStyle(sidebar);

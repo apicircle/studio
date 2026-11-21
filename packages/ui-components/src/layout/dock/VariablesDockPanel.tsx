@@ -176,7 +176,7 @@ export function VariablesDockPanel() {
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter by name or value…"
           aria-label="Filter variables"
-          className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
         />
       </div>
 

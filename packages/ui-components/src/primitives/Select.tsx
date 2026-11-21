@@ -39,7 +39,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           // Text color is inherited so consumers can override per-value
           // (e.g. method-color tints in the URL bar). The body inherits
           // `text-text-primary`, which is the right default fallback.
-          'w-full appearance-none rounded-sm border border-border bg-card pl-2 pr-7 focus:border-accent focus:outline-none',
+          'w-full appearance-none rounded-sm border border-border bg-card pl-2 pr-7 focus:border-accent-fg focus:outline-none',
           SIZE_CLASS[size],
           className,
         )}

@@ -35,11 +35,14 @@ export function WorkspaceStatusChip() {
         aria-current={onWorkspace ? 'page' : undefined}
         className={cn(
           'inline-flex h-8 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70',
+          // Tone-coloured labels take each tone's generated readable colour
+          // (`-fg`), which holds AA on its own tint in every theme; the bare
+          // accent and warning do not (under 2:1 on Ayu Light).
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fg',
           onWorkspace
-            ? 'border-accent/40 bg-accent/10 text-accent'
+            ? 'border-accent/40 bg-accent/10 text-accent-fg'
             : status.kind === 'locked'
-              ? 'border-warning/40 bg-warning/10 text-warning hover:border-warning/60'
+              ? 'border-warning/40 bg-warning/10 text-warning-fg hover:border-warning/60'
               : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
         )}
       >
@@ -60,7 +63,16 @@ export function WorkspaceStatusChip() {
           <span className="hidden md:inline">no working branch</span>
         ) : null}
         {unpushed !== null && unpushed > 0 ? (
-          <span className="rounded-sm bg-accent/15 px-1.5 py-px text-[0.625rem] font-medium text-accent">
+          <span
+            data-unpushed-count=""
+            className={cn(
+              'rounded-sm px-1.5 py-px text-[0.625rem] font-medium text-accent-fg',
+              // On the Workspace page the chip is itself an accent tint, and a
+              // second tint over it is more accent than `accent-fg` is solved
+              // for (under 4.5:1 on 30 themes): there the count sits on the bar.
+              onWorkspace ? 'bg-card' : 'bg-accent/15',
+            )}
+          >
             {unpushed} unpushed
           </span>
         ) : null}

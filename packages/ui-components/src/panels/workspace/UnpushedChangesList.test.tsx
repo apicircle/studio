@@ -152,6 +152,13 @@ describe('UnpushedChangesList', () => {
     for (const { row } of [removed, added, kept]) {
       expect(row.className).not.toMatch(/bg-(success|danger)\//);
     }
+
+    // Focusable for scrolling, with a ring drawn inside, over the rows' tints,
+    // in the accent's readable colour: a ring at 70% of the accent is under 3:1
+    // there on 39 themes (apps/web's theme-contrast test measures both).
+    expect(diff).toHaveAttribute('tabindex', '0');
+    expect(diff).toHaveClass('focus-visible:ring-inset', 'focus-visible:ring-accent-fg');
+    expect(diff).not.toHaveClass('focus-visible:ring-accent/70');
   });
 
   it('reads an added entry as all added lines and a removed one as all removed', async () => {

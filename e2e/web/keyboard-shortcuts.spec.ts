@@ -64,7 +64,7 @@ test.describe('Keyboard shortcuts', () => {
     // git remote in this test, so the action no-ops cleanly. The
     // assertion: the press doesn't throw and the app stays interactive.
     await app.keyboard.press('Control+Shift+R');
-    await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
   });
 
   test(tc(id('Font Size'), 'Ctrl/Cmd+Shift+= / -/0 adjusts font size'), async ({ app }) => {

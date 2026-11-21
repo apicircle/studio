@@ -363,7 +363,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
               onChange={(e) => setPlanStopOnFailure(plan.id, e.target.checked)}
               aria-label="Stop on assertion failure"
               className="h-3 w-3 cursor-pointer"
-              style={{ accentColor: 'rgb(var(--accent))' }}
+              style={{ accentColor: 'rgb(var(--accent-fg))' }}
             />
             Stop on assertion failure
           </label>
@@ -498,8 +498,8 @@ function PlanNameHeader({
         className={cn(
           'max-w-md flex-1 rounded-sm border bg-transparent px-2 py-1 text-base font-medium text-text-primary focus:outline-none focus:ring-1',
           reason !== null
-            ? 'border-danger focus:border-danger focus:ring-danger/30'
-            : 'border-transparent hover:border-border focus:border-accent focus:ring-accent/30',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-transparent hover:border-border focus:border-accent-fg focus:ring-accent-fg',
         )}
       />
       {reason && (
@@ -776,7 +776,7 @@ function PlanStepPicker({
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter by name…"
           aria-label="Filter requests"
-          className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
         />
         <button
           type="button"
@@ -823,7 +823,7 @@ function PlanStepPicker({
                             checked={checked}
                             onChange={() => toggle(key)}
                             aria-label={`Select ${r.name}`}
-                            style={{ accentColor: 'rgb(var(--accent))' }}
+                            style={{ accentColor: 'rgb(var(--accent-fg))' }}
                             className="mt-0.5 h-3 w-3"
                           />
                           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -863,7 +863,7 @@ function PlanStepPicker({
                             checked={checked}
                             onChange={() => toggle(key)}
                             aria-label={`Select ${r.name} from ${group.link.name}`}
-                            style={{ accentColor: 'rgb(var(--accent))' }}
+                            style={{ accentColor: 'rgb(var(--accent-fg))' }}
                             className="mt-0.5 h-3 w-3"
                           />
                           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -963,7 +963,7 @@ function PlanStepRow({
             onChange={(e) => onToggleEnabled(e.target.checked)}
             aria-label={`Enable step ${index + 1}`}
             className="h-3 w-3 cursor-pointer disabled:cursor-not-allowed"
-            style={{ accentColor: 'rgb(var(--accent))' }}
+            style={{ accentColor: 'rgb(var(--accent-fg))' }}
           />
         </DisabledReason>
         <span className="w-6 text-center text-[0.625rem] text-text-dim">{index + 1}.</span>
@@ -1110,8 +1110,8 @@ function PlanVariablesEditor({
                 className={cn(
                   'h-7 flex-1 rounded-sm border bg-surface px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
                   reason !== null
-                    ? 'border-danger focus:border-danger focus:ring-danger/40'
-                    : 'border-border focus:border-accent focus:ring-accent/30',
+                    ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+                    : 'border-border focus:border-accent-fg focus:ring-accent-fg',
                 )}
               />
               <input
@@ -1124,7 +1124,7 @@ function PlanVariablesEditor({
                 }
                 placeholder="value"
                 aria-label={`Plan variable value ${i + 1}`}
-                className="h-7 flex-[2] rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+                className="h-7 flex-[2] rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
               />
               <button
                 type="button"

@@ -138,7 +138,7 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by rule name, endpoint, server…"
             aria-label="Filter rules"
-            className="h-8 w-full rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-8 w-full rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary placeholder:text-text-faint focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
           />
         )}
         {allEntries.length === 0 ? (
@@ -168,7 +168,7 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
                       checked={checked}
                       onChange={() => toggle(entry.key)}
                       aria-label={`Select rule from ${entry.serverName} · ${entry.endpointLabel}`}
-                      style={{ accentColor: 'rgb(var(--accent))' }}
+                      style={{ accentColor: 'rgb(var(--accent-fg))' }}
                       className="mt-0.5"
                     />
                     <div className="flex-1 min-w-0">

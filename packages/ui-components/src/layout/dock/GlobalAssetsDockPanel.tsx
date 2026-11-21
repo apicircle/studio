@@ -89,7 +89,7 @@ type Tab = 'schemas' | 'graphql' | 'files';
 const NARROW_WIDTH_PX = 520;
 
 const inputClass =
-  'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
+  'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg';
 
 export function GlobalAssetsDockPanel() {
   const [tab, setTab] = useState<Tab>('schemas');

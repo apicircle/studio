@@ -261,7 +261,7 @@ const SUCCESS_HTML = `<!doctype html>
 <body>
   <div class="card">
     <h1>You can close this tab.</h1>
-    <p>Sign-in complete. API Circle Studio captured the credentials and stored them in the request.</p>
+    <p>Sign-in complete. API Circle captured the credentials and stored them in the request.</p>
   </div>
   <script>setTimeout(() => window.close(), 2000);</script>
 </body>

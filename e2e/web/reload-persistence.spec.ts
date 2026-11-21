@@ -61,7 +61,7 @@ test.describe('Reload persistence', () => {
 
       await flushPersistAndReload(app);
       // Wait for hydration — the brand text appears once `__apicircleStore` is wired.
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 
       // Active request id was persisted; editor opens to the same request.
       await expect(app.getByLabel('Request name', { exact: true })).toHaveValue('persist-1');
@@ -100,7 +100,7 @@ test.describe('Reload persistence', () => {
       await expect(app.getByText('200').first()).toBeVisible();
 
       await flushPersistAndReload(app);
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 
       // History panel still has both runs.
       await app.getByRole('button', { name: /^History$/ }).click();
@@ -127,7 +127,7 @@ test.describe('Reload persistence', () => {
       }
 
       await flushPersistAndReload(app);
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 
       await app.getByRole('button', { name: /^History$/ }).click();
       // All three rows present + each shows its 200 status. Use the first
@@ -163,7 +163,7 @@ test.describe('Reload persistence', () => {
       await expect(app.getByText(/1\/1 requests succeeded/)).toBeVisible({ timeout: 10_000 });
 
       await flushPersistAndReload(app);
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
 
       await app.getByRole('button', { name: /^History$/ }).click();
       await app.getByRole('tab', { name: /^Plans/ }).click();

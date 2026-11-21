@@ -33,6 +33,16 @@ function extractInlineScript(): string {
   return match[1]!;
 }
 
+describe('oauth-callback.html — the page as served', () => {
+  it('names the product, API Circle, on its success card', () => {
+    const html = readFileSync(HTML_PATH, 'utf8');
+    expect(html).toContain(
+      '<p id="message">Sign-in complete. API Circle captured the credentials.</p>',
+    );
+    expect(html).not.toContain('API Circle Studio');
+  });
+});
+
 interface BroadcastMessage {
   channel: string;
   payload: unknown;
@@ -268,7 +278,9 @@ describe('oauth-callback.html relay', () => {
     // User-visible message: relay surfaces the failure rather than
     // silently dropping the payload.
     expect(document.getElementById('title')!.textContent).toBe('Sign-in incomplete');
-    expect(document.getElementById('message')!.textContent).toMatch(/Could not return tokens/i);
+    expect(document.getElementById('message')!.textContent).toBe(
+      'Could not return tokens to API Circle. Close this tab and retry from the auth panel.',
+    );
   });
 
   it('skips opener.postMessage when window.opener is closed', () => {

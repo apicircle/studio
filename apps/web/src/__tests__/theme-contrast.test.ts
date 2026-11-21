@@ -449,6 +449,447 @@ describe('a solid accent button reads on every theme', () => {
   });
 });
 
+/**
+ * What the standalone header's Lens link (`LensLink` in ui-components'
+ * layout/TopBar.tsx) is drawn with: each part a token and the share of it
+ * painted over the bar (`bg-card`). At rest a label on its own fill inside an
+ * edge; on hover a label over a tint of the accent inside an accent edge; and a
+ * focus ring. `TopBar.test.tsx` holds the link's classes to exactly these, so
+ * what is measured here is what is drawn. `fill: null` is no fill: the bar
+ * shows through.
+ */
+interface LinkPart {
+  token: string;
+  share: number;
+}
+interface LinkParts {
+  label: LinkPart;
+  fill: LinkPart | null;
+  edge: LinkPart;
+  hoverLabel: LinkPart;
+  hoverFill: LinkPart;
+  hoverEdge: LinkPart;
+  ring: LinkPart;
+}
+const whole = (token: string): LinkPart => ({ token, share: 1 });
+const LENS_LINK: LinkParts = {
+  label: whole('text-primary'),
+  fill: whole('surface'),
+  edge: whole('border'),
+  hoverLabel: whole('accent-fg'),
+  hoverFill: { token: 'accent', share: 0.1 },
+  hoverEdge: { token: 'accent', share: 0.4 },
+  ring: whole('accent-fg'),
+};
+/** The first look of the link, before these measures: the same shape in other tokens. */
+const LENS_LINK_FIRST_DRAFT: LinkParts = {
+  label: whole('text-muted'),
+  fill: null,
+  edge: whole('border-subtle'),
+  hoverLabel: whole('accent'),
+  hoverFill: { token: 'accent', share: 0.1 },
+  hoverEdge: { token: 'accent', share: 0.4 },
+  ring: { token: 'accent', share: 0.7 },
+};
+const LINK_BAR = 'card';
+/** OKLab x100. About 2 is the least an eye can tell apart; a button's outline wants a clear step more. */
+const LINK_OUTLINE_FROM_BAR = 3;
+/** OKLab x100. The hover edge must be plainly not the resting edge. */
+const LINK_HOVER_EDGE_STEP = 5;
+/** WCAG 2.2 non-text contrast (1.4.11) for the focus ring against the bar. */
+const LINK_RING_MIN_CONTRAST = 3;
+
+/** Everything the link falls short on in `theme`, as lines that name the part and the measure. */
+function linkShortfalls(theme: Theme, parts: LinkParts): string[] {
+  const { tokens } = theme;
+  const bar = tokens[LINK_BAR];
+  const paint = ({ token, share }: LinkPart): RGB => toRgb(composite(tokens[token], bar, share));
+  const fill = parts.fill ? paint(parts.fill) : bar;
+  const out: string[] = [];
+  const check = (what: string, value: number, least: number): void => {
+    if (value < least) out.push(`${theme.id}: ${what} is ${value.toFixed(1)}, under ${least}`);
+  };
+  check('the label on its fill', contrast(paint(parts.label), fill), AA);
+  check(
+    'the outline against the bar',
+    Math.max(difference(paint(parts.edge), bar), difference(fill, bar)),
+    LINK_OUTLINE_FROM_BAR,
+  );
+  check(
+    'the hover label on its tint',
+    contrast(paint(parts.hoverLabel), paint(parts.hoverFill)),
+    AA,
+  );
+  check(
+    'the hover edge against the resting edge',
+    difference(paint(parts.hoverEdge), paint(parts.edge)),
+    LINK_HOVER_EDGE_STEP,
+  );
+  check('the focus ring against the bar', contrast(paint(parts.ring), bar), LINK_RING_MIN_CONTRAST);
+  return out;
+}
+
+describe("the header's Lens link reads on every theme", () => {
+  it('every theme defines what the link is made of (a guard that read nothing would pass anything)', () => {
+    const asked = [
+      LINK_BAR,
+      ...Object.values(LENS_LINK).flatMap((part: LinkPart | null) => (part ? [part.token] : [])),
+    ];
+    expect([...new Set(asked)].sort()).toEqual([
+      'accent',
+      'accent-fg',
+      'border',
+      'card',
+      'surface',
+      'text-primary',
+    ]);
+    for (const { id, tokens } of themes) {
+      expect(Object.keys(tokens), id).toEqual(expect.arrayContaining(asked));
+    }
+  });
+
+  it('its label, outline, hover and focus ring all hold in EVERY theme', () => {
+    expect(themes.flatMap((theme) => linkShortfalls(theme, LENS_LINK))).toEqual([]);
+  });
+
+  it('fails on its first draft: faint on Tokyo Night Day, no edge on Rose Pine, an unreadable hover on Ayu Light', () => {
+    const shortfalls = themes.flatMap((theme) => linkShortfalls(theme, LENS_LINK_FIRST_DRAFT));
+    expect(shortfalls).toEqual(
+      expect.arrayContaining([
+        'tokyo-night-day: the label on its fill is 3.9, under 4.5',
+        'rose-pine: the outline against the bar is 0.0, under 3',
+        'ayu-light: the hover label on its tint is 2.0, under 4.5',
+        'ayu-light: the focus ring against the bar is 1.7, under 3',
+      ]),
+    );
+    // The bare accent as hover text is the widest miss: nearly half the themes.
+    const hover = shortfalls.filter((line) => line.includes('the hover label'));
+    expect(hover.length).toBeGreaterThanOrEqual(25);
+  });
+});
+
+/**
+ * A tone-coloured part of the header's controls (the top bar's panel buttons,
+ * the tab strip's tabs and mode buttons, and the workspace status chip), the
+ * backdrop it is drawn on, and the least it needs: 4.5:1 for a label, 3:1 for
+ * an icon or a focus ring. The bar under all of them is `bg-card`. `on` is what
+ * lies between the part and the bar, painted bottom first; none is the bar.
+ */
+interface HeaderPart {
+  what: string;
+  fg: LinkPart;
+  on: LinkPart[];
+  least: number;
+}
+/** WCAG 2.1 1.4.11: an icon, or a focus ring, against what is next to it. */
+const NON_TEXT_MIN_CONTRAST = 3;
+const tint = (token: string, share: number): LinkPart => ({ token, share });
+
+/**
+ * The header's tone-coloured parts, with `tone` the colour each tone is drawn
+ * in, `ring` the focus ring's, and `workspaceCount` the fill of the unpushed
+ * count while the status chip, on the Workspace page, is itself an accent tint.
+ * The classes in TopBar.tsx, PanelTabs.tsx and WorkspaceStatusChip.tsx are
+ * these; their tests hold them to it.
+ */
+function headerParts(
+  tone: (name: 'accent' | 'warning') => LinkPart,
+  ring: LinkPart,
+  workspaceCount: LinkPart,
+): HeaderPart[] {
+  const accent = tone('accent');
+  return [
+    { what: 'the focus ring against the bar', fg: ring, on: [], least: NON_TEXT_MIN_CONTRAST },
+    { what: "the active tab's label", fg: accent, on: [tint('accent', 0.15)], least: AA },
+    {
+      what: "a mode button's icon",
+      fg: accent,
+      on: [whole('surface')],
+      least: NON_TEXT_MIN_CONTRAST,
+    },
+    {
+      what: "the current mode's icon",
+      fg: accent,
+      on: [tint('accent', 0.15)],
+      least: NON_TEXT_MIN_CONTRAST,
+    },
+    {
+      what: "a mode button's chevron on hover",
+      fg: accent,
+      on: [tint('accent', 0.1)],
+      least: NON_TEXT_MIN_CONTRAST,
+    },
+    {
+      what: "the open panel's top-bar icon",
+      fg: accent,
+      on: [tint('accent', 0.1)],
+      least: NON_TEXT_MIN_CONTRAST,
+    },
+    {
+      what: "the status chip's label on the Workspace page",
+      fg: accent,
+      on: [tint('accent', 0.1)],
+      least: AA,
+    },
+    {
+      what: "the locked status chip's label",
+      fg: tone('warning'),
+      on: [tint('warning', 0.1)],
+      least: AA,
+    },
+    {
+      what: 'the unpushed count',
+      fg: accent,
+      on: [whole('surface'), tint('accent', 0.15)],
+      least: AA,
+    },
+    {
+      what: 'the unpushed count on the Workspace page',
+      fg: accent,
+      on: [tint('accent', 0.1), workspaceCount],
+      least: AA,
+    },
+    {
+      what: "the repository's name on the Workspace page",
+      fg: whole('text-primary'),
+      on: [tint('accent', 0.1)],
+      least: AA,
+    },
+    {
+      what: "the repository's name on a locked chip",
+      fg: whole('text-primary'),
+      on: [tint('warning', 0.1)],
+      least: AA,
+    },
+  ];
+}
+const HEADER_PARTS = headerParts((name) => whole(`${name}-fg`), whole('accent-fg'), whole('card'));
+/**
+ * What the header drew before: the bare tones, a ring at 70% of the accent, and
+ * the count's tint over the chip's.
+ */
+const HEADER_PARTS_BEFORE = headerParts(
+  (name) => whole(name),
+  tint('accent', 0.7),
+  tint('accent', 0.15),
+);
+/** The readable colours with the count's tint kept over the chip's: too much accent for `accent-fg`. */
+const HEADER_PARTS_TINT_ON_TINT = headerParts(
+  (name) => whole(`${name}-fg`),
+  whole('accent-fg'),
+  tint('accent', 0.15),
+);
+
+/** Everything the header's controls fall short on in `theme`. */
+function headerShortfalls(theme: Theme, parts: HeaderPart[]): string[] {
+  const { tokens } = theme;
+  const over = (under: RGB, { token, share }: LinkPart): RGB =>
+    toRgb(composite(tokens[token], under, share));
+  const out: string[] = [];
+  for (const { what, fg, on, least } of parts) {
+    const backdrop = on.reduce(over, tokens[LINK_BAR]);
+    const value = contrast(over(backdrop, fg), backdrop);
+    if (value < least) out.push(`${theme.id}: ${what} is ${value.toFixed(1)}, under ${least}`);
+  }
+  return out;
+}
+
+describe("the header's controls read on every theme", () => {
+  it('measures every tone-coloured part of the header in its readable colour', () => {
+    expect(HEADER_PARTS).toHaveLength(12);
+    const colours = new Set(HEADER_PARTS.map(({ fg }) => fg.token));
+    expect([...colours].sort()).toEqual(['accent-fg', 'text-primary', 'warning-fg']);
+  });
+
+  it('every label, icon and focus ring holds in EVERY theme', () => {
+    expect(themes.flatMap((theme) => headerShortfalls(theme, HEADER_PARTS))).toEqual([]);
+  });
+
+  it('fails on what it drew before: the bare accent and warning, and a ring at 70%', () => {
+    const before = themes.flatMap((theme) => headerShortfalls(theme, HEADER_PARTS_BEFORE));
+    expect(before).toEqual(
+      expect.arrayContaining([
+        "ayu-light: the active tab's label is 1.9, under 4.5",
+        'ayu-light: the focus ring against the bar is 1.7, under 3',
+        "ayu-light: the locked status chip's label is 1.7, under 4.5",
+      ]),
+    );
+    const count = (what: string) => before.filter((line) => line.includes(`: ${what} is`)).length;
+    expect(count("the active tab's label")).toBe(34);
+    expect(count('the focus ring against the bar')).toBe(23);
+  });
+
+  it('fails on a tint over a tint: the readable accent is solved for one tint, not two', () => {
+    const stacked = themes.flatMap((theme) => headerShortfalls(theme, HEADER_PARTS_TINT_ON_TINT));
+    expect(stacked.length).toBeGreaterThan(0);
+    expect(stacked.every((line) => line.includes('the unpushed count on the Workspace page'))).toBe(
+      true,
+    );
+  });
+});
+
+/**
+ * What a focus ring is drawn against: the panel and dialog fills a control sits
+ * on (`card`, `surface`), and the row tints of a diff, which the unpushed-changes
+ * list's inset ring is drawn over (`diff-add`, `diff-del`). Every
+ * `focus-visible:ring-*` in ui-components is `ring-accent-fg`: the header's,
+ * the `Tabs` primitive's, `SectionLanding`'s cards' and that list's.
+ */
+const RING_BACKDROPS = ['card', 'surface', 'diff-add', 'diff-del'] as const;
+
+/** Every backdrop `ring` falls under 3:1 against in `theme`. */
+function ringShortfalls(theme: Theme, ring: LinkPart): string[] {
+  const { tokens } = theme;
+  return RING_BACKDROPS.flatMap((backdrop) => {
+    const under = tokens[backdrop];
+    const value = contrast(toRgb(composite(tokens[ring.token], under, ring.share)), under);
+    return value < NON_TEXT_MIN_CONTRAST
+      ? [`${theme.id}: the focus ring on ${backdrop} is ${value.toFixed(1)}, under 3`]
+      : [];
+  });
+}
+
+describe('every focus ring shows on every theme', () => {
+  it('the readable accent holds 3:1 against every backdrop a ring is drawn on, in EVERY theme', () => {
+    expect(themes.flatMap((theme) => ringShortfalls(theme, whole('accent-fg')))).toEqual([]);
+  });
+
+  it('fails on the ring it replaced, 70% of the accent, on every backdrop', () => {
+    const before = themes.flatMap((theme) => ringShortfalls(theme, tint('accent', 0.7)));
+    const on = (backdrop: string) => before.filter((line) => line.includes(` on ${backdrop} is`));
+    expect(on('card')).toHaveLength(23);
+    expect(on('surface')).toHaveLength(22);
+    expect(on('diff-add')).toHaveLength(39);
+    expect(on('diff-del')).toHaveLength(36);
+    expect(before).toContainEqual(
+      expect.stringMatching(/^ayu-light: the focus ring on diff-del is 1\.\d, under 3$/),
+    );
+  });
+});
+
+/**
+ * A field's, a checkbox's and a radio's focus and checked state: a colour, the
+ * fills it is drawn against (`on`), and a tint between them where there is one
+ * (`over`). A field and the ring around a box sit on the panel (`card` or
+ * `surface`); a box's own face is `card`, and a ticked one `accent/20` over it.
+ * A native checkbox or radio is filled with its `accent-color` when ticked, on
+ * the panel. ui-components' Input, Checkbox and Radio tests hold the classes to
+ * these, and its controlColours test every focus and ticked colour in the source.
+ */
+interface FieldPart {
+  what: string;
+  fg: LinkPart;
+  on: readonly string[];
+  over?: LinkPart;
+}
+const PANEL = ['card', 'surface'] as const;
+
+function fieldParts(
+  accent: LinkPart,
+  danger: LinkPart,
+  boxRing: LinkPart,
+  checked: LinkPart,
+  nativeTick: LinkPart,
+  caution: LinkPart,
+): FieldPart[] {
+  return [
+    { what: "a field's focus edge and ring", fg: accent, on: PANEL },
+    { what: "an invalid field's focus edge and ring", fg: danger, on: PANEL },
+    { what: "a checkbox's or radio's focus ring", fg: boxRing, on: PANEL },
+    { what: "a ticked box's edge, and a chosen radio's dot", fg: checked, on: ['card'] },
+    { what: 'the tick', fg: checked, on: ['card'], over: tint('accent', 0.2) },
+    { what: "a native checkbox's or radio's ticked fill", fg: nativeTick, on: PANEL },
+    { what: "the export's credential checkbox, ticked", fg: caution, on: PANEL },
+  ];
+}
+const FIELD_PARTS = fieldParts(
+  whole('accent-fg'),
+  whole('danger-fg'),
+  whole('accent-fg'),
+  whole('accent-fg'),
+  whole('accent-fg'),
+  whole('warning-fg'),
+);
+/**
+ * What they drew before: a 30% / 40% ring beside the bare tone's edge, a 50% box
+ * ring, the bare accent, and amber for the credential checkbox.
+ */
+const FIELD_PARTS_BEFORE = fieldParts(
+  tint('accent', 0.3),
+  tint('danger', 0.4),
+  tint('accent', 0.5),
+  whole('accent'),
+  whole('accent'),
+  whole('amber'),
+);
+
+/** The default theme's tokens (`:root`): what a theme that leaves one out inherits. */
+const ROOT_TOKENS = themes.find(({ id }) => id === 'studio-dark')?.tokens ?? {};
+
+/** Everything the fields and boxes fall short on in `theme`, under 3:1 (WCAG 1.4.11). */
+function fieldShortfalls(theme: Theme, parts: FieldPart[]): string[] {
+  const { tokens } = theme;
+  const paint = ({ token, share }: LinkPart, under: RGB): RGB =>
+    toRgb(composite(tokens[token] ?? ROOT_TOKENS[token], under, share));
+  return parts.flatMap(({ what, fg, on, over }) =>
+    on.flatMap((fill) => {
+      const under = over ? paint(over, tokens[fill]) : tokens[fill];
+      const value = contrast(paint(fg, under), under);
+      return value < NON_TEXT_MIN_CONTRAST
+        ? [`${theme.id}: ${what} on ${fill} is ${value.toFixed(1)}, under 3`]
+        : [];
+    }),
+  );
+}
+
+describe("the app's default focus ring shows on every theme", () => {
+  // `*:focus-visible` in global.css is the ring of every native checkbox and
+  // radio and of any control that draws none of its own.
+  const rule = css.match(/\*:focus-visible\s*\{([^}]*)\}/)?.[1] ?? '';
+
+  it('is a solid outline in the accent readable colour', () => {
+    expect(rule).toMatch(/outline:\s*2px solid rgb\(var\(--accent-fg\)\);/);
+    expect(rule).not.toMatch(/--accent\)/);
+  });
+
+  it('holds 3:1 against the panel in EVERY theme, where the bare accent did not', () => {
+    const under = (ring: LinkPart) =>
+      themes.flatMap((theme) =>
+        ringShortfalls(theme, ring).filter((line) => / on (card|surface) is/.test(line)),
+      );
+    expect(under(whole('accent-fg'))).toEqual([]);
+    expect(under(whole('accent'))).toEqual([
+      expect.stringMatching(/^ayu-light: the focus ring on card is 2\.\d, under 3$/),
+      expect.stringMatching(/^ayu-light: the focus ring on surface is 2\.\d, under 3$/),
+      expect.stringMatching(/^tokyo-night-day: the focus ring on card is 2\.\d, under 3$/),
+    ]);
+  });
+});
+
+describe('fields, checkboxes and radios show focus and state on every theme', () => {
+  it('every focus edge, ring, tick and dot holds 3:1 in EVERY theme', () => {
+    expect(themes.flatMap((theme) => fieldShortfalls(theme, FIELD_PARTS))).toEqual([]);
+  });
+
+  it('fails on what they drew before: faint rings everywhere, and the bare accent tick', () => {
+    const before = themes.flatMap((theme) => fieldShortfalls(theme, FIELD_PARTS_BEFORE));
+    const count = (what: string, fill: string) =>
+      before.filter((line) => line.includes(`: ${what} on ${fill} is`)).length;
+    expect(count("a field's focus edge and ring", 'card')).toBe(60);
+    expect(count("an invalid field's focus edge and ring", 'card')).toBe(60);
+    expect(count("a checkbox's or radio's focus ring", 'card')).toBe(51);
+    expect(count('the tick', 'card')).toBe(10);
+    expect(before).toContainEqual(
+      expect.stringMatching(/^ayu-light: the tick on card is 1\.\d, under 3$/),
+    );
+    // A native box ticked in the bare accent, and the credential box in amber.
+    expect(count("a native checkbox's or radio's ticked fill", 'card')).toBe(2);
+    expect(count("a native checkbox's or radio's ticked fill", 'surface')).toBe(1);
+    expect(count("the export's credential checkbox, ticked", 'card')).toBe(9);
+    expect(count("the export's credential checkbox, ticked", 'surface')).toBe(6);
+  });
+});
+
 describe('solveDiffTint', () => {
   // A mid grey over white: 20% of it is 7.5 from the page, and 27% the first share 10 from it.
   const white: RGB = [255, 255, 255];

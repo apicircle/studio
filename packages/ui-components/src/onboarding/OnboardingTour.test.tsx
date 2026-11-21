@@ -13,14 +13,16 @@ describe('OnboardingTour', () => {
   it('auto-starts on first run and shows the welcome step', () => {
     render(<OnboardingTour />);
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('Welcome to API Circle Studio');
+    // The product's name, not the retired "API Circle Studio".
+    expect(screen.getByRole('heading', { name: 'Welcome to API Circle' })).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('API Circle Studio');
     expect(dialog).toHaveTextContent(/Quick tour · 1 of \d+/);
   });
 
   it('advances and rewinds through steps', async () => {
     const user = userEvent.setup();
     render(<OnboardingTour />);
-    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle');
     // The first step has nothing to go back to.
     expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
 
@@ -28,7 +30,7 @@ describe('OnboardingTour', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('One panel per workflow');
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle');
   });
 
   it('skipping marks the tour done and a fresh mount no longer auto-starts', async () => {
@@ -59,7 +61,7 @@ describe('OnboardingTour', () => {
       replayOnboarding();
     });
 
-    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle');
     expect(localStorage.getItem(DONE_KEY)).toBeNull();
   });
 
@@ -76,7 +78,7 @@ describe('OnboardingTour', () => {
     act(() => {
       replayOnboarding();
     });
-    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle');
   });
 
   it('Escape exits the tour', async () => {

@@ -9,6 +9,18 @@ describe('Radio', () => {
     expect(screen.getByRole('radio', { name: 'opt' })).toBeInTheDocument();
   });
 
+  it("draws the dot, its edge and the focus ring in the accent's readable colour", () => {
+    // Measured on every theme by apps/web's theme-contrast test (`FIELD_PARTS`):
+    // the bare accent's dot is under 3:1 on Ayu Light, a 50% ring on 51 themes.
+    render(<Radio aria-label="dot" name="g" value="a" />);
+    const face = screen.getByRole('radio', { name: 'dot' }).nextElementSibling;
+    expect(face).toHaveClass('peer-checked:border-accent-fg', 'peer-focus-visible:ring-accent-fg');
+    expect(face).not.toHaveClass('peer-checked:border-accent', 'peer-focus-visible:ring-accent/50');
+    const dot = face?.nextElementSibling;
+    expect(dot).toHaveClass('bg-accent-fg', 'peer-checked:opacity-100');
+    expect(dot).not.toHaveClass('bg-accent');
+  });
+
   it('groups by name so only one is selected at a time', async () => {
     const onChange = vi.fn();
     render(

@@ -114,6 +114,48 @@ describe('mock articles', () => {
   });
 });
 
+describe('the desktop app and the product name', () => {
+  /** Every markdown link in the catalogue, as [section id, text, href]. */
+  const links = HELP_SECTIONS.flatMap((s) =>
+    [...s.body.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g)].map(
+      ([, text, href]) => [s.id, text, href] as const,
+    ),
+  );
+
+  it('sends every desktop download to the website, never to a GitHub release', () => {
+    const desktop = links.filter(([, text]) => /desktop/i.test(text));
+    // The articles that offer the app: auth, secrets, mocks, desktop, errors.
+    expect(desktop.length).toBeGreaterThanOrEqual(10);
+    for (const [id, text, href] of desktop) {
+      expect(href, `${id}: [${text}]`).toBe('https://apicircle.dev/download');
+    }
+    for (const section of HELP_SECTIONS) {
+      expect(section.body, section.id).not.toMatch(/github\.com\/apicircle\/studio\/releases/);
+    }
+  });
+
+  it('the Desktop App article offers the API Circle app first, and keeps the unsigned steps to the standalone build', () => {
+    const body = HELP_SECTIONS.find((s) => s.id === 'desktop')!.body;
+    expect(body).toContain('[Download the API Circle desktop app](https://apicircle.dev/download)');
+    expect(body.indexOf('## Download')).toBeLessThan(body.indexOf('not code-signed'));
+    expect(body).toMatch(/## The standalone desktop build is not code-signed/);
+    // No promise that leads back to the GitHub Releases page.
+    expect(body).not.toMatch(/GitHub Releases page|Get the latest build from GitHub/);
+    // Lens is the paid features, not a product of its own.
+    expect(body).not.toContain('API Circle Lens');
+  });
+
+  it('welcomes the reader to API Circle, and puts the CLI and MCP with Lens', () => {
+    const welcome = HELP_SECTIONS.find((s) => s.id === 'welcome')!.body;
+    const intro = welcome.split('\n')[0];
+    expect(intro).toMatch(/^API Circle is a free workspace/);
+    expect(intro).not.toContain('API Circle Studio');
+    // Studio ships no command-line tool of its own; Lens does.
+    expect(intro).not.toMatch(/ships a companion command-line tool/);
+    expect(intro).toMatch(/command-line tool and the MCP server are part of Lens/);
+  });
+});
+
 describe('VISIBLE_HELP_SECTIONS', () => {
   it('withholds the two workspace-sharing articles without deleting them', () => {
     const visible = VISIBLE_HELP_SECTIONS.map((x) => x.id);

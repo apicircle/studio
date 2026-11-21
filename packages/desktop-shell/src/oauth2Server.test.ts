@@ -70,6 +70,10 @@ describe('startCallbackServer — auth-code mode', () => {
     const httpResult = await fetchSelf(callbackUrl);
     expect(httpResult.status).toBe(200);
     expect(httpResult.body).toContain('You can close this tab');
+    expect(httpResult.body).toContain(
+      'Sign-in complete. API Circle captured the credentials and stored them in the request.',
+    );
+    expect(httpResult.body).not.toContain('API Circle Studio');
 
     const result = await callbackPromise;
     expect(result.code).toBe('abc-123');

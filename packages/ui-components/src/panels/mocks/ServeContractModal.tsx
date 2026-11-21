@@ -148,7 +148,7 @@ export function ServeContractModal() {
                 value={assetId}
                 onChange={(ev) => onSelectAsset(ev.target.value)}
                 aria-label="OpenAPI / Swagger contract"
-                className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
               >
                 <option value="">Select a contract…</option>
                 {specAssets.map((f) => (
@@ -200,7 +200,7 @@ export function ServeContractModal() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Payments API (contract)"
                 aria-label="Server name"
-                className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
               />
             </div>
 
@@ -218,7 +218,7 @@ export function ServeContractModal() {
                 inputMode="numeric"
                 placeholder="e.g. 4010"
                 aria-label="Port"
-                className="mt-1 h-8 w-40 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className="mt-1 h-8 w-40 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
               />
             </div>
           </>

@@ -156,8 +156,11 @@ function ChangeDiff({ label, lines }: { label: string; lines: readonly DiffLine[
       role="region"
       aria-label={`Change to ${label}`}
       // Focusable, so the keyboard can scroll a diff taller or wider than its box.
+      // Its ring is drawn inside, over the rows' tints: the accent's readable
+      // colour (`accent-fg`) holds 3:1 there on every theme, where a ring at
+      // 70% of the accent does not on 39.
       tabIndex={0}
-      className="max-h-72 overflow-auto border-t border-border-subtle font-mono text-[0.6875rem] leading-relaxed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
+      className="max-h-72 overflow-auto border-t border-border-subtle font-mono text-[0.6875rem] leading-relaxed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-fg"
     >
       {hunks.length === 0 ? (
         <p className="p-2 font-sans text-text-dim">No difference to show.</p>

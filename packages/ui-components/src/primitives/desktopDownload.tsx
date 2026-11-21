@@ -3,7 +3,7 @@ import { cn } from './cn';
 import { DESKTOP_RELEASES_URL } from './externalLinks';
 
 // Re-exported for back-compat with existing call sites. New code should
-// import directly from `./externalLinks` (`GITHUB_RELEASES_LATEST_URL`).
+// import directly from `./externalLinks` (`DESKTOP_DOWNLOAD_URL`).
 export { DESKTOP_RELEASES_URL };
 
 interface DesktopAppLinkProps {
@@ -19,8 +19,9 @@ interface DesktopAppLinkProps {
 }
 
 /**
- * Anchor pointing at the latest Desktop App release on GitHub. Opens in a
- * new tab; uses `noopener noreferrer` for safety.
+ * Anchor pointing at the website's download page, which offers the API Circle
+ * desktop app (this free workspace is part of it). Opens in a new tab — on the
+ * desktop app, the system browser — and uses `noopener noreferrer` for safety.
  *
  * Use `variant="inline"` (default) when the link sits inside a sentence,
  * `variant="button"` for empty-state or banner CTAs that need to read

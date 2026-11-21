@@ -2410,8 +2410,12 @@
     @apply bg-surface text-text-primary font-mono antialiased;
   }
 
+  /* The default focus ring: native checkboxes and radios, and any control that
+     draws no ring of its own. The accent's readable colour (`--accent-fg`)
+     holds 3:1 against the panel on every theme; the bare accent does not on
+     Ayu Light or Tokyo Night Day (apps/web's theme-contrast test). */
   *:focus-visible {
-    outline: 2px solid rgb(var(--accent));
+    outline: 2px solid rgb(var(--accent-fg));
     outline-offset: 2px;
   }
 

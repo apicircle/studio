@@ -122,7 +122,9 @@ export function CommunitySection() {
         </button>
       </div>
 
-      <p className="px-1.5 text-xs leading-snug text-text-dim">API Circle Studio is open source.</p>
+      <p className="px-1.5 text-xs leading-snug text-text-dim">
+        API Circle&rsquo;s free workspace is open source.
+      </p>
 
       {/*
         When cache.error is non-null and there's no prior cache, we render

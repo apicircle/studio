@@ -33,8 +33,8 @@ test.describe('Multi-user concurrency', () => {
       const { pageA, pageB } = twoContexts;
       // Both contexts mount the app shell with their own IDB. The
       // assertion is that they coexist (separate workspaces locally).
-      await expect(pageA.getByText('API Circle Studio', { exact: true })).toBeVisible();
-      await expect(pageB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(pageA.getByText('API Circle', { exact: true })).toBeVisible();
+      await expect(pageB.getByText('API Circle', { exact: true })).toBeVisible();
       const aWsId = await pageA.evaluate(() => {
         const w = window as unknown as {
           __apicircleStore?: { getState: () => { synced?: { id?: string } } };

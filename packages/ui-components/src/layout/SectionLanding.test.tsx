@@ -39,6 +39,20 @@ describe('SectionLanding', () => {
     expect(screen.getByText('Lens')).toBeInTheDocument();
   });
 
+  it("rings a focused card, and draws its icon, in the accent's readable colour", () => {
+    // Measured on every theme by apps/web's theme-contrast test: a ring at 70%
+    // of the accent is under 3:1 on 22 themes, the bare accent icon on Ayu Light.
+    renderLanding();
+    for (const name of ['Studio', 'Lens']) {
+      const card = screen.getByRole('button', { name: new RegExp(`^${name}`) });
+      expect(card).toHaveClass('focus-visible:ring-accent-fg');
+      expect(card).not.toHaveClass('focus-visible:ring-accent/70');
+      const icon = card.querySelector('svg');
+      expect(icon).toHaveClass('text-accent-fg');
+      expect(icon).not.toHaveClass('text-accent');
+    }
+  });
+
   it('choosing a card sets the section and dismisses the landing', async () => {
     const { setActiveSectionId } = renderLanding();
     await userEvent.click(screen.getByText('Lens'));

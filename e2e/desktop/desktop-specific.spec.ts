@@ -361,6 +361,47 @@ test.describe('Desktop-specific (DS)', () => {
   });
 
   // ---------------------------------------------------------------
+  // The standalone app's ways out to the website. The header's Lens link
+  // and the Desktop App links are new-tab links; on desktop the main
+  // process's window-open handler hands them to shell.openExternal (the
+  // system browser) and opens no Electron window.
+  // ---------------------------------------------------------------
+
+  test('names the window API Circle, and opens the Lens and download links in the system browser', async ({
+    electronApp,
+    mainWindow,
+  }) => {
+    await expect(mainWindow).toHaveTitle('API Circle');
+    await expect(mainWindow.getByText('API Circle', { exact: true })).toBeVisible();
+
+    // Record what reaches the system browser instead of opening it.
+    await electronApp.evaluate(({ shell }) => {
+      const opened: string[] = [];
+      (globalThis as { __apicircleOpened?: string[] }).__apicircleOpened = opened;
+      shell.openExternal = async (url: string) => {
+        opened.push(url);
+      };
+    });
+    const opened = () =>
+      electronApp.evaluate(
+        () => (globalThis as { __apicircleOpened?: string[] }).__apicircleOpened ?? [],
+      );
+
+    await mainWindow.getByRole('link', { name: 'Lens (opens in a new tab)' }).click();
+    await expect.poll(opened).toEqual(['https://apicircle.dev/lens']);
+
+    await mainWindow.getByRole('button', { name: /^Mocks$/ }).click();
+    await mainWindow.getByRole('link', { name: 'Desktop App' }).first().click();
+    await expect
+      .poll(opened)
+      .toEqual(['https://apicircle.dev/lens', 'https://apicircle.dev/download']);
+
+    // Nothing opened inside the app: one window, still on the bundled renderer.
+    expect(electronApp.windows()).toHaveLength(1);
+    await expect(mainWindow.getByText('API Circle', { exact: true })).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------
   // Auto-update — registerAutoUpdater() wires electron-updater. The
   // E2E runner sets APICIRCLE_DISABLE_AUTOUPDATE so the network probe
   // is suppressed; verifying the wiring itself requires a signed

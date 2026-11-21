@@ -163,7 +163,7 @@ export function HistorySidebar() {
           onChange={(e) => setUi({ search: e.target.value })}
           placeholder="Name, method, status, URL…"
           aria-label="Filter by search"
-          className="h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
         />
       </FilterSection>
 
@@ -230,7 +230,7 @@ export function HistorySidebar() {
                   value={ui.fromDate ?? ''}
                   onChange={(e) => setUi({ fromDate: e.target.value || null })}
                   aria-label="Filter from date"
-                  className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+                  className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
                 />
               </label>
               <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
@@ -240,7 +240,7 @@ export function HistorySidebar() {
                   value={ui.toDate ?? ''}
                   onChange={(e) => setUi({ toDate: e.target.value || null })}
                   aria-label="Filter to date"
-                  className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+                  className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
                 />
               </label>
               {(ui.fromDate || ui.toDate) && (

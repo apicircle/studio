@@ -30,7 +30,7 @@ interface ContextTabProps {
 }
 
 const inputClass =
-  'h-7 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
+  'h-7 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg';
 const sectionTitle = 'text-[0.6875rem] uppercase tracking-wide text-text-dim';
 
 const SOURCES: Array<{ id: ContextExtraction['source']; label: string; placeholder: string }> = [
@@ -122,7 +122,7 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
                     placeholder="NAME"
                     className={cn(
                       inputClass,
-                      nameInvalid && 'border-danger focus:border-danger focus:ring-danger/40',
+                      nameInvalid && 'border-danger focus:border-danger-fg focus:ring-danger-fg',
                     )}
                   />
                   <input
@@ -182,7 +182,7 @@ export const ContextTab = memo(function ContextTab({ request }: ContextTabProps)
                 checked={ex.enabled}
                 onChange={(e) => updateExtraction(ex.id, { enabled: e.target.checked })}
                 aria-label={`Enable extraction ${idx + 1}`}
-                style={{ accentColor: 'rgb(var(--accent))' }}
+                style={{ accentColor: 'rgb(var(--accent-fg))' }}
               />
               <ExtractionVariableInput
                 value={ex.variable}
@@ -360,7 +360,7 @@ function ExtractionVariableInput({
         className={cn(
           inputClass,
           'font-mono',
-          invalid && 'border-danger focus:border-danger focus:ring-danger/40',
+          invalid && 'border-danger focus:border-danger-fg focus:ring-danger-fg',
         )}
       />
       {invalid && !validation.ok && (

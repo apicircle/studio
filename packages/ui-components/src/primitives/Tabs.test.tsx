@@ -48,6 +48,29 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: 'Headers' })).not.toHaveClass('text-accent-fg');
   });
 
+  it("rings a focused tab in the accent's readable colour, in both variants", () => {
+    // Measured on every theme by apps/web's theme-contrast test: a ring at 70%
+    // of the accent is under 3:1 against the panel on 23 themes.
+    const { rerender } = render(
+      <Tabs tabs={TABS} activeId="params" onChange={() => {}} label="Request sections" />,
+    );
+    for (const variant of ['pill', 'underline'] as const) {
+      rerender(
+        <Tabs
+          tabs={TABS}
+          activeId="params"
+          onChange={() => {}}
+          label="Request sections"
+          variant={variant}
+        />,
+      );
+      for (const tab of screen.getAllByRole('tab')) {
+        expect(tab).toHaveClass('focus-visible:ring-accent-fg');
+        expect(tab).not.toHaveClass('focus-visible:ring-accent/70');
+      }
+    }
+  });
+
   it('selects on click', async () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);

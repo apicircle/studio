@@ -563,29 +563,33 @@ test.describe('Request body types — matrix', () => {
         mimeType: 'application/pdf',
         buffer: Buffer.from('PDF-bytes'),
       });
-      // The picked file is recorded on the active request's body form rows.
-      const filename = await app.evaluate(() => {
-        const w = window as unknown as {
-          __apicircleStore?: {
-            getState: () => {
-              local?: { ui: { activeRequestId: string | null } };
-              synced?: {
-                collections: {
-                  requests: Record<
-                    string,
-                    { body: { formRows?: Array<{ kind: string; filename?: string }> } }
-                  >;
+      // The picked file is recorded on the active request's body form rows. The
+      // picker hands the file to `attachFormFile`, which stores it and only then
+      // names it on the row, so poll for the name rather than read it once: a
+      // single read raced the store and lost under a loaded runner.
+      const recordedFilename = () =>
+        app.evaluate(() => {
+          const w = window as unknown as {
+            __apicircleStore?: {
+              getState: () => {
+                local?: { ui: { activeRequestId: string | null } };
+                synced?: {
+                  collections: {
+                    requests: Record<
+                      string,
+                      { body: { formRows?: Array<{ kind: string; filename?: string }> } }
+                    >;
+                  };
                 };
               };
             };
           };
-        };
-        const s = w.__apicircleStore!.getState();
-        const reqId = s.local!.ui.activeRequestId!;
-        const rows = s.synced!.collections.requests[reqId]?.body.formRows ?? [];
-        return rows.find((r) => r.kind === 'file')?.filename ?? null;
-      });
-      expect(filename).toBe('report.pdf');
+          const s = w.__apicircleStore!.getState();
+          const reqId = s.local!.ui.activeRequestId!;
+          const rows = s.synced!.collections.requests[reqId]?.body.formRows ?? [];
+          return rows.find((r) => r.kind === 'file')?.filename ?? null;
+        });
+      await expect.poll(recordedFilename).toBe('report.pdf');
     },
   );
 

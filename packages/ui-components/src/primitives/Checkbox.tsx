@@ -41,8 +41,12 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
         className={cn(
           'pointer-events-none absolute inset-0 rounded-[3px] border transition-colors',
           'border-border bg-card',
-          'peer-checked:border-accent peer-checked:bg-accent/20',
-          'peer-focus-visible:ring-2 peer-focus-visible:ring-accent/50',
+          // What says "ticked" and "focused" is the accent's readable colour
+          // (`accent-fg`), measured on every theme by apps/web's theme-contrast
+          // test: the bare accent's tick is under 3:1 on 10 themes, and a ring
+          // at 50% of it under 3:1 on 51.
+          'peer-checked:border-accent-fg peer-checked:bg-accent/20',
+          'peer-focus-visible:ring-2 peer-focus-visible:ring-accent-fg',
           'peer-disabled:opacity-50',
         )}
       />
@@ -50,7 +54,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
         size={11}
         strokeWidth={3}
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 m-auto text-accent opacity-0 peer-checked:opacity-100"
+        className="pointer-events-none absolute inset-0 m-auto text-accent-fg opacity-0 peer-checked:opacity-100"
       />
     </span>
   );

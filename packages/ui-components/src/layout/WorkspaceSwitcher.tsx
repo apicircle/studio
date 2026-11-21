@@ -321,7 +321,7 @@ function NewWorkspaceModal({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !submitting) void onSubmit();
             }}
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
         {error && (

@@ -30,7 +30,7 @@ export const test = appTest.extend<SeededFixtures>({
     await seedAndOpen(page, workspaceVariant);
     // Same brand-visible gate as the plain app fixture so callers can't
     // race the hydration finishing.
-    await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible({
+    await expect(page.getByText('API Circle', { exact: true })).toBeVisible({
       timeout: 15_000,
     });
     await use(page);

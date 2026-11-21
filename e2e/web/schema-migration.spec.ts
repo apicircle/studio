@@ -74,7 +74,7 @@ async function seedWithMutator(
     },
   );
   await page.goto('/');
-  await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+  await expect(page.getByText('API Circle', { exact: true })).toBeVisible();
   return page.evaluate(() => {
     const w = window as unknown as { __apicircleStore?: { getState: () => unknown } };
     return JSON.parse(JSON.stringify(w.__apicircleStore!.getState()));

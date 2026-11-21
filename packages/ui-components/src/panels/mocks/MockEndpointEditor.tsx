@@ -139,7 +139,7 @@ export function MockEndpointEditor({
             onChange={(e) => setEndpoint({ name: e.target.value })}
             placeholder="Get pet by id"
             aria-label="Mock endpoint name"
-            className="h-8 w-56 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-8 w-56 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </fieldset>
         <PanelGroup direction="vertical" className="flex-1">
@@ -223,8 +223,8 @@ function PathPatternInput({
         className={cn(
           'h-8 rounded-sm border bg-surface px-2 font-mono text-xs text-text-primary focus:outline-none',
           reason !== null
-            ? 'border-danger focus:border-danger'
-            : 'border-border focus:border-accent',
+            ? 'border-danger focus:border-danger-fg'
+            : 'border-border focus:border-accent-fg',
         )}
       />
       {reason && (

@@ -28,7 +28,7 @@ export function HelpPanel() {
           tabIndex={0}
           role="region"
           aria-labelledby={`help-${selected.id}-title`}
-          className="flex-1 overflow-y-auto px-8 py-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="flex-1 overflow-y-auto px-8 py-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fg"
         >
           <header className="mb-4 border-b border-border-subtle pb-3">
             <h2

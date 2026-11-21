@@ -101,7 +101,7 @@ export function MockResponseEditor({
           value={value.status}
           onChange={(e) => setStatus(Number(e.target.value) || 200)}
           aria-label={`${label} status`}
-          className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
         <label className="ml-2 text-[0.6875rem] text-text-dim">Delay (ms)</label>
         <input
@@ -113,7 +113,7 @@ export function MockResponseEditor({
             setDelay(n > 0 ? n : undefined);
           }}
           aria-label={`${label} delay`}
-          className="h-7 w-20 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-20 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
 
@@ -251,7 +251,7 @@ function ResponseHeaderRow({
         checked={header.enabled}
         onChange={(e) => onChange({ enabled: e.target.checked })}
         aria-label={`${label} header ${index + 1} enabled`}
-        style={{ accentColor: 'rgb(var(--accent))' }}
+        style={{ accentColor: 'rgb(var(--accent-fg))' }}
       />
       <HeaderKeyAutocomplete
         value={header.key}
@@ -268,7 +268,7 @@ function ResponseHeaderRow({
           onBlur={() => setTimeout(() => setValueFocused(false), 150)}
           placeholder="value"
           aria-label={`${label} header ${index + 1} value`}
-          className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
         />
         <HeaderValueRecommendations
           headerKey={header.key}
@@ -574,21 +574,21 @@ function FormDataBodyEditor({
               checked={row.enabled}
               onChange={(e) => update(idx, { enabled: e.target.checked })}
               aria-label={`${label} form row ${idx + 1} enabled`}
-              style={{ accentColor: 'rgb(var(--accent))' }}
+              style={{ accentColor: 'rgb(var(--accent-fg))' }}
             />
             <input
               value={row.key}
               onChange={(e) => update(idx, { key: e.target.value })}
               placeholder="field"
               aria-label={`${label} form row ${idx + 1} key`}
-              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
             />
             <input
               value={row.value}
               onChange={(e) => update(idx, { value: e.target.value })}
               placeholder="value"
               aria-label={`${label} form row ${idx + 1} value`}
-              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
             />
             <button
               type="button"
@@ -710,14 +710,14 @@ function MultipliersEditor({
                     onChange={(e) => updateSource(idx, { key: e.target.value })}
                     placeholder={MULTIPLIER_SOURCE_PLACEHOLDER[m.source.kind]}
                     aria-label={`${label} multiplier ${idx + 1} source key`}
-                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                   <input
                     value={m.targetJsonPath}
                     onChange={(e) => update(idx, { targetJsonPath: e.target.value })}
                     placeholder="$.items"
                     aria-label={`${label} multiplier ${idx + 1} target JSON path`}
-                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                   <input
                     type="number"
@@ -728,7 +728,7 @@ function MultipliersEditor({
                     }
                     aria-label={`${label} multiplier ${idx + 1} default count`}
                     title="Default count when source is missing or non-numeric"
-                    className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                   <button
                     type="button"
@@ -752,7 +752,7 @@ function MultipliersEditor({
                       update(idx, { min: raw === '' ? undefined : Math.max(0, Number(raw) || 0) });
                     }}
                     aria-label={`${label} multiplier ${idx + 1} min`}
-                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                   <label htmlFor={`mul-${m.id}-max`}>Max</label>
                   <input
@@ -766,7 +766,7 @@ function MultipliersEditor({
                       update(idx, { max: raw === '' ? undefined : Math.max(0, Number(raw) || 0) });
                     }}
                     aria-label={`${label} multiplier ${idx + 1} max`}
-                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                   <input
                     value={m.name ?? ''}
@@ -775,7 +775,7 @@ function MultipliersEditor({
                     }
                     placeholder="Optional label"
                     aria-label={`${label} multiplier ${idx + 1} label`}
-                    className="h-6 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-6 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                 </div>
                 {m.min !== undefined && m.max !== undefined && m.min > m.max && (

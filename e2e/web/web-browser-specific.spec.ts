@@ -24,7 +24,7 @@ test.describe('Web browser-specific', () => {
     await app.goto(initial);
     await app.goBack();
     await app.goForward();
-    await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
   });
 
   test(
@@ -33,7 +33,7 @@ test.describe('Web browser-specific', () => {
       await sidebar.createRequest('wb-f5');
       await app.getByLabel('Request URL').fill('http://example.test/wb-f5');
       await app.keyboard.press('F5');
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       // After reload the workspace state in IDB should still carry
       // the request; assert via the store rather than the UI to avoid
       // flake on rendering order.
@@ -61,7 +61,7 @@ test.describe('Web browser-specific', () => {
     tc(id('Refresh :: Hard reload preserves IDB'), 'reload({waitUntil:load}) preserves IDB'),
     async ({ app }) => {
       await app.reload({ waitUntil: 'load' });
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       const hasIdb = await app.evaluate(() => typeof indexedDB !== 'undefined');
       expect(hasIdb).toBe(true);
     },
@@ -113,7 +113,7 @@ test.describe('Web browser-specific', () => {
         testInfo.project.name !== 'chromium',
         'Chromium smoke runs only on the chromium project',
       );
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       const ua = await app.evaluate(() => navigator.userAgent);
       expect(ua).toMatch(/Chrome|Chromium/);
     },
@@ -126,7 +126,7 @@ test.describe('Web browser-specific', () => {
         testInfo.project.name !== 'firefox-smoke',
         'Firefox smoke runs only on the firefox-smoke project',
       );
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       const ua = await app.evaluate(() => navigator.userAgent);
       expect(ua).toMatch(/Firefox/);
     },
@@ -139,7 +139,7 @@ test.describe('Web browser-specific', () => {
         testInfo.project.name !== 'webkit-smoke',
         'WebKit smoke runs only on the webkit-smoke project',
       );
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       const ua = await app.evaluate(() => navigator.userAgent);
       expect(ua).toMatch(/AppleWebKit/);
     },
@@ -175,8 +175,8 @@ test.describe('Web browser-specific — multi-tab', () => {
     tc(id('Multi-Tab :: Two tabs same workspace'), 'both tabs render the app shell'),
     async ({ twoTabs }) => {
       const { tabA, tabB } = twoTabs;
-      await expect(tabA.getByText('API Circle Studio', { exact: true })).toBeVisible();
-      await expect(tabB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(tabA.getByText('API Circle', { exact: true })).toBeVisible();
+      await expect(tabB.getByText('API Circle', { exact: true })).toBeVisible();
     },
   );
 
@@ -205,7 +205,7 @@ test.describe('Web browser-specific — multi-tab', () => {
       }, reqId);
       // Tab B reloads to pick up tab A's IDB write.
       await tabB.reload();
-      await expect(tabB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(tabB.getByText('API Circle', { exact: true })).toBeVisible();
       const seenOnB = await tabB.evaluate((rid) => {
         const w = window as unknown as {
           __apicircleStore?: {
@@ -258,12 +258,12 @@ test.describe('Web browser-specific — multi-tab', () => {
       // hangs the worker. The TC-WB-0003 semantic ("close one tab,
       // the other stays usable") is identical either way.
       await tabB.close();
-      await expect(tabA.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(tabA.getByText('API Circle', { exact: true })).toBeVisible();
       // Open another tab from the surviving context — the shared IDB
       // partition should still be readable.
       const tabC = await context.newPage();
       await tabC.goto('/');
-      await expect(tabC.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(tabC.getByText('API Circle', { exact: true })).toBeVisible();
       await tabC.close();
     },
   );

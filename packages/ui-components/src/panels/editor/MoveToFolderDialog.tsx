@@ -99,7 +99,7 @@ function MoveToFolderBody({
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter folders…"
               aria-label="Filter folders"
-              className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
             />
           </div>
         )}

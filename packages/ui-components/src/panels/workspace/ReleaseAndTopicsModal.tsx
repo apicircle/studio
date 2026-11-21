@@ -246,7 +246,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
                     checked={createHostRelease}
                     onChange={(e) => setCreateHostRelease(e.target.checked)}
                     aria-label={`Also create ${hostLabel} Release`}
-                    style={{ accentColor: 'rgb(var(--accent))' }}
+                    style={{ accentColor: 'rgb(var(--accent-fg))' }}
                     className="mt-0.5"
                   />
                   <span>
@@ -277,7 +277,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
                     onChange={(e) => setNotes(e.target.value)}
                     rows={4}
                     aria-label="Release notes"
-                    className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+                    className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                 </div>
               )}
@@ -404,7 +404,7 @@ function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps
                     }}
                     placeholder="Add topic (e.g. payments, graphql)"
                     aria-label="New topic"
-                    className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
                     disabled={topics.length >= 20}
                   />
                   <button

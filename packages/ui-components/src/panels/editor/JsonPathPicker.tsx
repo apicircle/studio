@@ -89,7 +89,7 @@ export function JsonPathPicker({ jsonText, title, onPick, onClose }: JsonPathPic
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter by key name…"
               aria-label="Filter JSON keys"
-              className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
             />
           </div>
         )}

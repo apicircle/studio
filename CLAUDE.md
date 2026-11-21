@@ -483,7 +483,35 @@ The install/uninstall logic lives in
   behavioral toggles, theme + font pickers, and the **Community section**
   (`community/CommunitySection.tsx`) that fetches live GitHub stats with a
   6h IndexedDB cache (an edition leaves it out with `App settingsCommunity={false}`,
-  §11). Desktop builds get a native download CTA via the `desktopDownload` primitive.
+  §11). Every "get the desktop app" link — the `desktopDownload` primitive
+  (`DesktopAppLink`) and the Help Center's links — goes to the website's download
+  page (`DESKTOP_DOWNLOAD_URL`, https://apicircle.dev/download), which offers the
+  API Circle desktop app this workspace is part of. URLs live in
+  `primitives/externalLinks.ts`.
+- **Header brand and the Lens link.** The top bar names the product, "API
+  Circle", with Studio's tagline. The standalone app (`apps/web/src/main.tsx`,
+  which the desktop app loads too) passes `App lensLink`, which starts the bar's
+  far end with a "Lens" link to the website's page about the paid features
+  (`LENS_URL`, https://apicircle.dev/lens), opened in a new tab (`target="_blank"`;
+  the desktop shell's window-open handler hands it to the system browser). The
+  page title is "API Circle" (`apps/web/index.html`). The link's colours are
+  measured on every theme (`LENS_LINK` in `apps/web/src/__tests__/theme-contrast.test.ts`,
+  held to the classes by `TopBar.test.tsx`): tone-coloured text is
+  `text-accent-fg`, never the bare `text-accent`. The same holds for the whole
+  header: the top bar's panel buttons, the tab strip (`PanelTabs`) and the
+  workspace status chip draw their labels, icons and focus rings in `-fg`
+  tokens (`ring-accent-fg`, never `ring-accent/70`), measured on every theme by
+  `headerParts` in the same test file. A tone-coloured label never sits on a
+  tint over a tint: `-fg` is solved for one 10% or 15% tint over `surface` or
+  `card`. Every focus indicator is a readable tone, never the bare tone or a
+  share of it: rings `ring-accent-fg`, a field's focus
+  `focus:border-accent-fg focus:ring-accent-fg` (`-danger-fg` when invalid),
+  and the default outline for everything else (`*:focus-visible` in
+  `global.css`) `--accent-fg`. A native checkbox's or radio's ticked fill is
+  `accentColor: 'rgb(var(--accent-fg))'` or `accent-accent-fg` (a caution box
+  `accent-warning-fg`). `controlColours.test.ts` in ui-components fails on any
+  other focus or ticked colour in the source; `ringShortfalls` and `fieldParts`
+  in theme-contrast.test.ts hold them to 3:1 on every theme.
 - **MCP panel** (`panels/mcp/`) is two sections (`mcpPanelTypes`):
   **Connection** — the four-step `HowToConnect` setup flow that emits a
   per-client config snippet via the desktop bridge (Windows path encoding
@@ -683,7 +711,12 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       mode remembers it (`ownPanelIds`). `layout/visibleTabs.ts` is the one list
       `PanelTabs` renders and `KeyboardShortcuts` numbers, so `Ctrl/Cmd + N`
       follows the strip on screen.
-    - `brand` (`BrandDef`): the header brand.
+    - `brand` (`BrandDef`): the header brand. Omitted, the bar reads "API Circle"
+      with Studio's tagline; `tagline: null` drops the sub-line.
+    - `lensLink` (`boolean`, default `false`): `true` starts the top bar's far
+      end with the "Lens" link to https://apicircle.dev/lens (new tab). Only the
+      standalone app turns it on; an edition that is Lens itself leaves it out
+      and renders exactly as before.
     - `workspaceStatus` (`ReactNode`): shown beside the workspace switcher in the
       top bar. `WorkspaceStatusChip` (`layout/WorkspaceStatusChip.tsx`) is the
       one Studio ships for it: repository, working branch and unpushed count, or

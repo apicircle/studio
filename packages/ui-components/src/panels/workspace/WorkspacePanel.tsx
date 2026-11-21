@@ -136,7 +136,7 @@ export function WorkspacePanel() {
           id="workspace-name-input"
           value={workspaceName}
           onChange={(e) => setWorkspaceName(e.target.value)}
-          className="mt-1 h-9 w-full max-w-md rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          className="mt-1 h-9 w-full max-w-md rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent-fg focus:outline-none focus:ring-2 focus:ring-accent-fg"
         />
         <p className="mt-2 text-xs text-text-dim">
           Saved with this workspace, and shared in the repo&apos;s workspace list when you push so
@@ -446,7 +446,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               onChange={(e) => setVersion(e.target.value)}
               placeholder="0.1.0"
               aria-label="Release version"
-              className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
             />
           </div>
           <div>
@@ -459,7 +459,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               onChange={(e) => setNotes(e.target.value)}
               rows={5}
               aria-label="Release notes"
-              className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
             />
           </div>
           <p className="rounded-sm border border-border-subtle bg-surface p-2 text-xs leading-snug text-text-dim">
@@ -1102,7 +1102,7 @@ function ConnectRepoForm() {
               onChange={(e) => setValue(e.target.value)}
               placeholder={REPO_PLACEHOLDER[host]}
               aria-label="Repo full name"
-              className="h-8 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-8 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !submitting) void submitManual();
               }}
@@ -1150,7 +1150,7 @@ function ConnectRepoForm() {
             aria-expanded={showRepoList}
             role="combobox"
             disabled={loadingRepos || submitting}
-            className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
+            className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none disabled:opacity-50"
           />
           {showRepoList && filteredRepos.length > 0 && (
             <ul
@@ -1789,7 +1789,7 @@ function BranchCard() {
             onChange={(e) => setMessage(e.target.value)}
             placeholder="chore: sync workspace via API Circle Studio"
             aria-label="Commit message"
-            className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
       )}
@@ -2216,6 +2216,7 @@ function BranchChangesReview({
                   type="checkbox"
                   checked={includeStudio}
                   onChange={(e) => onIncludeStudioChange(e.target.checked)}
+                  className="accent-accent-fg"
                 />
                 Include Studio changes
               </label>
@@ -2254,7 +2255,7 @@ function BranchChangesReview({
             onChange={(e) => push.onMessageChange(e.target.value)}
             placeholder="chore: sync workspace via API Circle Studio"
             aria-label="Commit message"
-            className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
         <div className="flex justify-end gap-2 pt-1">
@@ -2391,7 +2392,9 @@ function PRTitleField({ value, onChange }: { value: string; onChange: (next: str
         aria-invalid={showReason || undefined}
         className={cn(
           'mt-1 h-8 w-full rounded-sm border bg-surface px-2 text-xs text-text-primary focus:outline-none',
-          showReason ? 'border-danger focus:border-danger' : 'border-border focus:border-accent',
+          showReason
+            ? 'border-danger focus:border-danger-fg'
+            : 'border-border focus:border-accent-fg',
         )}
       />
       {showReason && !result.ok && (
@@ -2480,7 +2483,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
             }}
             aria-label="PR body"
             rows={6}
-            className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
         {error && (
@@ -2738,7 +2741,7 @@ function CreateBranchForm() {
               setError(null);
             }}
             aria-label="Base branch"
-            className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 font-mono text-xs text-text-primary focus:border-accent-fg focus:outline-none"
           >
             {branches?.map((b) => (
               <option key={b.name} value={b.name}>
@@ -2769,7 +2772,7 @@ function CreateBranchForm() {
                   setStartFrom('local');
                   setError(null);
                 }}
-                className="h-3 w-3 accent-accent"
+                className="h-3 w-3 accent-accent-fg"
               />
               This workspace
             </label>
@@ -2783,7 +2786,7 @@ function CreateBranchForm() {
                   setStartFrom('import');
                   setError(null);
                 }}
-                className="h-3 w-3 accent-accent"
+                className="h-3 w-3 accent-accent-fg"
               />
               Import from workspace
             </label>
@@ -2819,7 +2822,7 @@ function CreateBranchForm() {
                 }}
                 aria-label="Workspace to import"
                 aria-describedby="import-workspace-hint"
-                className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
               >
                 {branchWorkspaces?.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -2879,7 +2882,7 @@ function CreateBranchForm() {
         }}
         aria-label="Branch name"
         placeholder="apicircle/wb-feature"
-        className="h-7 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+        className="h-7 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent-fg focus:outline-none"
       />
       {validation && <p className="text-xs text-warning">{validation}</p>}
       {error && (

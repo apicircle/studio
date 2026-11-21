@@ -129,6 +129,67 @@
 
 ### Fixed
 
+- **The header reads on every theme.** Measured on all 60 themes, the header's
+  accent-coloured parts fell short on many of them: the active tab's label
+  (the bare accent on its 15% tint) was under 4.5:1 on 34 themes, 1.9:1 on Ayu
+  Light; the keyboard focus ring of the Help button, the tabs, the mode buttons
+  and the workspace status chip (70% of the accent) was under 3:1 against the
+  bar on 23; and the status chip's labels, a mode button's icon and chevron and
+  the open panel's top-bar icon were under their minimum on up to 29. Each now
+  takes the tone's generated readable colour (`text-accent-fg`,
+  `text-warning-fg`, `ring-accent-fg`), which holds on every theme. On the
+  Workspace page the status chip's unpushed count sits on the bar (`bg-card`)
+  instead of a second accent tint over the chip's, which was more accent than
+  `accent-fg` is solved for. `theme-contrast.test.ts` measures every part on
+  every theme (`headerParts`), the TopBar, PanelTabs and WorkspaceStatusChip
+  tests hold the classes to it, and an E2E test checks the built CSS draws the
+  focus rings and the active tab's label in exactly those colours on every
+  theme. Lens editions, whose mode buttons and status chip these are, pick
+  this up with the next sync and need no change of their own.
+- **Every keyboard focus ring shows on every theme.** The last three rings drawn
+  at 70% of the accent now use the accent's readable colour too
+  (`ring-accent-fg`): the `Tabs` primitive (the request editor's section tabs
+  and every other tablist), the section-choice cards of `SectionLanding`, and
+  the scrollable diff in the unpushed-changes list, whose ring is drawn inside,
+  over the rows' added and removed tints. The old ring was under 3:1 against
+  `card` on 23 themes, `surface` on 22, an added line on 39 and a removed one
+  on 36 (1.5:1 on Ayu Light); the new one holds 3:1 against all four on every
+  theme. The landing cards' icon takes `text-accent-fg` as well (the bare
+  accent was under 3:1 on Ayu Light). No `ring-accent/70` is left in
+  ui-components. `theme-contrast.test.ts` measures the ring against every
+  backdrop (`ringShortfalls`), the Tabs, SectionLanding and
+  UnpushedChangesList tests hold the classes, and the E2E readable-colours test
+  checks a request section tab's ring on every theme.
+- **Fields, checkboxes and radios show focus on every theme.** A field's focus
+  was the bare accent as its edge with a 30% ring of it (40% of the danger
+  colour when the field is invalid); measured on all 60 themes, those rings
+  were under 3:1 on every one, and the accent edge on Ayu Light and Tokyo
+  Night Day. Every field (`Input`, `SecretInput`, `Select` and the hand-rolled
+  fields across the panels, 186 classes in 42 files) now turns its edge and
+  ring to the tone's readable colour (`focus:border-accent-fg`,
+  `focus:ring-accent-fg`; `-danger-fg` when invalid), at least 4.6:1 on every
+  theme. The `Checkbox` and `Radio` primitives' 50% ring (under 3:1 on 51
+  themes) is `ring-accent-fg`, and so are their tick, ticked edge and dot (the
+  bare accent tick was under 3:1 on 10 themes, 1.8:1 on Ayu Light). The app's
+  default focus outline in `global.css` (`*:focus-visible`), the ring of every
+  native checkbox and radio and of any control that draws none of its own, is
+  `--accent-fg` instead of the bare accent. The last faint rings went with
+  them: the kebab and file-picker menus' items, the Help article's scroll area
+  and the response-size hint's button. A native checkbox or radio is filled
+  with its `accent-color` when ticked, and that was the bare accent (under 3:1
+  on Ayu Light and Tokyo Night Day): all 25 now use the readable accent
+  (`accentColor: 'rgb(var(--accent-fg))'`, `accent-accent-fg`), including the
+  branch card's "Include Studio changes" box, which had none and drew the
+  browser's blue. The folder export's credential checkboxes keep a caution tone
+  but in its readable form (`accent-warning-fg`; the amber they had was under
+  3:1 on 9 themes). A new `controlColours.test.ts` reads every ui-components
+  source file and fails on any focus ring, edge or outline, or any native box's
+  ticked fill, drawn in a bare tone or a share of one; `theme-contrast.test.ts`
+  measures the field, box, ticked-fill and default-outline colours on every
+  theme (`fieldParts`), and the E2E readable-colours test checks a field's edge
+  and ring and a checkbox's outline and ticked fill on every theme. The
+  working-branch card's golden DOM changes in its pull request modal's two
+  fields, and only there.
 - **A split spec no longer asks for its Markdown or code-sample files.**
   Redocly-style specs keep prose and code samples in files of their own
   (`description: { $ref: ./description.md }`,
@@ -880,6 +941,48 @@ variant="solid"` fills with the accent itself. Its label and hover are two
 
 ### Changed
 
+- **The app is called API Circle, links to Lens, and sends desktop downloads to
+  the website.** The standalone app (studio.apicircle.dev and the standalone
+  desktop build) now names the product the way everything else does:
+  - **"API Circle" in the header and the tab title.** The top bar reads "API
+    Circle" with Studio's tagline under it (it read "API Circle Studio"), and
+    so does the browser tab and the desktop window title (`apps/web/index.html`).
+    The tour opens with "Welcome to API Circle", the Help Center's Welcome
+    article starts "API Circle is a free workspace…", the OAuth sign-in pages
+    (web popup and desktop loopback) say "API Circle captured the
+    credentials", and Settings' Community section says "API Circle's free
+    workspace is open source." Left as they were, on purpose: the installed
+    desktop app's name (`productName: API Circle Studio`, which also names its
+    settings folder and update files) and the update banner and macOS steps
+    that quote it, the request headers Studio sends (`User-Agent` values,
+    `x-client-name: API Circle Studio`) and the Headers tab line that explains
+    them, the GitHub OAuth App's name, the default push commit message, and
+    the VS Code extension's name.
+  - **A "Lens" link in the header.** The far end of the top bar starts with
+    **Lens**, which opens the website's page about the paid Lens features
+    (https://apicircle.dev/lens) in a new tab — the system browser on desktop.
+    It is opt-in: `App` takes a new `lensLink` prop (default `false`) that only
+    the standalone app passes (`apps/web/src/main.tsx`), so an edition that
+    already is Lens renders exactly as before with no change of its own. Its
+    colours read on all 60 themes: the label is `text-primary` on its own
+    `surface` fill inside a `border` edge, and on hover and focus it takes the
+    accent's generated readable foreground (`accent-fg`), never the bare accent,
+    which as small text is under 4.5:1 on 29 themes (2:1 on Ayu Light).
+    `theme-contrast.test.ts` measures each part on every theme, and an E2E
+    test checks the built CSS draws exactly those colours, at rest and on
+    hover.
+  - **Every desktop download goes to https://apicircle.dev/download**, the
+    page that offers the API Circle desktop app this workspace is part of, in a
+    new tab: the Desktop App links in the Mocks panel and the Params and
+    Headers tabs (`DesktopAppLink`), the web build's secrets message, and every
+    link in the Help Center (Auth, Secrets, Mocks, the mock runtime, the
+    Desktop App article and Troubleshooting). They led to the standalone
+    build's latest GitHub release. The Desktop App article now offers the API
+    Circle app first, and its unsigned-build and macOS-quarantine steps say
+    they are for the standalone build. `externalLinks.ts` gains
+    `DESKTOP_DOWNLOAD_URL` and `LENS_URL`; the exported `DESKTOP_RELEASES_URL`
+    stays, now naming the download page, and the unused
+    `GITHUB_RELEASES_LATEST_URL` is gone.
 - **A disabled button says why.** Every action Studio disables in a shipped
   build now says what it waits for: the plan's Run and Run with assertions
   ("Add a step first."), Add step, the step row's controls while the plan runs
@@ -1188,6 +1291,11 @@ variant="solid"` fills with the accent itself. Its label and hover are two
 
 ### Tests
 
+- **A picked form-data file is waited for** (`e2e/web/body-types.spec.ts`,
+  TC-BE-0022). The picker hands the file to `attachFormFile`, which stores it and
+  only then names it on the row; the test read the row once, straight after the
+  pick, and lost that race on a loaded runner. It now polls for the name
+  (10 of 10 repeats green at 4 workers).
 - **Actions and reasons** (`e2e/web/actions-and-reasons.spec.ts`, 9 cells):
   Copy / Save / Raw on a response, Move to… for a request and a folder (with
   axe on the dialog), a disabled button's reason on hover and on keyboard

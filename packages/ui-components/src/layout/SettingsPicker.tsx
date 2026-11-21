@@ -549,7 +549,7 @@ function ToggleRow({
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         aria-label={ariaLabel}
-        className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+        className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent-fg"
       />
       <div className="flex flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-1.5 text-xs text-text-primary">

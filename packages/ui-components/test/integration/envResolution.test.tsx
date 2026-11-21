@@ -29,7 +29,7 @@ describe('integration: env resolution at send time', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
-    await screen.findByText('API Circle Studio');
+    await screen.findByText('API Circle');
 
     // Seed a slot ("the wrapping passphrase") and an env var with its own
     // plaintext. Binding encrypts the env var's plaintext under the slot's

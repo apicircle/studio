@@ -219,7 +219,7 @@ function CredentialsSection({
                     type="checkbox"
                     checked={included}
                     onChange={() => onToggle(c.id)}
-                    className="h-3 w-3 cursor-pointer accent-amber"
+                    className="h-3 w-3 cursor-pointer accent-warning-fg"
                     aria-label={`Include ${c.label} for ${c.ownerName}`}
                   />
                   <label

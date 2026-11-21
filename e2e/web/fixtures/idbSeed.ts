@@ -573,7 +573,7 @@ export async function seedAndOpen(
   await page.goto('/oauth-callback.html');
   await writeSeedToIdb(page, seed);
   await page.goto(appUrl);
-  await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+  await expect(page.getByText('API Circle', { exact: true })).toBeVisible();
   return seed.ids;
 }
 
@@ -586,7 +586,7 @@ export async function seedWorkspace(page: Page, variant: SeedVariant): Promise<S
   const seed = buildSeed(variant);
   await writeSeedToIdb(page, seed);
   await page.reload();
-  await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+  await expect(page.getByText('API Circle', { exact: true })).toBeVisible();
   return seed.ids;
 }
 
@@ -627,6 +627,6 @@ export async function seedWorkspacesAndOpen(
     workspaces: workspaces.map((w) => w.entry),
   });
   await page.goto('/');
-  await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+  await expect(page.getByText('API Circle', { exact: true })).toBeVisible();
   return workspaces.map((w) => w.entry.id);
 }

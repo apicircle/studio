@@ -52,7 +52,7 @@ export const HeadersTab = memo(function HeadersTab({ request }: HeadersTabProps)
               checked={row.enabled}
               onChange={(e) => update(index, { enabled: e.target.checked })}
               aria-label={`Enable header ${index + 1}`}
-              style={{ accentColor: 'rgb(var(--accent))' }}
+              style={{ accentColor: 'rgb(var(--accent-fg))' }}
             />
             <HeaderKeyAutocomplete
               value={row.key}

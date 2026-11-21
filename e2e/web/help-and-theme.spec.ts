@@ -190,7 +190,7 @@ test.describe('Theme persistence (P7)', () => {
       });
       // Brand text still readable; no layout collapse means we still
       // find the top-bar button by accessible name.
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       await expect(app.getByRole('button', { name: /^Editor$/ }).first()).toBeVisible();
       await app.evaluate(() => {
         document.documentElement.style.fontSize = '';
@@ -352,7 +352,7 @@ test.describe('Theme Matrix', () => {
         // copy here; the visual baseline (S10) covers pixel-level
         // rendering for the studio-dark default. This test only
         // proves the theme swap keeps the shell visible.
-        await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+        await expect(app.getByText('API Circle', { exact: true })).toBeVisible();
       }
     });
   }

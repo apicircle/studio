@@ -1,7 +1,7 @@
 import { expect, test as base, type Page, type Locator } from '@playwright/test';
 
 // Shared fixtures for the v2 E2E suite. Each test gets:
-//   - `app`: a Page already booted past hydration ("API Circle Studio"
+//   - `app`: a Page already booted past hydration (the "API Circle" brand
 //     visible) and with a clean IDB + localStorage.
 //   - `mockApi`: a tiny fluent route mocker for `httpbin.org/anything`-style
 //     endpoints so specs don't depend on the public internet.
@@ -162,9 +162,9 @@ export const test = base.extend<Fixtures & Options>({
     }
     await page.goto('/');
     // The shell renders the brand once the workspace is hydrated. Use
-    // exact match because a welcome banner ("Welcome to API Circle Studio")
-    // would otherwise match too and trip strict mode.
-    await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+    // exact match because a welcome banner ("Welcome to API Circle") would
+    // otherwise match too and trip strict mode.
+    await expect(page.getByText('API Circle', { exact: true })).toBeVisible();
     await use(page);
   },
   mockApi: async ({ page }, use) => {

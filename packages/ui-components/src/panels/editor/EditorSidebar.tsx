@@ -256,7 +256,7 @@ export function EditorSidebar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search requests…"
           aria-label="Search requests"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
 
@@ -820,8 +820,8 @@ function RenameInput({ initial, ariaLabel, isAvailable, onCommit, onCancel }: Re
         className={cn(
           'h-6 flex-1 rounded-sm border bg-card px-1.5 text-xs text-text-primary focus:outline-none focus:ring-1',
           duplicate
-            ? 'border-danger focus:border-danger focus:ring-danger/40'
-            : 'border-accent focus:border-accent focus:ring-accent/40',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-accent focus:border-accent-fg focus:ring-accent-fg',
         )}
       />
       {duplicate && (
@@ -900,8 +900,8 @@ function CreateInput({ kind, depth, isAvailable, onCommit, onCancel }: CreateInp
         className={cn(
           'h-6 flex-1 rounded-sm border bg-card px-1.5 text-xs text-text-primary focus:outline-none focus:ring-1',
           duplicate
-            ? 'border-danger focus:border-danger focus:ring-danger/40'
-            : 'border-accent focus:border-accent focus:ring-accent/40',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-accent focus:border-accent-fg focus:ring-accent-fg',
         )}
       />
       {duplicate && (

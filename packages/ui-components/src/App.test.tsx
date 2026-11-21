@@ -12,7 +12,7 @@ describe('App', () => {
     render(<App />);
     expect(screen.getByText(/Loading workspace/)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText('API Circle Studio')).toBeInTheDocument();
+      expect(screen.getByText('API Circle')).toBeInTheDocument();
     });
     // PanelTabs renders 7 buttons. TopBar renders 2 (Secret Vault, Theme).
     expect(useWorkspaceStore.getState().ready).toBe(true);
@@ -20,7 +20,7 @@ describe('App', () => {
 
   it('end-to-end chrome flow: hydrate → switch panel → open vault from rail → switch theme', async () => {
     render(<App />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
 
     // Switch panel: Editor → Workspace
     await userEvent.click(screen.getByRole('button', { name: /^Workspace$/ }));
@@ -56,7 +56,7 @@ describe('App', () => {
       SidebarActions: () => <button type="button">Discover action</button>,
     };
     render(<App extraPanels={[Discover]} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
 
     // Core tabs still present; the extra tab is appended after them.
     expect(screen.getByRole('button', { name: /^Editor$/ })).toBeInTheDocument();
@@ -82,7 +82,7 @@ describe('App', () => {
   it('reconciles a persisted activePanel that this build no longer shows', async () => {
     useWorkspaceStore.setState({ activePanel: 'link-workspace' });
     render(<App />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     await waitFor(() => {
       expect(useWorkspaceStore.getState().activePanel).toBe('editor');
     });
@@ -95,7 +95,7 @@ describe('App', () => {
     // user whose last tab was Mocks relaunches on Mocks, not on the Editor.
     useWorkspaceStore.setState({ activePanel: 'mocks' });
     render(<App />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
     expect(screen.getByRole('button', { name: /^Mocks$/ })).toHaveAttribute('aria-current', 'page');
   });
@@ -114,7 +114,7 @@ describe('App', () => {
     ];
     useWorkspaceStore.setState({ activePanel: 'lens.discover' });
     render(<App extraPanels={extraPanels} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
   });
 
@@ -136,7 +136,7 @@ describe('App', () => {
       },
     ];
     render(<App sections={sections} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
 
     // First-run landing (>1 section) — one card per section.
     const dialog = screen.getByRole('dialog', { name: /Choose how you want to start/ });
@@ -162,7 +162,7 @@ describe('App', () => {
       { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover'] },
     ];
     render(<App sections={sections} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     expect(useWorkspaceStore.getState().activePanel).toBe('editor');
 
     const dialog = screen.getByRole('dialog', { name: /Choose how you want to start/ });
@@ -173,13 +173,13 @@ describe('App', () => {
 
   it('renders an edition workspace status in the top bar', async () => {
     render(<App workspaceStatus={<span>ON BRANCH MAIN</span>} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     expect(screen.getByText('ON BRANCH MAIN')).toBeInTheDocument();
   });
 
   it("shows an edition's notice in the confirmation before the repository is disconnected", async () => {
     render(<App repoDisconnectNotice={<p>EDITION FORGETS ITS FOLDER</p>} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     act(() => {
       const state = useWorkspaceStore.getState();
       state.setActivePanel('workspace');
@@ -220,17 +220,43 @@ describe('App', () => {
 
   it("leaves Settings' Community section out for an edition that passes settingsCommunity={false}", async () => {
     render(<App settingsCommunity={false} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     await userEvent.click(screen.getByRole('button', { name: /Open workspace settings/ }));
     expect(screen.getByRole('dialog', { name: 'Workspace settings' })).toBeInTheDocument();
     expect(screen.getByText('Behavior')).toBeInTheDocument();
     expect(screen.queryByText('Community')).toBeNull();
-    expect(screen.queryByText(/API Circle Studio is open source/)).toBeNull();
+    expect(screen.queryByText(/free workspace is open source/)).toBeNull();
+  });
+
+  it('shows the Community section, with the open-source line, when nothing is passed', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByText('API Circle'));
+    await userEvent.click(screen.getByRole('button', { name: /Open workspace settings/ }));
+    expect(screen.getByText('Community')).toBeInTheDocument();
+    expect(screen.getByText('API Circle’s free workspace is open source.')).toBeInTheDocument();
+  });
+
+  it('carries no Lens link when nothing is passed — the Lens editions render as before', async () => {
+    render(<App brand={{ name: 'API Circle', tagline: null }} />);
+    await waitFor(() => screen.getByText('API Circle'));
+    expect(screen.queryByRole('link', { name: /Lens/ })).toBeNull();
+  });
+
+  it("with lensLink (the standalone app), the top bar links to the website's Lens page", async () => {
+    render(<App lensLink />);
+    await waitFor(() => screen.getByText('API Circle'));
+    const lens = screen.getByRole('link', { name: 'Lens (opens in a new tab)' });
+    expect(lens).toHaveAttribute('href', 'https://apicircle.dev/lens');
+    expect(lens).toHaveAttribute('target', '_blank');
+    // In the bar, before Help — not in the tab strip below it.
+    const help = screen.getByRole('button', { name: 'Help Center' });
+    expect(lens.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Top navigation' })).not.toContainElement(lens);
   });
 
   it("renders an edition's node at the far end of the top bar, after Help", async () => {
     render(<App topBarEnd={<button type="button">ACCOUNT MENU</button>} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     const help = screen.getByRole('button', { name: 'Help Center' });
     const account = screen.getByRole('button', { name: 'ACCOUNT MENU' });
     expect(help.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -242,7 +268,7 @@ describe('App', () => {
 
   it('opens the Help Center from the top bar: the same page, and no tab is current', async () => {
     render(<App />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     const strip = screen.getByRole('navigation', { name: 'Top navigation' });
     expect(within(strip).queryByRole('button', { name: 'Help Center' })).toBeNull();
 
@@ -271,7 +297,7 @@ describe('App', () => {
     // panel this build does not show at all.
     useWorkspaceStore.setState({ activePanel: 'help' });
     render(<App />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     expect(useWorkspaceStore.getState().activePanel).toBe('help');
     expect(await screen.findByRole('heading', { level: 2, name: 'Welcome' })).toBeInTheDocument();
   });
@@ -279,7 +305,7 @@ describe('App', () => {
   it('registers no landing or mode groups in Studio (no sections — strict no-op)', async () => {
     localStorage.removeItem('apicircle:section-landing-done-v1');
     render(<App />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     expect(screen.queryByRole('dialog', { name: /Choose how you want to start/ })).toBeNull();
     expect(document.querySelector('[data-section-toggle]')).toBeNull();
   });
@@ -292,7 +318,7 @@ describe('App', () => {
       { id: 'empty', label: 'Empty', icon: Server, panelIds: [] },
     ];
     render(<App sections={sections} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     const before = useWorkspaceStore.getState().activePanel;
     await userEvent.click(screen.getByRole('button', { name: /^Empty$/ }));
     expect(useWorkspaceStore.getState().activePanel).toBe(before);
@@ -309,7 +335,7 @@ describe('App', () => {
     ];
     // First launch to learn the hydrated workspace id (the mode is persisted per id).
     const first = render(<App sections={sections} extraPanels={extraPanels} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     first.unmount();
 
@@ -320,7 +346,7 @@ describe('App', () => {
     useWorkspaceStore.getState().setActivePanel('editor');
 
     render(<App sections={sections} extraPanels={extraPanels} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     // Restored into Lens mode → 'editor' isn't a Lens panel → land on Lens's
     // first panel instead of showing the Editor body under the Lens tab strip.
     await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover'));
@@ -335,7 +361,7 @@ describe('App', () => {
       { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover', 'history'] },
     ];
     const first = render(<App sections={sections} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     first.unmount();
 
@@ -343,7 +369,7 @@ describe('App', () => {
     useWorkspaceStore.getState().setActivePanel('editor');
 
     render(<App sections={sections} />);
-    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => screen.getByText('API Circle'));
     await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('history'));
   });
 
@@ -470,7 +496,7 @@ describe('App', () => {
     it('a cold launch on the Help Center stays there, under the stored mode', async () => {
       localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
       const first = render(<App sections={sections} extraPanels={extraPanels} />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const wsId = useWorkspaceStore.getState().synced!.workspaceId;
       first.unmount();
 
@@ -495,7 +521,7 @@ describe('App', () => {
 
     it('writes nothing without sections (Studio standalone)', async () => {
       render(<App />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const setItem = vi.spyOn(Storage.prototype, 'setItem');
 
       openPanel('history');
@@ -510,7 +536,7 @@ describe('App', () => {
       localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
       // The first launch only learns the hydrated workspace id (the mode is stored per id).
       const first = render(<App sections={sections} extraPanels={extraPanels} />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const wsId = useWorkspaceStore.getState().synced!.workspaceId;
       first.unmount();
 
@@ -738,7 +764,7 @@ describe('App', () => {
       localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
       // The first launch only learns the hydrated workspace id.
       const first = render(<App sections={sections} extraPanels={extraPanels} />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const wsId = useWorkspaceStore.getState().synced!.workspaceId;
       first.unmount();
 
@@ -801,7 +827,7 @@ describe('App', () => {
 
     it('records nothing without sections (Studio standalone)', async () => {
       render(<App />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
 
       openPanel('history');
 
@@ -818,7 +844,7 @@ describe('App', () => {
       async function launchBeforeReviewArrives() {
         localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
         const first = render(<App sections={sections} extraPanels={withoutReview} />);
-        await waitFor(() => screen.getByText('API Circle Studio'));
+        await waitFor(() => screen.getByText('API Circle'));
         const wsId = useWorkspaceStore.getState().synced!.workspaceId;
         first.unmount();
 
@@ -962,7 +988,7 @@ describe('App', () => {
 
     it('refreshes a working branch once on launch when nothing is locked', async () => {
       render(<App />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const refreshWorkspace = pending();
       seedBranchOn('gitlab', refreshWorkspace);
       expect(refreshWorkspace).toHaveBeenCalledTimes(1);
@@ -970,7 +996,7 @@ describe('App', () => {
 
     it('never refreshes a branch on a locked host, then refreshes once it unlocks', async () => {
       const view = render(<App gitHostAccess={{ lockedHosts: ['gitlab'] }} />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const refreshWorkspace = pending();
       seedBranchOn('gitlab', refreshWorkspace);
       act(() => {
@@ -987,7 +1013,7 @@ describe('App', () => {
 
     it('still refreshes a GitHub branch while other hosts are locked', async () => {
       render(<App gitHostAccess={{ lockedHosts: ['gitlab', 'bitbucket', 'azure-devops'] }} />);
-      await waitFor(() => screen.getByText('API Circle Studio'));
+      await waitFor(() => screen.getByText('API Circle'));
       const refreshWorkspace = pending();
       seedBranchOn('github', refreshWorkspace);
       expect(refreshWorkspace).toHaveBeenCalledTimes(1);

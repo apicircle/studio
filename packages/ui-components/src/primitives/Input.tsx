@@ -31,8 +31,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         'placeholder:text-text-faint',
         'focus:outline-none focus:ring-1',
         invalid
-          ? 'border-danger focus:border-danger focus:ring-danger/40'
-          : 'border-border focus:border-accent focus:ring-accent/30',
+          ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+          : 'border-border focus:border-accent-fg focus:ring-accent-fg',
         'disabled:cursor-not-allowed disabled:opacity-50',
         SIZE[size],
         className,

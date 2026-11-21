@@ -70,6 +70,15 @@ unaffected:
   so that opening it never moves the mode, and the shell does not move a reader
   off it when the workspace changes. Additive and a no-op when omitted: Studio
   passes nothing, and Help is then the last thing in its top bar.
+- **Lens link** — the optional `App` `lensLink` prop (a boolean, default
+  `false`) starts the top bar's far end, before Help, with a "Lens" link to the
+  website's page about the paid Lens features (https://apicircle.dev/lens),
+  opened in a new tab; the desktop shell hands such a link to the system
+  browser. Only the standalone app passes it (`apps/web/src/main.tsx`, which the
+  desktop app loads too). Additive and a no-op when omitted: an edition that is
+  Lens itself passes nothing and its top bar is unchanged. The header brand, by
+  contrast, has a default of its own: without `brand` the bar reads "API Circle"
+  with Studio's tagline, and an edition passes `brand` to change it.
 - **Settings community** — the optional `App` `settingsCommunity` prop (a
   boolean, default `true`) says whether the Settings popover ends with the
   Community section: the open-source Studio's GitHub stars, open issues and

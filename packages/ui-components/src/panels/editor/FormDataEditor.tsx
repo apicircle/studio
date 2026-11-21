@@ -168,7 +168,7 @@ function FormDataRowView({
           )
         }
         aria-label={`Enable form-data row ${index + 1}`}
-        style={{ accentColor: 'rgb(var(--accent))' }}
+        style={{ accentColor: 'rgb(var(--accent-fg))' }}
       />
 
       <div role="radiogroup" aria-label={`Form-data row ${index + 1} kind`} className="flex">
@@ -214,7 +214,7 @@ function FormDataRowView({
         onKeyDown={(e) => onCellKeyDown(e, index, 'key')}
         placeholder="Field name"
         aria-label={`Form-data row ${index + 1} key`}
-        className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+        className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
       />
 
       {row.kind === 'text' ? (
@@ -225,7 +225,7 @@ function FormDataRowView({
           onKeyDown={(e) => onCellKeyDown(e, index, 'value')}
           placeholder="Field value"
           aria-label={`Form-data row ${index + 1} value`}
-          className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
         />
       ) : (
         <>

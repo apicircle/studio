@@ -147,7 +147,9 @@ export function Tabs({
             className={cn(
               'inline-flex items-center gap-1.5 text-xs transition-colors',
               TAB_VARIANT[variant],
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-1 focus-visible:ring-offset-card',
+              // The accent's readable colour (`accent-fg`), measured on every
+              // theme; a ring at 70% of the accent is under 3:1 on 23.
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-1 focus-visible:ring-offset-card',
               'disabled:cursor-not-allowed disabled:opacity-50',
               active ? TAB_STATE[variant].active : TAB_STATE[variant].idle,
             )}

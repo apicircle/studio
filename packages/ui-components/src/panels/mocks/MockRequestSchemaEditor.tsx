@@ -164,7 +164,7 @@ function ParamTable({
                 onChange={(e) => update(idx, { name: e.target.value })}
                 placeholder={headerName ? 'Header-Name' : 'name'}
                 aria-label={`${singular} ${idx + 1} name`}
-                className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
               />
               <Select
                 size="sm"
@@ -186,7 +186,7 @@ function ParamTable({
                   checked={param.required ?? false}
                   onChange={(e) => update(idx, { required: e.target.checked })}
                   aria-label={`${singular} ${idx + 1} required`}
-                  style={{ accentColor: 'rgb(var(--accent))' }}
+                  style={{ accentColor: 'rgb(var(--accent-fg))' }}
                 />
                 req
               </label>
@@ -195,7 +195,7 @@ function ParamTable({
                 onChange={(e) => update(idx, { example: e.target.value })}
                 placeholder="example"
                 aria-label={`${singular} ${idx + 1} example`}
-                className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
               />
               {!readOnly && (
                 <button
@@ -259,7 +259,7 @@ function BodyDocsEditor({
         onChange={(e) => setBody({ description: e.target.value })}
         placeholder="What the request body should contain…"
         aria-label="Request body description"
-        className="mt-1 h-7 w-full rounded-sm border border-border bg-card px-1.5 text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+        className="mt-1 h-7 w-full rounded-sm border border-border bg-card px-1.5 text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
       />
       <label htmlFor="reqschema-body-example" className="mt-2 block text-[0.625rem] text-text-dim">
         Example
@@ -271,7 +271,7 @@ function BodyDocsEditor({
         placeholder='{ "name": "Fido" }'
         aria-label="Request body example"
         rows={3}
-        className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-1.5 py-1 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+        className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-1.5 py-1 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
       />
     </div>
   );

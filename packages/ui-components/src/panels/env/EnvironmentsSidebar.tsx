@@ -271,7 +271,7 @@ export function EnvironmentsSidebar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search environments…"
           aria-label="Search environments"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
 
@@ -290,7 +290,7 @@ export function EnvironmentsSidebar() {
           }}
           placeholder="Environment name"
           aria-label="Environment name"
-          className="h-7 rounded-sm border border-accent bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
+          className="h-7 rounded-sm border border-accent bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-fg"
         />
       )}
 
@@ -357,7 +357,7 @@ export function EnvironmentsSidebar() {
                     row.kind === 'linked' ? ` (linked from ${row.linkName})` : ''
                   } when sending`}
                   className="h-3 w-3 cursor-pointer"
-                  style={{ accentColor: 'rgb(var(--accent))' }}
+                  style={{ accentColor: 'rgb(var(--accent-fg))' }}
                 />
                 {row.kind === 'local' ? (
                   <button

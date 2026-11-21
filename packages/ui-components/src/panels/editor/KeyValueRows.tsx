@@ -112,7 +112,7 @@ export function KeyValueRows({
             onChange={(e) => update(index, { enabled: e.target.checked })}
             // Row context restored — was a generic "Enable row N" before.
             aria-label={`Enable ${ariaLabel} row ${index + 1}`}
-            style={{ accentColor: 'rgb(var(--accent))' }}
+            style={{ accentColor: 'rgb(var(--accent-fg))' }}
           />
           <input
             type="text"
@@ -122,7 +122,7 @@ export function KeyValueRows({
             onChange={(e) => update(index, { key: e.target.value })}
             onKeyDown={(e) => onKeyDown(e, index, 'key')}
             aria-label={`${ariaLabel} key ${index + 1}`}
-            className="h-8 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-8 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
           />
           {valueScope ? (
             <div className="flex-[2]">
@@ -143,7 +143,7 @@ export function KeyValueRows({
               onChange={(e) => update(index, { value: e.target.value })}
               onKeyDown={(e) => onKeyDown(e, index, 'value')}
               aria-label={`${ariaLabel} value ${index + 1}`}
-              className="h-8 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              className="h-8 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
             />
           )}
           {rightSlot?.(row, index)}

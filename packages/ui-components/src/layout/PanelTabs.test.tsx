@@ -70,6 +70,24 @@ describe('PanelTabs with one section', () => {
     expect(container.querySelector('[data-section-toggle]')).toBeNull();
     expect(container.querySelector('[data-tab-divider]')).toBeNull();
   });
+
+  it("draws the active tab's label and every focus ring in the accent's readable colour", async () => {
+    // Measured on every theme by apps/web's theme-contrast test (`headerParts`):
+    // the bare accent as the label on its 15% tint is under 4.5:1 on 34 themes.
+    await renderWithStore(<PanelTabs />);
+    const tabs = screen.getAllByRole('button');
+    for (const tab of tabs) {
+      expect(tab).toHaveClass('focus-visible:ring-accent-fg');
+      expect(tab).not.toHaveClass('focus-visible:ring-accent/70');
+    }
+    const editor = screen.getByRole('button', { name: 'Editor' });
+    expect(editor).toHaveAttribute('aria-current', 'page');
+    expect(editor).toHaveClass('bg-accent/15', 'text-accent-fg');
+    expect(editor).not.toHaveClass('text-accent');
+    for (const tab of tabs.filter((t) => t !== editor)) {
+      expect(tab).toHaveClass('text-text-muted');
+    }
+  });
 });
 
 describe('PanelTabs with sections', () => {
@@ -307,6 +325,39 @@ describe('PanelTabs with sections', () => {
       // Folded over the page on screen: the accent that page's tab would carry.
       expect(header('Studio')).toHaveClass('border', 'border-accent/40', 'bg-accent/15');
       expect(header('Studio')).not.toHaveClass('border-border-strong');
+    });
+
+    it("draws its icon, chevron and focus ring in the accent's readable colour", async () => {
+      // Measured on every theme by apps/web's theme-contrast test (`headerParts`):
+      // the bare accent is under 3:1 on its tint on five themes, and a ring at
+      // 70% of it under 3:1 against the bar on 23.
+      await renderWithStore(
+        <SectionsProvider value={value}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      const parts = (name: string) => ({
+        icon: header(name).querySelector('svg:not([data-section-chevron])'),
+        chevron: header(name).querySelector('[data-section-chevron]'),
+      });
+      for (const name of ['Studio', 'Lens']) {
+        expect(header(name)).toHaveClass('focus-visible:ring-accent-fg');
+        expect(header(name)).not.toHaveClass('focus-visible:ring-accent/70');
+        expect(parts(name).icon).toHaveClass('text-accent-fg');
+        expect(parts(name).icon).not.toHaveClass('text-accent');
+      }
+      // Not the mode on screen: a muted chevron that takes the accent on hover.
+      expect(parts('Lens').chevron).toHaveClass(
+        'text-text-muted',
+        'group-hover/mode:text-accent-fg',
+      );
+      expect(parts('Lens').chevron).not.toHaveClass('group-hover/mode:text-accent');
+
+      await userEvent.click(header('Studio'));
+      // Folded over the page on screen, it carries the accent itself.
+      expect(header('Studio')).toHaveAttribute('aria-current', 'true');
+      expect(parts('Studio').chevron).toHaveClass('text-accent-fg');
+      expect(parts('Studio').chevron).not.toHaveClass('text-accent');
     });
   });
 

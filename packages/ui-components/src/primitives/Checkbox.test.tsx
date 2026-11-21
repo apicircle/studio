@@ -37,6 +37,23 @@ describe('Checkbox', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("draws the tick, its edge and the focus ring in the accent's readable colour", () => {
+    // Measured on every theme by apps/web's theme-contrast test (`FIELD_PARTS`):
+    // the bare accent's tick is under 3:1 on 10 themes, a 50% ring on 51.
+    render(<Checkbox aria-label="tick" />);
+    const input = screen.getByRole('checkbox', { name: 'tick' });
+    const face = input.nextElementSibling;
+    expect(face).toHaveClass(
+      'peer-checked:border-accent-fg',
+      'peer-checked:bg-accent/20',
+      'peer-focus-visible:ring-accent-fg',
+    );
+    expect(face).not.toHaveClass('peer-checked:border-accent', 'peer-focus-visible:ring-accent/50');
+    const tick = face?.nextElementSibling;
+    expect(tick).toHaveClass('text-accent-fg', 'peer-checked:opacity-100');
+    expect(tick).not.toHaveClass('text-accent');
+  });
+
   it('renders bare (no label wrapper) when given neither label nor hint', () => {
     render(<Checkbox aria-label="bare" />);
     // The accessible name comes from aria-label, and there is no <label> wrapper.

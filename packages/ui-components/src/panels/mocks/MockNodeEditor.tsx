@@ -142,7 +142,7 @@ function EndpointDetailsEditor({
           value={endpoint.name}
           onChange={(e) => setEndpoint({ name: e.target.value })}
           aria-label="Endpoint name"
-          className="mt-1 h-8 w-full max-w-md rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          className="mt-1 h-8 w-full max-w-md rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
       <div>
@@ -156,7 +156,7 @@ function EndpointDetailsEditor({
           placeholder="What this endpoint mocks…"
           aria-label="Endpoint description"
           rows={4}
-          className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+          className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
       <MockRequestSchemaEditor endpoint={endpoint} setEndpoint={setEndpoint} />
@@ -310,7 +310,7 @@ function ValidationOverview({
                   checked={rule.enabled}
                   onChange={() => toggle(idx)}
                   aria-label={`Enable validation rule ${idx + 1}`}
-                  style={{ accentColor: 'rgb(var(--accent))' }}
+                  style={{ accentColor: 'rgb(var(--accent-fg))' }}
                 />
               </span>
               {/* Click-to-open: status + label is a button covering the
@@ -487,7 +487,7 @@ function ValidationRuleEditor({
                       : ''
             }
             aria-label="Rule target"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
       </div>
@@ -500,7 +500,7 @@ function ValidationRuleEditor({
             onChange={(e) => update({ expected: e.target.value })}
             placeholder={rule.kind.endsWith('-matches') ? '/^bearer .+/i' : 'expected value'}
             aria-label="Rule expected value"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
           />
         </div>
       )}
@@ -512,7 +512,7 @@ function ValidationRuleEditor({
           onChange={(e) => update({ message: e.target.value })}
           placeholder="e.g. Authorization header is required"
           aria-label="Rule friendly message"
-          className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
 
@@ -632,7 +632,7 @@ function ResponseRulesOverview({
                   checked={rule.enabled}
                   onChange={() => toggle(idx)}
                   aria-label={`Enable rule ${idx + 1}`}
-                  style={{ accentColor: 'rgb(var(--accent))' }}
+                  style={{ accentColor: 'rgb(var(--accent-fg))' }}
                 />
               </span>
               <button
@@ -784,14 +784,14 @@ function ResponseRuleEditor({
           checked={rule.enabled}
           onChange={(e) => update({ enabled: e.target.checked })}
           aria-label="Rule enabled"
-          style={{ accentColor: 'rgb(var(--accent))' }}
+          style={{ accentColor: 'rgb(var(--accent-fg))' }}
         />
         <input
           value={rule.name}
           onChange={(e) => update({ name: e.target.value })}
           placeholder="Rule name"
           aria-label="Rule name"
-          className="h-8 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+          className="h-8 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent-fg focus:outline-none"
         />
       </div>
 
@@ -828,7 +828,7 @@ function ResponseRuleEditor({
                   onChange={(e) => updateClause(cIdx, { target: e.target.value })}
                   placeholder="name"
                   aria-label={`Clause ${cIdx + 1} target`}
-                  className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                  className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
                 />
                 <Select
                   size="sm"
@@ -850,7 +850,7 @@ function ResponseRuleEditor({
                     onChange={(e) => updateClause(cIdx, { value: e.target.value })}
                     placeholder="value"
                     aria-label={`Clause ${cIdx + 1} value`}
-                    className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent-fg focus:outline-none"
                   />
                 ) : (
                   <span aria-hidden="true" />

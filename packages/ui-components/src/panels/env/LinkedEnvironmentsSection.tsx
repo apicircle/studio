@@ -285,7 +285,7 @@ function LinkedEnvVarRow({
                 ? `source: ${sourceVariable.value || '(empty)'}`
                 : 'consumer-only value'
             }
-            className="h-7 flex-1 rounded-sm border border-border bg-card pl-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-7 flex-1 rounded-sm border border-border bg-card pl-2 pr-7 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg"
           />
           <button
             type="button"
@@ -397,7 +397,7 @@ function AddLinkedVarButton({
             setDraft('');
           }
         }}
-        className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none"
       />
       <button
         type="button"

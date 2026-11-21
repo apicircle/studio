@@ -8,9 +8,11 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { SectionsProvider, type SectionsContextValue } from './sections';
 
 describe('TopBar', () => {
-  it('renders app brand', async () => {
+  it('renders the product name, "API Circle", when no brand is passed', async () => {
     await renderWithStore(<TopBar />);
-    expect(screen.getByText('API Circle Studio')).toBeInTheDocument();
+    expect(screen.getByText('API Circle')).toBeInTheDocument();
+    // The retired name is nowhere in the bar.
+    expect(screen.queryByText(/API Circle Studio/)).toBeNull();
   });
 
   it('renders the brand tagline', async () => {
@@ -19,9 +21,15 @@ describe('TopBar', () => {
   });
 
   it('renders an edition brand name and drops the tagline when null', async () => {
+    await renderWithStore(<TopBar brand={{ name: 'Acme APIs', tagline: null }} />);
+    expect(screen.getByText('Acme APIs')).toBeInTheDocument();
+    expect(screen.queryByText('API Circle')).toBeNull();
+    expect(screen.queryByText('Built in India. Open to world')).toBeNull();
+  });
+
+  it("renders the Lens editions' brand — the name alone", async () => {
     await renderWithStore(<TopBar brand={{ name: 'API Circle', tagline: null }} />);
     expect(screen.getByText('API Circle')).toBeInTheDocument();
-    expect(screen.queryByText('API Circle Studio')).toBeNull();
     expect(screen.queryByText('Built in India. Open to world')).toBeNull();
   });
 
@@ -152,6 +160,107 @@ describe('TopBar far end', () => {
     await user.hover(help);
     expect(screen.getByRole('tooltip', { name: 'Open the Help Center' })).toBeInTheDocument();
     expect(help).toHaveAccessibleName('Help Center');
+  });
+
+  it('has no Lens link unless one is asked for — an edition that is Lens renders as before', async () => {
+    const { container } = await renderWithStore(<TopBar />);
+    expect(screen.queryByRole('link', { name: /Lens/ })).toBeNull();
+    expect(container.querySelector('[data-lens-link]')).toBeNull();
+    expect(farEnd(container)).toHaveLength(1);
+  });
+
+  it('with lensLink, starts with a "Lens" link to the website\'s Lens page, in a new tab', async () => {
+    const { container } = await renderWithStore(<TopBar lensLink />);
+    const lens = screen.getByRole('link', { name: 'Lens (opens in a new tab)' });
+    expect(lens).toHaveAttribute('href', 'https://apicircle.dev/lens');
+    // A new tab on the web; the desktop shell hands a new-window link to the
+    // system browser. Either way the opened page gets no handle on this one.
+    expect(lens).toHaveAttribute('target', '_blank');
+    expect(lens).toHaveAttribute('rel', 'noopener noreferrer');
+    // The word on it is "Lens"; the rest of its name is for screen readers.
+    expect(lens.textContent).toBe('Lens (opens in a new tab)');
+    expect(lens.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    // First in the far end, before Help.
+    const help = screen.getByRole('button', { name: 'Help Center' });
+    const items = farEnd(container);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toContainElement(lens);
+    expect(items[1]).toContainElement(help);
+  });
+
+  it('says where the Lens link goes on hover, without renaming it', async () => {
+    const user = userEvent.setup();
+    await renderWithStore(<TopBar lensLink />);
+    const lens = screen.getByRole('link', { name: 'Lens (opens in a new tab)' });
+    await user.hover(lens);
+    expect(
+      screen.getByRole('tooltip', { name: 'What Lens adds, on apicircle.dev' }),
+    ).toBeInTheDocument();
+    expect(lens).toHaveAccessibleName('Lens (opens in a new tab)');
+    expect(lens).toHaveAccessibleDescription('What Lens adds, on apicircle.dev');
+  });
+
+  it('draws the Lens link only in the colours measured to read on every theme', async () => {
+    // apps/web's theme-contrast.test.ts measures exactly these tokens on all of
+    // the app's themes (`LENS_LINK` there); this holds the link to them.
+    await renderWithStore(<TopBar lensLink />);
+    const classes = screen
+      .getByRole('link', { name: 'Lens (opens in a new tab)' })
+      .className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'text-text-primary',
+        'bg-surface',
+        'border-border',
+        'hover:text-accent-fg',
+        'hover:bg-accent/10',
+        'hover:border-accent/40',
+        'focus-visible:ring-accent-fg',
+      ]),
+    );
+    // What it replaced: a label too faint on Tokyo Night Day, an edge that
+    // vanished on Rose Pine, the bare accent as hover text (under 2:1 on Ayu
+    // Light) and a ring at 70% of it (under 3:1 on 23 themes).
+    const colours = classes.filter((c) => /(^|:)(text|bg|border|ring)-/.test(c));
+    for (const replaced of [
+      'text-text-muted',
+      'border-border-subtle',
+      'hover:text-accent',
+      'focus-visible:ring-accent/70',
+    ]) {
+      expect(colours).not.toContain(replaced);
+    }
+    expect(colours.filter((c) => !c.includes(':')).sort()).toEqual([
+      'bg-surface',
+      'border-border',
+      'text-text-primary',
+      'text-xs',
+    ]);
+  });
+
+  it("draws the Help button's focus ring and open icon in the accent's readable colour", async () => {
+    // Measured on every theme by apps/web's theme-contrast test (`headerParts`):
+    // a ring at 70% of the accent is under 3:1 against the bar on 23 themes, and
+    // the bare accent on its tint under 3:1 on five.
+    await renderWithStore(<TopBar />);
+    const help = screen.getByRole('button', { name: 'Help Center' });
+    expect(help).toHaveClass('focus-visible:ring-accent-fg');
+    expect(help).not.toHaveClass('focus-visible:ring-accent/70');
+    act(() => useWorkspaceStore.getState().setActivePanel('help'));
+    expect(help).toHaveAttribute('aria-current', 'page');
+    expect(help).toHaveClass('bg-accent/10', 'text-accent-fg');
+    expect(help).not.toHaveClass('text-accent');
+  });
+
+  it("puts an edition's node after Help even with the Lens link", async () => {
+    const { container } = await renderWithStore(
+      <TopBar lensLink topBarEnd={<button type="button">Account</button>} />,
+    );
+    const items = farEnd(container);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContainElement(screen.getByRole('link', { name: /^Lens/ }));
+    expect(items[1]).toContainElement(screen.getByRole('button', { name: 'Help Center' }));
+    expect(items[2]).toBe(screen.getByRole('button', { name: 'Account' }));
   });
 
   it("renders an edition's node after Help, at the very end", async () => {

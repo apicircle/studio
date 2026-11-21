@@ -144,7 +144,7 @@ describe('App — workspace recovery screen', () => {
     const realHydrate = useWorkspaceStore.getInitialState().hydrate;
     useWorkspaceStore.setState({ hydrate: realHydrate });
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(screen.getByText('API Circle Studio')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('API Circle')).toBeInTheDocument());
   });
 
   describe('recovering a mismatched pair', () => {
@@ -251,6 +251,6 @@ describe('App — boot', () => {
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent('Loading workspace…');
     expect(container.querySelector('svg[data-brand-loader="full"]')).toHaveAttribute('width', '64');
-    await waitFor(() => expect(screen.getByText('API Circle Studio')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('API Circle')).toBeInTheDocument());
   });
 });

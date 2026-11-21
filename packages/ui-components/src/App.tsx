@@ -222,6 +222,7 @@ export function App({
   extraPanels = NO_EXTRA_PANELS,
   sections = NO_SECTIONS,
   brand,
+  lensLink = false,
   workspaceAccess = DEFAULT_WORKSPACE_ACCESS,
   gitHostAccess = DEFAULT_GIT_HOST_ACCESS,
   workspaceStatus,
@@ -234,8 +235,16 @@ export function App({
   extraPanels?: readonly ExtraPanelDef[];
   /** Edition-contributed sections/modes. Omitted in Studio → strict no-op. */
   sections?: readonly SectionDef[];
-  /** Edition-provided header brand. Omitted in Studio → the default "API Circle Studio". */
+  /** Edition-provided header brand. Omitted → the default "API Circle" + Studio's tagline. */
   brand?: BrandDef;
+  /**
+   * Whether the top bar carries a "Lens" link to the website's page about the
+   * paid Lens features (opens in a new tab; the system browser on desktop).
+   * The standalone app turns it on (`apps/web/src/main.tsx`, which the desktop
+   * app loads too). Omitted → strict no-op: an edition that already is Lens
+   * renders exactly as before.
+   */
+  lensLink?: boolean;
   /**
    * How many workspaces may stay open. Unlike the seams above, omitting this
    * is NOT a no-op: the default is a cap of one, because a build with no
@@ -483,6 +492,7 @@ export function App({
                 <div className="flex h-full flex-col bg-surface text-text-primary">
                   <TopBar
                     brand={brand}
+                    lensLink={lensLink}
                     workspaceStatus={workspaceStatus}
                     topBarEnd={topBarEnd}
                     settingsCommunity={settingsCommunity}

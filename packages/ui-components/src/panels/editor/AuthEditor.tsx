@@ -119,7 +119,7 @@ const AUTH_BLURBS: Record<RequestAuthType, string> = {
 };
 
 const inputClass =
-  'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
+  'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg';
 const gridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2';
 const noteClass =
   'rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted';
@@ -861,8 +861,8 @@ function JsonTextarea({
         className={cn(
           'min-h-[80px] w-full rounded-sm border bg-card p-2 font-mono text-[0.6875rem] text-text-primary focus:outline-none focus:ring-1',
           invalid
-            ? 'border-danger focus:border-danger focus:ring-danger/40'
-            : 'border-border focus:border-accent focus:ring-accent/30',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-border focus:border-accent-fg focus:ring-accent-fg',
         )}
       />
       {invalid && (
@@ -921,8 +921,8 @@ function RegionInput({
         className={cn(
           'h-8 w-full rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
           invalid
-            ? 'border-danger focus:border-danger focus:ring-danger/40'
-            : 'border-border focus:border-accent focus:ring-accent/30',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-border focus:border-accent-fg focus:ring-accent-fg',
         )}
         placeholder="us-east-1"
         aria-invalid={invalid || undefined}
@@ -968,8 +968,8 @@ function CustomHeaderNameInput({
         className={cn(
           'h-8 w-full rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
           invalid
-            ? 'border-danger focus:border-danger focus:ring-danger/40'
-            : 'border-border focus:border-accent focus:ring-accent/30',
+            ? 'border-danger focus:border-danger-fg focus:ring-danger-fg'
+            : 'border-border focus:border-accent-fg focus:ring-accent-fg',
         )}
         aria-invalid={invalid || undefined}
       />

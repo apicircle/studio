@@ -39,7 +39,7 @@ interface PassphrasePromptModalProps {
 }
 
 const inputClass =
-  'h-9 w-full rounded-sm border border-border bg-surface px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
+  'h-9 w-full rounded-sm border border-border bg-surface px-3 text-sm text-text-primary focus:border-accent-fg focus:outline-none focus:ring-1 focus:ring-accent-fg';
 
 export function PassphrasePromptModal({
   open,

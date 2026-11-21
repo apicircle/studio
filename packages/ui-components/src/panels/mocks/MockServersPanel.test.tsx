@@ -319,8 +319,11 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     );
     const links = screen.getAllByRole('link', { name: /Desktop App/ });
     expect(links.length).toBeGreaterThan(0);
+    // Each one leads to the website's download page, in a new tab.
     for (const link of links) {
-      expect(link).toHaveAttribute('href', 'https://github.com/apicircle/studio/releases/latest');
+      expect(link).toHaveAttribute('href', 'https://apicircle.dev/download');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     }
   });
 
