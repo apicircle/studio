@@ -12,7 +12,7 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import { Download, FilePlus2, FolderUp, Link2, Upload, X } from 'lucide-react';
 import type { GlobalFileAsset, SpecExternalRef } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { bundledSpecFile } from '../../store/specSource';
+import { bundledSpecFile, specFileRefs } from '../../store/specSource';
 import { Button } from '../../primitives/Button';
 import { SectionHeading } from '../../primitives/SectionHeading';
 import { downloadTextFile } from '../../primitives/download';
@@ -37,7 +37,7 @@ export function SpecReferencedFiles({ spec }: { spec: GlobalFileAsset }) {
   const manyInput = useRef<HTMLInputElement | null>(null);
   const folderInput = useRef<HTMLInputElement | null>(null);
 
-  const refs = spec.spec?.externalRefs ?? [];
+  const refs = specFileRefs(spec);
   if (refs.length === 0) {
     return (
       <p className="mt-2 text-xs text-text-dim">

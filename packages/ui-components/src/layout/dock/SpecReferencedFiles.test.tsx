@@ -162,6 +162,74 @@ describe('Referenced files', () => {
     );
   });
 
+  it('never lists a Markdown description or a code sample, and leaves them out of a folder', async () => {
+    // Redocly-style: prose and code samples kept in their own files, beside a path item file.
+    const redocly = JSON.stringify({
+      openapi: '3.0.3',
+      info: { title: 'Redocly', version: '1', description: { $ref: './description.md' } },
+      paths: {
+        '/pets': { $ref: 'paths/pets.json' },
+        '/keys': {
+          get: {
+            'x-codeSamples': [{ lang: 'Shell', source: { $ref: 'code_samples/get.sh' } }],
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+      },
+    });
+    const id = await seed(redocly, 'redocly.json');
+    // The upload notice counts only the file to supply.
+    expect(store().toasts.map((t) => t.title)).toContain(
+      "This spec points to 1 file Studio doesn't have",
+    );
+    await openSpec('redocly.json');
+    expect(
+      within(section()).getByText(/^1 of 1 referenced file missing — the schemas it holds/),
+    ).toBeInTheDocument();
+    expect(within(section()).queryByText('description.md')).toBeNull();
+    expect(within(section()).queryByText('code_samples/get.sh')).toBeNull();
+
+    await userEvent.upload(
+      within(section()).getByLabelText('Upload a folder of referenced files for redocly.json'),
+      [
+        json(pets, 'pets.json', 'api/paths/pets.json'),
+        json(pet, 'pet.json', 'api/schemas/pet.json'),
+        json('# Pets', 'description.md', 'api/description.md'),
+        json('curl /keys', 'get.sh', 'api/code_samples/get.sh'),
+      ],
+    );
+    await waitFor(() =>
+      expect(within(section()).getByText(/^All 2 referenced files are here/)).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(store().toasts.map((t) => t.title)).toContain(
+        '2 files matched no reference and were not uploaded',
+      ),
+    );
+    expect(store().synced?.globalAssets.files?.[id]?.spec?.externalRefs).toEqual([
+      { target: 'paths/pets.json', assetId: expect.any(String) },
+      { target: 'schemas/pet.json', assetId: expect.any(String) },
+    ]);
+  });
+
+  it('leaves out a text document that a spec saved by an earlier version still lists', async () => {
+    const id = await seed();
+    const saved = store().synced!.globalAssets.files![id];
+    act(() => {
+      store().updateGlobalFileAsset(id, {
+        spec: {
+          ...saved.spec!,
+          externalRefs: [{ target: 'code_samples/get.js' }, ...saved.spec!.externalRefs!],
+        },
+      });
+    });
+    await openSpec('openapi.json');
+    expect(
+      within(section()).getByText(/^1 of 1 referenced file missing — the schemas it holds/),
+    ).toBeInTheDocument();
+    expect(within(section()).queryByText('code_samples/get.js')).toBeNull();
+  });
+
   it('says nothing more when a set of files maps nothing', async () => {
     await seed();
     await openSpec('openapi.json');

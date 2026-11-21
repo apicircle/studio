@@ -86,6 +86,22 @@ describe('resolvedSpecMeta', () => {
     expect(next.title).toBe('Split');
   });
 
+  it('drops a text document a record saved before text was told apart still lists', () => {
+    const withProse = JSON.stringify({
+      ...JSON.parse(root),
+      info: { title: 'Split', version: '1', description: { $ref: 'docs/intro.md' } },
+    });
+    const bundle = bundleSpec({ text: withProse, filename: 'openapi.json' }, new Map());
+    const next = resolvedSpecMeta(
+      { ...meta, externalRefs: [{ target: 'docs/intro.md' }, ...meta.externalRefs!] },
+      bundle,
+      'openapi.json',
+      new Set(['p']),
+      meta.parsedAt,
+    );
+    expect(next.externalRefs).toEqual([{ target: 'paths/pets.json', assetId: 'p' }]);
+  });
+
   it('turns a reference missing when its file asset is gone', () => {
     const bundle = bundleSpec({ text: root, filename: 'openapi.json' }, new Map());
     const next = resolvedSpecMeta(meta, bundle, 'openapi.json', new Set(), meta.parsedAt);

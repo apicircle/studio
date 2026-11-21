@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import yaml from 'js-yaml';
-import { BUNDLED_DOCUMENTS_KEY, bundleSpec, parseSpecText } from './specBundle';
+import { BUNDLED_DOCUMENTS_KEY, bundleSpec, bundleSpecAsync, parseSpecText } from './specBundle';
 import { dereferenceInternal, UNRESOLVED_KEY } from './refDeref';
 import { parseOpenApiToEndpoints } from './openapi';
 
@@ -345,6 +345,251 @@ describe('bundleSpec — data positions are not references', () => {
     };
     const out = bundleSpec({ text: json(root), filename: 'openapi.json' }, new Map());
     expect(out.references.map((r) => r.target).sort()).toEqual(['examples.json', 'real.json']);
+  });
+});
+
+describe('bundleSpec — text documents are not schema references', () => {
+  /** A Redocly-style spec: a Markdown description and code samples beside a schema ref. */
+  const redocly = (extra: Record<string, unknown> = {}) => ({
+    openapi: '3.0.3',
+    info: { title: 'T', version: '1', description: { $ref: './description.md' } },
+    paths: {
+      '/keys': {
+        get: {
+          summary: { $ref: 'docs/get-summary' },
+          'x-codeSamples': [
+            { lang: 'JavaScript', source: { $ref: 'code_samples/get.js' } },
+            { lang: 'Shell', label: 'cURL', source: { $ref: 'code_samples/get.sh' } },
+          ],
+          responses: {
+            '200': {
+              description: 'ok',
+              content: { 'application/json': { schema: { $ref: 'schemas/key.yaml' } } },
+            },
+          },
+        },
+      },
+    },
+    ...extra,
+  });
+
+  it('lists a text document apart from the schema files, and leaves it as written when it is not supplied', () => {
+    const text = json(redocly());
+    const out = bundleSpec({ text, filename: 'openapi.json' }, new Map());
+    // Only the schema file is a file to ask for.
+    expect(out.references).toEqual([{ target: 'schemas/key.yaml', supplied: false }]);
+    expect(out.textReferences).toEqual([
+      { target: 'description.md', supplied: false },
+      { target: 'docs/get-summary', supplied: false },
+      { target: 'code_samples/get.js', supplied: false },
+      { target: 'code_samples/get.sh', supplied: false },
+    ]);
+    expect(out.warnings).toEqual([]);
+    // Nothing was rewritten, so the spec comes back byte for byte.
+    expect(out.text).toBe(text);
+  });
+
+  it('inlines a supplied text document as a string, where it is referenced', () => {
+    const out = bundleSpec(
+      { text: json(redocly()), filename: 'openapi.json' },
+      docs({
+        'description.md': '# Keys\n\nManage API keys.\n',
+        'docs/get-summary': 'List keys',
+        'code_samples/get.js': 'await sdk.keys.list()\n',
+        'code_samples/get.sh': 'curl /keys\n',
+        'schemas/key.yaml': { type: 'object' },
+      }),
+    );
+    const doc = bundled(out.text) as Record<string, any>;
+    expect(doc.info.description).toBe('# Keys\n\nManage API keys.\n');
+    expect(doc.paths['/keys'].get.summary).toBe('List keys');
+    expect(doc.paths['/keys'].get['x-codeSamples']).toEqual([
+      { lang: 'JavaScript', source: 'await sdk.keys.list()\n' },
+      { lang: 'Shell', label: 'cURL', source: 'curl /keys\n' },
+    ]);
+    expect(out.references).toEqual([{ target: 'schemas/key.yaml', supplied: true }]);
+    expect(out.textReferences?.every((r) => r.supplied)).toBe(true);
+    // A text document is never parsed, so it never warns.
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("reads a text document's place, not just its name: no extension is text only where OpenAPI holds text", () => {
+    const out = bundleSpec(
+      {
+        text: json({
+          paths: { '/a': { $ref: 'paths/a' } }, // no extension, a path item: a document
+          // A JSON/YAML extension stays a document, even where text belongs.
+          info: { description: { $ref: 'intro.yaml' } },
+          // `source` is text only inside a code sample.
+          tool: { source: { $ref: 'tool/source' } },
+          'x-code-samples': [{ source: { $ref: 'samples/list' } }],
+          // A malformed code-sample list (not an array) holds no samples.
+          more: { 'x-codeSamples': { source: { $ref: 'samples/odd' } } },
+        }),
+        filename: 'openapi.json',
+      },
+      new Map(),
+    );
+    expect(out.references.map((r) => r.target)).toEqual([
+      'paths/a',
+      'intro.yaml',
+      'tool/source',
+      'samples/odd',
+    ]);
+    expect(out.textReferences).toEqual([{ target: 'samples/list', supplied: false }]);
+  });
+
+  it('inlines text inside a supplied file against its folder, once per text, also through a YAML alias', () => {
+    const read: string[] = [];
+    /** The documents, noting each one asked for. */
+    class Asked extends Map<string, string> {
+      override get(target: string): string | undefined {
+        read.push(target);
+        return super.get(target);
+      }
+    }
+    const out = bundleSpec(
+      { text: json(spec('paths/keys.yaml#/Key')), filename: 'openapi.json' },
+      new Asked([
+        [
+          'paths/keys.yaml',
+          [
+            'Key:',
+            '  type: object',
+            '  description: &d { $ref: "../docs/key.md" }',
+            '  properties:',
+            '    id: { type: string, description: *d }',
+            '    name: { type: string, description: { $ref: "../docs/key.md" } }',
+          ].join('\n'),
+        ],
+        ['docs/key.md', 'An API key.'],
+      ]),
+    );
+    const key = (bundled(out.text)[BUNDLED_DOCUMENTS_KEY] as Record<string, any>)['paths/keys.yaml']
+      .Key;
+    expect(key.description).toBe('An API key.');
+    expect(key.properties.id.description).toBe('An API key.');
+    expect(key.properties.name.description).toBe('An API key.');
+    expect(out.textReferences).toEqual([{ target: 'docs/key.md', supplied: true }]);
+    // Each document is asked for once.
+    expect(read).toEqual(['paths/keys.yaml', 'docs/key.md']);
+  });
+
+  it('leaves a text reference with a fragment, or one with no holder, as written', () => {
+    const withFragment = bundleSpec(
+      { text: json({ info: { description: { $ref: 'intro.md#/section' } } }), filename: 'o.json' },
+      docs({ 'intro.md': 'Intro' }),
+    );
+    expect(bundled(withFragment.text).info).toEqual({ description: { $ref: 'intro.md#/section' } });
+    expect(withFragment.textReferences).toEqual([{ target: 'intro.md', supplied: true }]);
+
+    // A document that IS a reference to a text has nowhere to put it.
+    const whole = bundleSpec(
+      { text: json(spec('wrapper.json')), filename: 'openapi.json' },
+      docs({ 'wrapper.json': { $ref: 'notes.md' }, 'notes.md': 'notes' }),
+    );
+    expect(
+      (bundled(whole.text)[BUNDLED_DOCUMENTS_KEY] as Record<string, unknown>)['wrapper.json'],
+    ).toEqual({ $ref: 'notes.md' });
+    expect(whole.textReferences).toEqual([{ target: 'notes.md', supplied: true }]);
+  });
+
+  it('keeps the plain-name fragment warning, and a ref back to the root, for a text position', () => {
+    const out = bundleSpec(
+      {
+        text: json({
+          info: { description: { $ref: 'intro.md#Intro' }, summary: { $ref: 'openapi.json#/x' } },
+          x: 'Root text',
+        }),
+        filename: 'openapi.json',
+      },
+      new Map(),
+    );
+    expect(out.warnings).toEqual([
+      '$ref "intro.md#Intro" uses a plain-name fragment, which is not resolved.',
+    ]);
+    expect(bundled(out.text).info).toEqual({
+      description: { $ref: 'intro.md#Intro' },
+      summary: { $ref: '#/x' },
+    });
+    expect(out.textReferences).toBeUndefined();
+  });
+
+  it('lists a target that is also met as a document only among the references', () => {
+    const out = bundleSpec(
+      {
+        text: json({
+          info: { description: { $ref: 'shared/notes' } },
+          components: { schemas: { Notes: { $ref: 'shared/notes' } } },
+        }),
+        filename: 'openapi.json',
+      },
+      new Map(),
+    );
+    expect(out.references).toEqual([{ target: 'shared/notes', supplied: false }]);
+    expect(out.textReferences).toBeUndefined();
+  });
+});
+
+describe('bundleSpecAsync', () => {
+  const root = {
+    openapi: '3.0.3',
+    info: { title: 'T', version: '1', description: { $ref: 'intro.md' } },
+    paths: { '/pets': { $ref: 'paths/pets.yaml' }, '/gone': { $ref: 'paths/gone.yaml' } },
+  };
+  const files: Record<string, string> = {
+    'paths/pets.yaml': [
+      'get:',
+      '  responses:',
+      "    '200':",
+      '      description: ok',
+      '      content:',
+      '        application/json:',
+      "          schema: { $ref: '../schemas/pet.yaml#/Pet' }",
+    ].join('\n'),
+    'schemas/pet.yaml':
+      'Pet: { type: object, properties: { name: { type: string }, kind: { $ref: "#/Kind" } } }\nKind: { type: string }',
+    'intro.md': 'Pets.',
+  };
+
+  it('reads each document the spec reaches once, when the walk needs it, and gives what bundleSpec gives', async () => {
+    const asked: string[] = [];
+    const out = await bundleSpecAsync({ text: json(root), filename: 'openapi.json' }, async (t) => {
+      asked.push(t);
+      return files[t] ?? null;
+    });
+    expect(asked).toEqual(['intro.md', 'paths/pets.yaml', 'paths/gone.yaml', 'schemas/pet.yaml']);
+    expect(out).toEqual(
+      bundleSpec({ text: json(root), filename: 'openapi.json' }, new Map(Object.entries(files))),
+    );
+    expect(out.references).toEqual([
+      { target: 'paths/pets.yaml', supplied: true },
+      { target: 'paths/gone.yaml', supplied: false },
+      { target: 'schemas/pet.yaml', supplied: true },
+    ]);
+    expect(out.textReferences).toEqual([{ target: 'intro.md', supplied: true }]);
+    const { endpoints } = await parseOpenApiToEndpoints(out.text, out.format);
+    expect(endpoints.map((e) => `${e.method} ${e.pathPattern}`)).toEqual(['GET /pets']);
+  });
+
+  it('reads nothing for a self-contained spec, and takes undefined as not available', async () => {
+    const text = json({ openapi: '3.0.0', paths: {} });
+    let calls = 0;
+    const self = await bundleSpecAsync({ text, filename: 'a.json' }, async () => {
+      calls += 1;
+      return 'never';
+    });
+    expect(calls).toBe(0);
+    expect(self).toEqual({ text, format: 'json', references: [], warnings: [] });
+
+    const none = await bundleSpecAsync(
+      { text: json(root), filename: 'openapi.json' },
+      async () => undefined,
+      { output: 'yaml' },
+    );
+    expect(none.format).toBe('yaml');
+    expect(none.references.every((r) => !r.supplied)).toBe(true);
+    expect(none.textReferences).toEqual([{ target: 'intro.md', supplied: false }]);
   });
 });
 

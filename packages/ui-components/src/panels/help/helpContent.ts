@@ -1356,6 +1356,7 @@ A spec can point at other files with \`$ref\` — \`$ref: './schemas/user.yaml#/
 - **Upload files…** takes several at once and matches each to a reference by name; **Upload folder…** takes the spec's folder and matches by path, which also settles two references to files with the same name.
 - A file you supply can point at more files: they join the list, and an upload of several or a folder keeps matching until nothing more fits. A file that matches no reference is not uploaded — the notice names it.
 - A reference to a URL is never fetched. Upload a copy of the file it points at.
+- A reference to a text document — a Markdown description (\`description: { $ref: ./intro.md }\`) or a code sample kept in its own file (\`x-codeSamples\` → \`source: { $ref: samples/get.js }\`) — is not listed: it holds no schema, so there is nothing to supply. It stays as written in the spec.
 
 The referenced files are ordinary file assets, pushed with the workspace, and the Files list shows them inside their spec (\`+N files\`). Replacing one re-reads the spec, and so does deleting one, which turns its reference back to Missing.
 

@@ -164,6 +164,19 @@ bundle reached with the user's mappings kept, and the operation count of the
 bundle — is `resolvedSpecMeta`, which the Assets panel and such a host both
 apply, so a spec mapped either way records the same thing.
 
+A `$ref` to a TEXT document is not a schema reference: Redocly-style specs keep
+prose in Markdown (`description: { $ref: ./intro.md }`) and code samples in
+source files (`x-codeSamples: [{ source: { $ref: samples/get.js } }]`). A target
+is text when its extension says so (`specRefTargetKind` in `@apicircle/shared`:
+Markdown, plain text, HTML, a code sample's `.js`, `.sh`, `.py` …), or when it
+has no JSON/YAML extension and sits in a `description`, a `summary` or a code
+sample's `source`. `bundleSpec` reports text documents apart
+(`textReferences`), never among `references`, so **Referenced files** never
+asks for one; a supplied one is inlined as a string where it is referenced, as
+Redocly does, and one not supplied stays as written. `bundleSpecAsync` is the
+same walk for a caller that reads documents on demand (`read(target)`): each
+document the spec reaches is asked for once, when the walk first needs it.
+
 **Recursive and very large schemas.** A schema that contains itself (a
 `Category` whose `children` are `Category[]`) is sampled once, and the place it
 recurs gets an empty `{}` / `[]` — on both entry points. In the browser

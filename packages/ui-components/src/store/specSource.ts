@@ -15,7 +15,12 @@
 // `resolvedSpecMeta` in `@apicircle/mock-server-core`, shared with headless
 // readers.
 
-import type { GlobalFileAsset, SpecExternalRef, WorkspaceSynced } from '@apicircle/shared';
+import {
+  specRefTargetKind,
+  type GlobalFileAsset,
+  type SpecExternalRef,
+  type WorkspaceSynced,
+} from '@apicircle/shared';
 import type { SpecReference } from '@apicircle/mock-server-core/parsing';
 import { getAttachment } from '../persistence/attachments';
 
@@ -55,9 +60,20 @@ export function fileAssetIds(synced: WorkspaceSynced | null | undefined): Set<st
   return new Set(Object.keys(synced?.globalAssets.files ?? {}));
 }
 
+/**
+ * The files a spec asset asks for: its `spec.externalRefs`, less any text
+ * document — a Markdown description, a code sample's source — that a record
+ * saved before text references were told apart still lists. A text document
+ * holds no schema, so it is never a file to supply; the spec's next re-read
+ * drops it from the record.
+ */
+export function specFileRefs(asset: GlobalFileAsset): SpecExternalRef[] {
+  return (asset.spec?.externalRefs ?? []).filter((r) => specRefTargetKind(r.target) !== 'text');
+}
+
 /** The references of a spec asset that have no (live) file yet. */
 export function missingRefs(synced: WorkspaceSynced, asset: GlobalFileAsset): SpecExternalRef[] {
-  return (asset.spec?.externalRefs ?? []).filter((r) => !mappedAsset(synced, r));
+  return specFileRefs(asset).filter((r) => !mappedAsset(synced, r));
 }
 
 /** How many of a spec asset's references have no (live) file yet, against the
@@ -66,7 +82,7 @@ export function countMissingRefs(
   asset: GlobalFileAsset,
   files: Readonly<Record<string, GlobalFileAsset>> | undefined,
 ): number {
-  return (asset.spec?.externalRefs ?? []).filter((r) => !(r.assetId && files?.[r.assetId])).length;
+  return specFileRefs(asset).filter((r) => !(r.assetId && files?.[r.assetId])).length;
 }
 
 /** `· 2 referenced files missing`, or nothing when none is. */

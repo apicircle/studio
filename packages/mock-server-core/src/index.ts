@@ -38,7 +38,12 @@ export { parseInsomniaToEndpoints } from './parsers/insomnia';
 export { schemaToExample } from './faker/schemaToExample';
 export { dereferenceInternal, decodePointerSegment, UNRESOLVED_KEY } from './parsers/refDeref';
 export type { UnresolvedReason } from './parsers/refDeref';
-export { bundleSpec, parseSpecText, BUNDLED_DOCUMENTS_KEY } from './parsers/specBundle';
+export {
+  bundleSpec,
+  bundleSpecAsync,
+  parseSpecText,
+  BUNDLED_DOCUMENTS_KEY,
+} from './parsers/specBundle';
 export type { BundleSpecOptions, BundleSpecResult, SpecReference } from './parsers/specBundle';
 export { summarizeSpec } from './specSummary';
 export type { SpecSummary } from './specSummary';

@@ -129,6 +129,23 @@
 
 ### Fixed
 
+- **A split spec no longer asks for its Markdown or code-sample files.**
+  Redocly-style specs keep prose and code samples in files of their own
+  (`description: { $ref: ./description.md }`,
+  `x-codeSamples: [{ source: { $ref: code_samples/get.js } }]`). Those were
+  listed under **Referenced files** as missing — 773 of them for one real spec —
+  and counted in the mock pickers' "referenced files missing", though they hold
+  no schema and no upload could ever settle them. A `$ref` to a text document is
+  now told apart from a schema reference: by its extension (Markdown, plain
+  text, HTML, a code sample's `.js`, `.sh`, `.py` …), or, with no JSON/YAML
+  extension, by where it sits (a `description`, a `summary`, a code sample's
+  `source`). It is never listed, counted or matched by an upload. When its text
+  is supplied it is inlined as a string where it is referenced, as Redocly does;
+  otherwise it stays as written. A spec saved before this keeps its record until
+  it is next read again, and its card and counts already leave such a file out.
+  Nothing else changes: a missing JSON/YAML file is still listed, and nothing is
+  read or fetched.
+
 - **Dismissing a toast no longer closes the inspector dock.** In overlay mode
   the dock closed on any press outside it, and a toast floats over the dock —
   so clicking a notice's Dismiss (an upload made in the Assets tab announces
@@ -602,6 +619,19 @@
   `summarizeSpec` counts operations behind in-document path-item refs and lists
   the documents a spec names (`SpecAssetMeta.externalRefs`, new and optional;
   `AssetUsage.specRefs` likewise).
+- **`@apicircle/mock-server-core`: `bundleSpecAsync`.** `bundleSpec` for a caller
+  that reads documents on demand: it takes `read(target)` instead of a map, and
+  asks for each document the spec reaches once, when the walk first needs it —
+  the documents found inside the ones read included. One walk, where a caller
+  re-bundling until no new reference appeared walked the spec once per level of
+  references (a 1,500-file spec bundles in a third of the time). The result is
+  what `bundleSpec` gives with the same texts. `BundleSpecResult` gains an
+  optional `textReferences` — the text documents a spec names, each supplied or
+  not, never among `references` — present only when a spec names one, so every
+  other result is unchanged.
+- **`@apicircle/shared`: `specRefTargetKind(target)`.** Whether a `$ref` target
+  is a JSON/YAML `document`, a `text` document (prose or a code sample's
+  source) or `unknown`, by its extension.
 - **`@apicircle/mock-server-core`: `resolvedSpecMeta`, `mergeExternalRefs`.** What
   a split spec's record becomes once it is read again with its files: the
   references the bundle reached, each keeping the file the user mapped to it

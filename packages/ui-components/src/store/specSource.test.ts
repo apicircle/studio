@@ -11,6 +11,7 @@ import {
   missingRefsLabel,
   pickedPath,
   readSpecAssetSource,
+  specFileRefs,
   specsMapping,
 } from './specSource';
 
@@ -173,6 +174,24 @@ describe('spec reference bookkeeping', () => {
     expect(countMissingRefs(files.a, files)).toBe(1);
     expect(countMissingRefs(files.a, undefined)).toBe(2);
     expect(countMissingRefs(files.x, files)).toBe(0);
+  });
+
+  it('never counts a text document a record still lists as a file to supply', () => {
+    // Saved before text references were told apart: a description and a code sample listed.
+    const stale = fileAsset('s', {
+      spec: meta({
+        externalRefs: [
+          { target: 'docs/intro.md' },
+          { target: 'code_samples/get.sh' },
+          { target: 'y.json' },
+        ],
+      }),
+    });
+    const s = synced({ s: stale });
+    expect(specFileRefs(stale)).toEqual([{ target: 'y.json' }]);
+    expect(missingRefs(s, stale)).toEqual([{ target: 'y.json' }]);
+    expect(countMissingRefs(stale, s.globalAssets.files)).toBe(1);
+    expect(specFileRefs(fileAsset('plain'))).toEqual([]);
   });
 
   it('labels the missing count for a picker', () => {

@@ -22,6 +22,8 @@ export {
   envPriorityDisplayName,
 } from './envPriority';
 export { splitRepoFullName } from './repoFullName';
+export { specRefTargetKind } from './specRefTarget';
+export type { SpecRefTargetKind } from './specRefTarget';
 export {
   CONTACT_EMAIL,
   CONTACT_MAILTO_URL,

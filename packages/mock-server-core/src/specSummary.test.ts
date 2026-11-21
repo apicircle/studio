@@ -168,4 +168,27 @@ describe('summarizeSpec — a spec split across files', () => {
     // Fully in-document now: nothing left to list.
     expect(summary?.externalRefs).toBeUndefined();
   });
+
+  it('never lists a text document — a Markdown description or a code sample — as a file to supply', () => {
+    const redocly = {
+      openapi: '3.0.3',
+      info: { title: 'R', version: '1', description: { $ref: './description.md' } },
+      paths: {
+        '/keys': {
+          get: {
+            'x-codeSamples': [{ lang: 'Shell', source: { $ref: 'code_samples/get.sh' } }],
+            responses: { '200': { $ref: 'responses/ok.yaml' } },
+          },
+        },
+      },
+    };
+    expect(summarizeSpec(JSON.stringify(redocly), 'openapi.json')?.externalRefs).toEqual([
+      { target: 'responses/ok.yaml' },
+    ]);
+    // Only text documents: the spec is self-contained as far as files to supply go.
+    const proseOnly = { ...redocly, paths: {} };
+    expect(summarizeSpec(JSON.stringify(proseOnly), 'openapi.json')).not.toHaveProperty(
+      'externalRefs',
+    );
+  });
 });

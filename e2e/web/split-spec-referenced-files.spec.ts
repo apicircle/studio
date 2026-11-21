@@ -93,6 +93,43 @@ test.describe('A spec split across files', () => {
 
   test(
     tc(
+      id('External $ref broken (asset missing)'),
+      'never asks for a Markdown description or a code sample, only for the files that hold schemas',
+    ),
+    async ({ app }) => {
+      // Redocly style: prose and code samples kept in files of their own.
+      const redocly = JSON.stringify({
+        openapi: '3.0.3',
+        info: { title: 'Redocly pets', version: '1', description: { $ref: './description.md' } },
+        paths: {
+          '/pets': { $ref: 'paths/pets.json' },
+          '/health': {
+            get: {
+              'x-codeSamples': [
+                { lang: 'JavaScript', source: { $ref: 'code_samples/health.js' } },
+                { lang: 'Shell', source: { $ref: 'code_samples/health.sh' } },
+              ],
+              responses: { '200': { description: 'ok' } },
+            },
+          },
+        },
+      });
+      const dock = await openFiles(app);
+      await dock.getByLabel('Global file asset').setInputFiles(json('redocly.json', redocly));
+      await expect(app.getByText("This spec points to 1 file Studio doesn't have")).toBeVisible();
+      await dismissToasts(app);
+
+      const refs = dock.getByRole('region', { name: 'Referenced files' });
+      await expect(refs.getByText(/^1 of 1 referenced file missing/)).toBeVisible();
+      await expect(refs.getByText('paths/pets.json')).toBeVisible();
+      for (const text of ['description.md', 'code_samples/health.js', 'code_samples/health.sh']) {
+        await expect(refs.getByText(text)).toHaveCount(0);
+      }
+    },
+  );
+
+  test(
+    tc(
       id('External $ref to file'),
       'supplies the files, reads the whole spec, and hands it over as one file',
     ),
