@@ -65,15 +65,17 @@ All variables are documented in
 [`.test.env.example`](./.test.env.example). The important ones:
 
 - **`CI_PLATFORM=windows|mac|ubuntu`** — declare the host you are running on.
-  This is the platform switch you asked for: on **ubuntu/linux** the desktop
+  This is the platform switch: on **ubuntu/linux** the desktop
   (Electron) and VS Code cross-host E2E suites are wrapped in `xvfb-run` and
   Playwright installs OS libs with `--with-deps`; on **windows/mac** those
   suites run natively. If omitted it is auto-detected. If the declared value
   disagrees with the real OS, the runner warns — those native suites always
   run on the actual host OS.
 - **Toggles** — `RUN_LIVE_GITHUB`, `RUN_CODEQL`, `RUN_VSCODE_E2E`,
-  `RUN_VISUAL` (default off); `RUN_DESKTOP_E2E`, `RUN_CROSS_BROWSER`
-  (default on).
+  `RUN_VISUAL`, `RUN_COMMITLINT` (default off; `RUN_COMMITLINT` runs
+  ci.yml's `commit-lint` job, conventional commits from `origin/main`);
+  `RUN_DESKTOP_E2E`, `RUN_CROSS_BROWSER` (default on); `STRICT_COVERAGE`
+  (same as `--strict-coverage`).
 - **Live-GitHub creds** — `APICIRCLE_E2E_BOT_OWNER`,
   `APICIRCLE_E2E_GITHUB_PAT` (repo + delete_repo),
   `APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED` (repo). Required when
@@ -107,7 +109,7 @@ along automatically (no re-exporting four env vars into your shell).
 
 ```bash
 # one live-github spec, reusing .test.env creds (path is matched as a substring)
-node scripts/ci-local/run-ci.mjs --only live-github --spec 06-release-update-flow --no-install --no-build
+node scripts/ci-local/run-ci.mjs --only live-github --spec 01-connect-branch-push --no-install --no-build
 
 # one web spec / one test title
 node scripts/ci-local/run-ci.mjs --only e2e --spec auth.spec.ts --no-install --no-build

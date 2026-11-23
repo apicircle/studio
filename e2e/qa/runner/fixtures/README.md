@@ -1,7 +1,7 @@
 # Test fixtures
 
 This directory holds reusable files that test cases need: importable
-collections (Postman, OpenAPI, Insomnia, HAR), request bodies (JSON,
+collections (Postman, OpenAPI, Insomnia), request bodies (JSON,
 XML, binary, huge), JSON Schemas (with $refs of varying depths),
 seeded workspaces, cURL command samples, and helper scripts for
 multi-device git scenarios.
@@ -10,11 +10,11 @@ multi-device git scenarios.
 
 | Folder        | Purpose                                                                                                        |
 | ------------- | -------------------------------------------------------------------------------------------------------------- |
-| `import/`     | Source files for Import / Export round-trip tests (Postman v2.1, OpenAPI 3, Insomnia v4, HAR).                 |
+| `import/`     | Source files for the Import tests: Postman v2.1 collection, Postman environment, OpenAPI 3 (simple and circular), Insomnia v4, and `sample.har`, kept for rows that stay manual residue: Studio has no HAR import (it exists only as the API Circle MCP tool `import.har`). |
 | `bodies/`     | Request body samples — JSON / XML / HTML / text / unicode / encodings / large / huge / invalid.                |
 | `binary/`     | Real binary fixtures — PNG, PDF, fixed-size .bin, empty, unicode-named.                                        |
 | `schemas/`    | JSON Schemas for body-validation tests, including circular and external `$ref` patterns.                       |
-| `workspaces/` | Seeded `workspace.json` files consumed by `FileBackedWorkspaceProvider` for workspace restore and disk-mirror tests. |
+| `workspaces/` | Seeded workspace documents (`empty-ws.json`, `seeded-ws.json`) consumed by `FileBackedWorkspaceProvider` for workspace restore and disk-mirror tests. |
 | `curl/`       | cURL command strings for the cURL-import tests.                                                                |
 | `oauth/`      | Mock IdP config (consumed by the in-repo mock IdP harness).                                                    |
 | `git/`        | Helper scripts for two-device git-conflict simulations.                                                        |
@@ -63,7 +63,7 @@ Two rules for any new fixture:
 Real OAuth client secrets, real API tokens, and real customer data
 must never land here. For OAuth IdP tests, use either:
 
-- the in-repo mock IdP at `packages/core/test/fixtures/mockIdp.ts`, or
+- the in-repo mock IdP at `packages/core/src/auth/oauth2/__fixtures__/mockIdp.ts`, or
 - a per-tester `~/.apicircle-qa-secrets.env` file referenced from the
   results workbook's Notes column.
 

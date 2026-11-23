@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/apicircle/studio/main/assets/logo.png" alt="API Circle Studio" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/apicircle/studio/main/assets/logo.png" alt="API Circle" width="120" height="120" />
 </p>
 
 <h1 align="center">@apicircle/core</h1>
 
 <p align="center">
-  <strong>An embeddable API engine — execute requests, sign auth, import specs, and mutate workspaces from any JavaScript runtime.</strong><br />
-  The same engine that powers the API Circle Studio desktop app, web app, and VS Code extension. Lens-owned CLI/MCP automation composes this core through the public package boundary.
+  <strong>An embeddable API engine — execute requests, sign auth, parse collections, and mutate workspaces from any JavaScript runtime.</strong><br />
+  The same engine that powers API Circle's desktop app, web app, and VS Code extension. The paid <code>apicircle-lens</code> CLI and MCP server compose this core through the public package boundary.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/core"><img src="https://img.shields.io/npm/v/@apicircle/core?color=cb3837&logo=npm" alt="npm version" /></a>
   <img src="https://img.shields.io/badge/auth%20schemes-15-blueviolet" alt="15 auth schemes" />
-  <img src="https://img.shields.io/badge/imports-OpenAPI%20%C2%B7%20Postman%20%C2%B7%20Insomnia%20%C2%B7%20cURL-blue" alt="Importers" />
+  <img src="https://img.shields.io/badge/imports-Postman%20%C2%B7%20Insomnia%20%C2%B7%20cURL%20%C2%B7%20API%20Circle-blue" alt="Importers" />
   <img src="https://img.shields.io/badge/runtimes-Node%20%C2%B7%20Bun%20%C2%B7%20Browser-success" alt="Runtimes" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
 </p>
@@ -21,15 +21,17 @@
 
 ## What it is
 
-`@apicircle/core` is the headless engine behind [API Circle Studio](https://github.com/apicircle/studio).
+`@apicircle/core` is the headless engine behind [API Circle](https://github.com/apicircle/studio),
+the free, source-available API workspace.
 It does **everything an API client needs to do** — except draw a UI:
 
-- Builds and executes HTTP requests with redirect, retry, and timeout handling.
-- Signs **17 different auth schemes** end-to-end, including the full OAuth2 grant set.
-- Imports **OpenAPI 3.x, Swagger 2.0, Postman v2/v2.1, Insomnia v4, and cURL** into a typed workspace.
+- Builds and executes HTTP requests with redirect and timeout handling.
+- Signs **15 auth schemes** end-to-end (plus No Auth and Inherit), including the full OAuth2 grant set.
+- Parses **Postman v2.x collections and environments, Insomnia v4 exports, cURL commands, and API Circle folder / environment exports** (`.apicircle.json`). OpenAPI / Swagger parsing is in [`@apicircle/mock-server-core`](https://www.npmjs.com/package/@apicircle/mock-server-core).
 - Mutates workspace state through a single, audited choke point (`applyMutation`).
 - Runs saved execution plans headlessly — perfect for CI / regression gates.
 - Reads and writes workspace JSON to disk with advisory locking, in either a single-folder or multi-workspace registry layout.
+- Keeps secrets out of Git and history: scans a workspace for credential-shaped values before a push, and hides them in a run before it is saved.
 
 If you've ever wanted to embed "the Postman engine" inside a Node script,
 a CI runner, an internal portal, or your own product — this is that engine,
@@ -43,35 +45,61 @@ npm install @apicircle/core @apicircle/shared
 ```
 
 Dual ESM + CJS, full `.d.ts`, no native deps. Browser-safe — all crypto and
-signing primitives run on WebCrypto.
+signing primitives run on WebCrypto. Depends on `@apicircle/shared` and
+`@apicircle/mock-server-core`.
 
 ## What you can do with it
 
 ### Execute any request, with real auth
 
 ```ts
-import { executeRequest } from '@apicircle/core';
+import { executeRequest, runClientCredentials } from '@apicircle/core';
+import { generateId, type Request } from '@apicircle/shared';
 
-const result = await executeRequest({
-  method: 'POST',
-  url: 'https://api.example.com/charges',
-  headers: [{ key: 'X-Idempotency-Key', value: 'k-001' }],
-  body: { kind: 'json', json: { amount: 4200, currency: 'usd' } },
-  auth: {
-    type: 'oauth2',
-    grant: 'client_credentials',
-    clientId: 'cid',
-    clientSecret: 'csec',
-    tokenUrl: 'https://auth.example.com/token',
-    scope: 'charges:write',
-  },
+const token = await runClientCredentials({
+  tokenUrl: 'https://auth.example.com/token',
+  clientId: 'cid',
+  clientSecret: 'csec',
+  scope: 'charges:write',
 });
 
-console.log(result.response.status, result.response.bodyText);
+const now = new Date().toISOString();
+const req: Request = {
+  id: generateId(),
+  name: 'Create charge',
+  folderId: null,
+  method: 'POST',
+  url: 'https://api.example.com/charges',
+  headers: [{ key: 'X-Idempotency-Key', value: 'k-001', enabled: true }],
+  query: [],
+  body: { type: 'json', content: JSON.stringify({ amount: 4200, currency: 'usd' }) },
+  auth: {
+    type: 'oauth2-client-credentials',
+    tokenUrl: 'https://auth.example.com/token',
+    clientId: 'cid',
+    clientSecret: 'csec',
+    scope: 'charges:write',
+    clientAuthMethod: 'header',
+    accessToken: token.accessToken,
+    tokenType: token.tokenType,
+    refreshToken: token.refreshToken ?? '',
+    expiresAt: token.expiresIn ? Date.now() + token.expiresIn * 1000 : null,
+    obtainedScope: token.scope ?? '',
+  },
+  contextVars: [],
+  extractions: [],
+  assertions: [],
+  createdAt: now,
+  updatedAt: now,
+};
+
+const result = await executeRequest(req);
+console.log(result.status, result.body);
 ```
 
-Behind the scenes the engine acquires a token, caches it for its TTL,
-refreshes it transparently when it expires, and signs the request. Every
+`executeRequest` signs the request with the token you supply. When the auth
+carries a refresh token and is within a minute of `expiresAt`, it refreshes
+first and reports the new token through `authOptions.onTokenRefreshed`. Every
 other auth scheme — Bearer, Basic, API key, custom header, AWS SigV4, Digest
 (with `stale=true` nonce rotation), NTLM (with the full 3-message handshake +
 MIC), Hawk, JWT — works the same way: declarative config in, signed request out.
@@ -92,28 +120,29 @@ Every implementation is verified against the original RFCs (1320, 1321, 2202,
 fixtures. See [`docs/auth.md`](https://github.com/apicircle/studio/blob/main/docs/auth.md)
 for the full matrix.
 
-### Import a spec, get a typed collection
+### Parse a collection
 
 ```ts
-import { importOpenApi, importPostman, importInsomnia, importCurl } from '@apicircle/core';
+import { parsePostmanCollection } from '@apicircle/core';
 
-const { requests, folders, warnings } = await importOpenApi(rawYamlOrJson, {
-  format: 'yaml',
-});
+const { collectionName, folders, requests, warnings } = parsePostmanCollection(rawJson);
 ```
 
-All four importers return the same typed shape, ready to merge into a
-workspace with `applyMutation`.
+`parseInsomniaCollection` returns the same shape; `parseCurl` returns one
+request's method, URL, headers, query, body and auth. Turn each into a
+`Request` (add `id`, `folderId` and the rest) and add it with `applyMutation`.
 
 ### Run a saved plan in CI
 
 ```ts
-import { runPlan, loadFromFile } from '@apicircle/core/workspace/file-backed';
+import { resolvePlanRef, runPlan } from '@apicircle/core';
+import { loadFromFile } from '@apicircle/core/workspace/file-backed';
 
-const { synced, local } = await loadFromFile('./workspace');
-const planId = synced.plans.find((p) => p.name === 'Smoke Tests')!.id;
+const state = (await loadFromFile('./.apicircle/workspace-<id>'))!;
+const ref = resolvePlanRef(state.synced, 'Smoke Tests');
+if (!ref.ok) throw new Error(ref.error);
 
-const result = await runPlan({ synced, local }, planId, { bail: true });
+const result = await runPlan(state, ref.id, { bail: true });
 process.exit(result.passed ? 0 : 1);
 ```
 
@@ -124,22 +153,34 @@ Actions, GitLab CI, or any pipeline.
 ### Mutate workspace state — one function, every entity
 
 ```ts
-import { applyMutation, generateId } from '@apicircle/core';
+import { applyMutation } from '@apicircle/core';
+import { loadFromFile, saveToFile } from '@apicircle/core/workspace/file-backed';
 
-const next = applyMutation(state, {
-  kind: 'request.create',
-  id: generateId(),
-  name: 'List Users',
-  parentFolderId: null,
-  method: 'GET',
-  url: 'https://api.example.com/users',
-});
+const dir = './.apicircle/workspace-<id>';
+const state = (await loadFromFile(dir))!;
+// `req` is a Request, built as in the first example.
+const { next, changedIds } = applyMutation(state, { kind: 'request.create', request: req });
+await saveToFile(dir, next);
 ```
 
 `WorkspacePatch` is a discriminated union over `request.* | folder.* |
-environment.* | assertion.* | mock.* | plan.*`. Adding a new entity in your
-own UI? One union variant + one switch case. The Studio desktop/web surfaces and Lens-owned CLI/MCP automation
-app all flow through this single function — it's the audit log seam.
+environment.* | assertion.* | mock.* | plan.* | globalAsset.* | history.* |
+snapshot.* | secret.* | secretKey.* | release.* | linkedWorkspace.* |
+linkedOverride.*`. Adding a new entity in your own UI? One union variant + one
+switch case. Headless writers (the `apicircle-lens` CLI and MCP server) and
+most of API Circle's UI changes flow through this single function — it's the
+audit log seam.
+
+### Keep secrets out of Git and history
+
+- `scanWorkspaceForSecrets(synced)` lists credential-shaped values a push would
+  write (where each sits and why — never the value); `redactForGit(synced)`
+  blanks the credential fields it knows about.
+- `hideRunSecrets(run, knownSecrets)` replaces credential values in a run with
+  `[hidden]` before you store it.
+- `extractContext(result, extractions, knownSecrets)` returns
+  `{ saved, held, warnings }`: `held` holds the captured values that look like
+  credentials, which you keep in memory only.
 
 ## Entry points
 
@@ -165,16 +206,29 @@ import {
   workspaceDirFor,
   type WorkspaceRegistry,
 } from '@apicircle/core/workspace/registry';
+
+// Workspace + mock providers for hosts (in-memory, file-backed, Git-backed, multi-workspace)
+import {
+  FileBackedWorkspaceProvider,
+  MultiWorkspaceProvider,
+  InProcessMockController,
+} from '@apicircle/core/providers';
 ```
 
 - **`/workspace/file-backed`** — one workspace, one folder. `proper-lockfile`
   advisory locking, so concurrent CLI runs don't corrupt each other.
 - **`/workspace/registry`** — many workspaces, one root. `registry.json` at
-  the top, `workspaces/<id>/` subdirectories underneath. All surfaces
-  (desktop, web, VS Code, and Lens-owned CLI/MCP automation) default to `~/.apicircle/`. Use
-  `resolveApicircleRoot()` to honor the `APICIRCLE_WORKSPACES_ROOT` override
-  (CI / tests / relocated stores); `defaultApicircleRoot()` is the raw
-  `~/.apicircle/` fallback it builds on.
+  the top, `workspace-<id>/` subdirectories underneath. All surfaces
+  (desktop, web, VS Code, and the `apicircle-lens` CLI and MCP server) default
+  to `~/.apicircle/`. Use `resolveApicircleRoot()` to honor the
+  `APICIRCLE_WORKSPACES_ROOT` override (CI / tests / relocated stores);
+  `defaultApicircleRoot()` is the raw `~/.apicircle/` fallback it builds on.
+- **`/providers`** — the `WorkspaceProvider` / `Workspaces` / `MockController`
+  contracts and their implementations (`InMemoryWorkspaceProvider`,
+  `FileBackedWorkspaceProvider`, `GitBackedWorkspaceProvider`,
+  `MultiWorkspaceProvider`, `InProcessMockController`).
+- **`/test/mock-idp`** — `startMockIdp()`, an OAuth2 identity provider for
+  your own tests.
 
 ## Use cases
 
@@ -188,16 +242,16 @@ import {
 ## Where it fits
 
 ```
-@apicircle/shared              (types + IDs + crypto + legacy MCP envelope names)
-└── @apicircle/core            ◀── you are here
-    ├── API Circle Lens MCP/CLI (current headless automation, outside Studio)
-    └── @apicircle/mock-server-core (sister package — mock-server engine)
+@apicircle/shared               (types + IDs + validators + legacy MCP names)
+├── @apicircle/mock-server-core (mock-server engine + spec parsing)
+└── @apicircle/core             ◀── you are here (uses both)
+    └── the apicircle-lens CLI and MCP server (paid Lens features of API Circle)
 ```
 
 ## Stability & test coverage
 
-- **1,911 unit + integration tests** in the OAuth2 / signing / executor suites
-  alone (mock IdP exercises every grant, every refresh path, every CSRF guard).
+- Every OAuth2 grant, refresh path and CSRF guard runs against a mock IdP
+  (`@apicircle/core/test/mock-idp`).
 - Every auth primitive is **CAVS-verified** against the original spec vectors.
 - The engine is built ESM-first and ships dual CJS bundles for legacy consumers.
 

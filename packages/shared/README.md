@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/apicircle/studio/main/assets/logo.png" alt="API Circle Studio" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/apicircle/studio/main/assets/logo.png" alt="API Circle" width="120" height="120" />
 </p>
 
 <h1 align="center">@apicircle/shared</h1>
 
 <p align="center">
-  <strong>The TypeScript contract for everything API Circle Studio reads, writes, and ships.</strong><br />
-  One package, one source of truth — types, IDs, validators, crypto, and legacy MCP envelope names kept for compatibility.
+  <strong>The TypeScript contract for everything API Circle reads, writes, and ships.</strong><br />
+  One package, one source of truth — types, IDs, field validators, auth and mock defaults, and legacy MCP names kept for compatibility.
 </p>
 
 <p align="center">
@@ -21,18 +21,20 @@
 ## Why this package exists
 
 Every other `@apicircle/*` package — the request engine, the mock server, the
-desktop app, web app, VS Code extension, and Lens-owned CLI/MCP automation — agrees on **one workspace schema**.
-That schema lives here.
+desktop app, web app, VS Code extension, and the paid `apicircle-lens` CLI and
+MCP server — agrees on **one workspace schema**. That schema lives here.
 
 If you are building a third-party tool that reads, writes, syncs, lints, or
 visualises an API Circle workspace, this is the only dependency you need to
-stay byte-for-byte compatible with Studio.
+stay byte-for-byte compatible with it.
 
-> **MCP status:** Studio no longer ships an MCP server. These MCP names are retained as legacy shared API so existing consumers do not break. Use API Circle Lens for supported MCP clients.
+> **MCP status:** this repository ships no MCP server; MCP is a paid
+> [Lens feature of API Circle](https://apicircle.dev/lens). The MCP names here
+> are retained as legacy shared API so existing consumers do not break.
 >
 > **Use this directly when** you are writing a workspace
 > linter, a Git pre-commit hook, a migration script, or any other tool that
-> needs to understand the Studio workspace format without pulling in the
+> needs to understand the workspace format without pulling in the
 > full execution engine.
 
 ## Install
@@ -47,15 +49,16 @@ Ships dual ESM + CJS builds and full `.d.ts` types. Zero runtime dependencies.
 
 ## What's in the box
 
-| Surface              | What you get                                                                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace schema** | `WorkspaceSynced` (the git-tracked document) and `WorkspaceLocal` (per-device state) — every entity type Studio knows about, fully typed.                                             |
-| **Entity types**     | Requests, folders, environments, mock-server definitions, plans, assertions, releases, linked workspaces, global assets (schemas, GraphQL, files), history runs, secret-crypto blobs. |
-| **`generateId()`**   | The only sanctioned way to mint entity IDs — collision-resistant, URL-safe, length-bounded.                                                                                           |
-| **Validators**       | Lightweight shape checks for workspace documents and imported specs — handy when you're loading untrusted JSON.                                                                       |
-| **Crypto helpers**   | AES-GCM via WebCrypto for at-rest secret material. Browser-safe, no Node-only modules.                                                                                                |
-| **Legacy MCP names** | `MCP_TOOL_NAMES` and `McpToolName` remain for backward-compatible shared API. The active MCP server moved to API Circle Lens.                                                         |
-| **Envelope types**   | Discriminated unions for MCP responses (`multiple-workspaces`, error envelopes, etc.) so your client gets exhaustive narrowing for free.                                              |
+| Surface              | What you get                                                                                                                                                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace schema** | `WorkspaceSynced` (the git-tracked document) and `WorkspaceLocal` (per-device state) — every entity type the workspace knows about, fully typed.                                                                                 |
+| **Entity types**     | Requests, folders, environments, mock-server definitions, plans, assertions, releases, linked workspaces, global assets (schemas, GraphQL, files, spec assets and their referenced files), history runs, secret-crypto metadata. |
+| **`generateId()`**   | The only sanctioned way to mint entity IDs — a UUID v4 (`crypto.randomUUID()` where available).                                                                                                                                  |
+| **Validators**       | Field validators (URLs, AWS regions, mock paths, env-var names, header names, JSON, JSON paths, regexes, durations) returning a `ValidationResult`.                                                                              |
+| **Auth defaults**    | `REQUEST_AUTH_TYPES`, `defaultAuthFor(type)` and `normalizeAuth(input)` for the 15 auth schemes plus `none` and `inherit`.                                                                                                       |
+| **Mock helpers**     | Mock-server types, default responses and request schemas, and `requestShapeFromMockEndpoint` (a mock endpoint as a request's method, URL, query, headers and path params).                                                       |
+| **Constants**        | `RUN_HIDDEN_VALUE` (`[hidden]`, what History shows for a secret), `WORKSPACE_SHARING_ENABLED` (`false` in shipped builds), `GIT_HOST_KINDS` / `GIT_HOST_LABELS`.                                                                 |
+| **Legacy MCP names** | `MCP_TOOL_NAMES`, `McpToolName` and `McpError` (the `{ code, message, details }` error shape) remain for backward-compatible shared API.                                                                                         |
 
 ## A taste of it
 
@@ -68,24 +71,30 @@ import {
   type Request,
 } from '@apicircle/shared';
 
-// Build a request the way Studio would — same ID shape, same schema.
+// Build a request the way API Circle would — same ID shape, same schema.
+const now = new Date().toISOString();
 const req: Request = {
   id: generateId(),
   name: 'List Pets',
+  folderId: null,
   method: 'GET',
   url: 'https://api.example.com/pets',
   headers: [],
-  params: [],
+  query: [],
+  body: { type: 'none', content: '' },
   auth: { type: 'none' },
-  bodies: {},
-  activeBody: 'none',
+  contextVars: [],
+  extractions: [],
+  assertions: [],
+  createdAt: now,
+  updatedAt: now,
 };
 
-// Validate a workspace document loaded from disk / Git.
+// Type a workspace document loaded from disk / Git.
+declare const raw: string; // the text of a workspace.json
 const synced: WorkspaceSynced = JSON.parse(raw);
 
-// Iterate every MCP tool the server knows about — useful for building
-// custom MCP clients, dashboards, or documentation generators.
+// Iterate the legacy catalogue of MCP tool names (kept for compatibility).
 for (const name of MCP_TOOL_NAMES) {
   console.log(name); // 'workspace.list', 'request.create', 'mock.start', ...
 }
@@ -101,25 +110,26 @@ function dispatch(name: McpToolName) {
 @apicircle/shared              ◀── you are here (types + utilities)
 ├── @apicircle/core            (request engine, auth, imports, applyMutation)
 ├── @apicircle/mock-server-core (Hono mock-server runtime)
-└── API Circle Lens owns the current MCP server and headless CLI (`apicircle-lens mcp`)
+└── the apicircle-lens CLI and MCP server (paid Lens features of API Circle)
 ```
 
-Studio no longer publishes `@apicircle/cli` or `@apicircle/mcp-server`. Use API Circle Lens for current CLI/MCP automation.
-touch this package directly. You only need `@apicircle/shared` when you're
-the one **building** something that talks to a Studio workspace.
+This repository no longer publishes `@apicircle/cli` or `@apicircle/mcp-server`;
+the CLI and MCP server are paid [Lens features of API Circle](https://apicircle.dev/lens).
+You only need `@apicircle/shared` when you're the one **building** something
+that talks to an API Circle workspace.
 
 ## Stability
 
-The workspace schema is the public contract API Circle Studio cares about most.
+The workspace schema is the public contract API Circle cares about most.
 Breaking changes are versioned per [semver](https://semver.org); the schema
-is exercised by **1,900+ unit and integration tests** across the wider Studio
-codebase, and every Studio release (desktop and web) pins the same
+is exercised by **1,900+ unit and integration tests** across the wider
+codebase, and every release (desktop and web) pins the same
 `@apicircle/shared` version.
 
 ## Learn more
 
-- **Studio repo & docs**: <https://github.com/apicircle/studio>
-- **MCP status**: Studio MCP is deprecated; current MCP support lives in API Circle Lens.
+- **Repository & docs**: <https://github.com/apicircle/studio>
+- **MCP status**: MCP is a paid Lens feature of API Circle — <https://apicircle.dev/lens>.
 - **Architecture overview**: <https://github.com/apicircle/studio/blob/main/docs/architecture/platform.md>
 
 ## License

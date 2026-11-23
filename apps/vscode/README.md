@@ -2,7 +2,7 @@
 
 Git-backed API workspace with mocks and plans — natively in VS Code.
 
-Edit your API Circle workspace **inside VS Code**. The same `.apicircle/` workspace directory you commit to Git, edit in the [API Circle Desktop App](https://github.com/apicircle/studio), or open in the [API Circle Web App](https://studio.apicircle.dev) — one repo, three surfaces, byte-identical commits.
+Edit your API Circle workspace **inside VS Code**. The same `.apicircle/` workspace directory you commit to Git, edit in the [API Circle desktop app](https://apicircle.dev/download), or open in the [API Circle web app](https://studio.apicircle.dev) — one repo, three surfaces, byte-identical commits.
 
 ## Why
 
@@ -12,7 +12,7 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 ### Workspace & navigation
 
-- **Activity Bar icon** opens the API Circle sidebar with 8 views: Workspace, Editor, Environment, Execution, Mock, History, Snapshots, and Link Workspaces.
+- **Activity Bar icon** opens the API Circle sidebar with 7 views: Workspace, Editor, Environment, Execution, Mock, History, and Snapshots.
 - **Workspace discovery** auto-detects `.apicircle/registry.json` in your open folders and Git-backed `.apicircle/` directories.
 - **Workspace switcher** — switch between discovered workspaces via the sidebar or `API Circle: Switch Workspace`.
 - **`apicircle:` virtual filesystem** — requests, environments, plans, mocks, folders, and responses project as YAML documents in real VS Code text editors. Human-readable tab titles, folder paths in tooltips, identity preserved across renames and moves.
@@ -24,12 +24,13 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 - **15 auth schemes (plus No Auth and Inherit)** — bearer, basic, api-key, custom header, digest, NTLM, Hawk, AWS Signature v4, JWT bearer, and all OAuth 2.0 grants (Authorization Code, PKCE, Client Credentials, Password, Implicit, Device Code, private_key_jwt, token refresh).
 - **Folder-wise auth** — set auth on a folder; child requests inherit via `◆ Inherits from <Folder>` CodeLens.
 - **URL-as-source-of-truth** — query parameters and path placeholders sync from the URL into structured sections on save.
-- **Response viewer** as a virtual `.run.yaml` opened side-by-side — appears instantly on ▶ Send, resolves in place.
+- **Response viewer** as a YAML document opened side-by-side — appears instantly on ▶ Send, resolves in place.
 - **Cancel in-flight requests** via status bar, `Esc`, or the `✖ Cancel` CodeLens.
-- **Pre-send diagnostics** surfacing in the Problems panel.
+- **Pre-send diagnostics** surfacing in the Problems panel — including a `{{…}}` that names a vault slot's encryption key, which is never sent.
+- **History keeps no secrets** — credential values are replaced with `[hidden]` before a run is saved.
 - **Execution plans** — chain requests and run them end-to-end. The plan YAML
-  carries `▶ Run with assertions` / `▶ Run` (two modes, matching Desktop / Web /
-  CLI; a running plan swaps to `⏳ Running… · ✖ Cancel`), `◆ Plan environments…`,
+  carries `▶ Run with assertions` / `▶ Run` (two modes, matching Desktop / Web;
+  a running plan swaps to `⏳ Running… · ✖ Cancel`), `◆ Plan environments…`,
   and `✚ Add step…` (a multi-select picker that hides already-added requests and
   offers "Select all"). Each step row is annotated with a
   `# <name> · <METHOD> · <folder>` comment; per-step actions — **Open /
@@ -40,14 +41,14 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 ### Mock servers
 
-- **Mock endpoint authoring in YAML** — `*.endpoint.yaml` with field-level `◆` CodeLens editors on method, status, headers, body type, response rules, and multipliers.
-- **Validation rules** — `🛡 Add validation rule` with kind-aware pickers for headers, query params, cookies, and path params.
-- **Request schema editing** on the Studio surfaces: VS Code YAML and the Web/Desktop editor.
+- **Mock endpoint authoring in YAML** — each endpoint opens as its own YAML document with field-level `◆` CodeLens editors on method, status, headers, body type, response rules, and multipliers.
+- **Validation rules** — `🛡 Add validation rule` with kind-aware pickers for headers and query params (required / equals / matches), required cookies, a required body, and Content-Type.
+- **Request schema editing** on every surface: VS Code YAML and the Web/Desktop editor.
 - **In-process mock server lifecycle** — start, stop, and manage mocks from the sidebar.
 
-### MCP status
+### MCP
 
-MCP is deprecated in API Circle Studio. Studio no longer ships, publishes, configures, or documents an active MCP server or MCP CLI. Existing `.apicircle` workspaces remain compatible; open the same repo in API Circle Lens and use `apicircle-lens mcp` for supported AI-client workflows.
+MCP is a paid [Lens feature of API Circle](https://apicircle.dev/lens); this extension installs and configures nothing for it. It works on the same `.apicircle` workspace: `apicircle-lens mcp --repo <dir>`.
 
 ### Secret vault
 
@@ -55,15 +56,9 @@ MCP is deprecated in API Circle Studio. Studio no longer ships, publishes, confi
 - Auto-lock by inactivity, clipboard auto-clear.
 - Encrypted environment variable reveal via `apicircle.openVaultEntry`.
 
-### Link Workspaces
-
-- **Publish releases** — tag, deprecate, and withdraw versions via `releases.yaml` CodeLens.
-- **Consume linked workspaces** — link private repos or marketplace results, pin versions, manage scopes and required secrets.
-- **Three-way update review** — preview incoming changes, accept source or keep yours per-field.
-
 ## The three-surface principle
 
-API Circle Studio's Web App, Desktop App, and VS Code extension are **peer clients of the same canonical format**:
+API Circle's web app, desktop app, and this extension are **peer clients of the same canonical format**:
 
 ```
 <your-repo>/.apicircle/registry.json                     # workspace index
@@ -74,7 +69,7 @@ Edit on any surface → commit → push → pull elsewhere → continue. No tran
 
 ## Installation
 
-Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=apicircle.apicircle-vscode) or the [Open VSX Registry](https://open-vsx.org/extension/apicircle/apicircle-vscode):
+Requires VS Code 1.94 or later. Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=apicircle.apicircle-vscode) or the [Open VSX Registry](https://open-vsx.org/extension/apicircle/apicircle-vscode):
 
 > **Extensions** view → search **API Circle Studio** → **Install**
 

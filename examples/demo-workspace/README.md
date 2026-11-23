@@ -1,12 +1,12 @@
 # Demo Workspace
 
-A self-contained API Circle workspace that exercises every feature of
-the studio against the local mock server. Plan §10.1.
+A self-contained API Circle workspace that exercises every request body
+type and four assertion kinds against the local mock server.
 
 ## What's in here
 
 - `.apicircle/workspace-<id>/workspace.json` — the canonical synced doc, with one folder
-  per request body type plus a fourth folder of assertion-flavor requests
+  per request body type plus a ninth folder of assertion samples
   (status, header, json-path, duration). One environment `local` whose
   `BASE_URL` points at the Hono mock server's default port (4040).
 - The folder tree mirrors the body-type taxonomy: None, JSON, Text,
@@ -22,8 +22,10 @@ pnpm --filter @apicircle/example-mock-server start
 pnpm dev:web
 ```
 
-Then open the studio in your browser, point it at this
-`.apicircle/` workspace, and send any request. The `local`
+Then open `examples/demo-workspace/` in VS Code with the API Circle Studio
+extension (it finds `.apicircle/registry.json`), or push the folder to a
+GitHub repository and connect it in the web or desktop app, and send any
+request. The `local`
 environment is preselected so `{{BASE_URL}}` resolves to
 `http://localhost:4040`.
 
@@ -32,15 +34,14 @@ environment is preselected so `{{BASE_URL}}` resolves to
 The plan calls for an _encrypted_ `BEARER_TOKEN` variable. Encrypted
 values use a master key generated locally on first boot, so we can't
 ship a pre-encrypted ciphertext that round-trips across machines. The
-fixture ships the bearer in plaintext — toggle the **encrypted**
-checkbox in the Environments panel after loading the workspace if you
-want to exercise the master-key flow end-to-end.
+fixture ships the bearer in plaintext — press **Encrypt** on the
+`BEARER_TOKEN` row in the Environments panel and bind it to a Secret
+Vault key if you want to exercise that flow end-to-end.
 
 ## CRUD execution plan
 
-Plans live in `WorkspaceLocal` (browser IDB), not in the synced
-`.apicircle/` workspace — so the demo plan isn't shipped here.
-To recreate it:
+Execution plans are part of the synced workspace (`executionPlans` in
+`workspace.json`), but this fixture ships none. To create one:
 
 1. Open the Execution panel.
 2. Create a plan named "Users CRUD".
@@ -51,9 +52,5 @@ To recreate it:
 
 ## Linked workspace
 
-`examples/linked-pets-api/.apicircle/` ships as a sibling workspace
-that this demo can link to. Use the **Link a private workspace** flow with the
-`apicircle-studio` repo + the path `examples/linked-pets-api/` — when
-the studio resolves a path-relative link in a future revision, this
-workflow gets one click. Today, push the linked-pets-api fixture to
-its own GitHub repo first, then link it the normal way.
+`examples/linked-pets-api/` is a second fixture for workspace linking,
+which is turned off in the product (`WORKSPACE_SHARING_ENABLED`).

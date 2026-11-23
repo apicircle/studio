@@ -1,6 +1,6 @@
 # @apicircle/e2e-vscode
 
-E2E suite for the APICircle Studio VS Code extension.
+E2E suite for the API Circle Studio VS Code extension (`apps/vscode`).
 
 ## How it works
 
@@ -17,27 +17,25 @@ E2E suite for the APICircle Studio VS Code extension.
 
 ```bash
 pnpm install
-pnpm --filter @apicircle/vscode build       # build the extension under test
+pnpm --filter apicircle-vscode build        # build the extension under test
 pnpm --filter @apicircle/e2e-vscode build   # compile the tests
 pnpm --filter @apicircle/e2e-vscode test:e2e
 ```
 
 First run downloads ~100MB of VS Code. Subsequent runs reuse the cache.
 
-## What ships in Phase 1 day-1
+## What it covers
 
-- `smoke.test.ts` — activation completes; 6 commands registered; APICircle
-  view container is focusable.
-
-Each subsequent Phase 1 commit adds tests as new features land (FileSystemProvider,
-language services, response viewer, etc.). The Phase 1 gate requires the full
-suite green.
+`src/test/*.test.ts`: workspace creation and multi-root, new requests and
+validation, cancel, environments and plans, the mock lifecycle, view and YAML,
+the runs channel, the vault and its device auto-configuration, notebooks, and
+the live-GitHub suite below.
 
 ## CI notes
 
-CI matrix: `{stable VS Code, Insiders}` × `{Ubuntu, macOS, Windows}` on every
-PR touching `apps/vscode/`. Weekly cron against `{Cursor, VSCodium, Windsurf}`
-via Open VSX. Codespaces matrix quarterly.
+CI: `vscode.yml`'s `cross-host-smoke` job runs this suite on pushes to `main`
+that touch `apps/vscode/` or `e2e/vscode/`, against VS Code stable and Insiders
+on Ubuntu (xvfb). Pull requests get typecheck only for this package.
 
 ### Live-GitHub suite (`test:e2e:live-github`)
 
@@ -53,6 +51,4 @@ pnpm --filter @apicircle/e2e-vscode test:e2e:live-github
 ```
 
 Each test cleans up by force-pushing the test branch back to its initial SHA.
-CI runs this nightly against a dedicated test org. Phase 1 ships the harness
-scaffolding; Phase 2+ fills in the git-pull / watcher / TreeView refresh
-coverage as those surfaces stabilize.
+No CI job runs it; run it by hand.

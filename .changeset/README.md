@@ -1,8 +1,8 @@
 # Changesets
 
-This directory holds release intents that become CHANGELOG entries.
-Plan §10.5 + §7.5.6 — every PR that lands a user-visible change drops
-a changeset file here describing the change and the affected packages.
+Changesets is installed (`pnpm changeset`, `pnpm release`) but is not how
+Studio ships, and nothing has been added here since the initial public
+release.
 
 ## How to add one
 
@@ -16,9 +16,12 @@ under this directory; commit it alongside your code change.
 
 ## How releases happen
 
-`pnpm changeset version` consumes every pending changeset, bumps the
-affected packages, regenerates the CHANGELOG, and clears this
-directory. Run it on a `release/*` branch, open a PR, and merge.
+A release bumps every package to one version
+(`node .claude/skills/release-manager/scripts/bump-version.mjs <version>`),
+adds a hand-written entry to `CHANGELOG.md`, and tags `v<version>` for
+`desktop-release.yml`. Studio publishes nothing to npm:
+`@apicircle/{shared,core,mock-server-core}` are published from the private
+API Circle repository at the version checked in here.
 
 ## Ignored packages
 

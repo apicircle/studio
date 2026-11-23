@@ -1,6 +1,6 @@
-> **MCP status:** This QA snapshot contains historical MCP coverage from before MCP moved out of Studio. Current MCP regression coverage belongs to API Circle Lens. Studio should keep inverse tests that prove no Studio MCP commands, views, settings, or server definition providers are exposed.
+> **MCP status:** This QA snapshot contains historical MCP coverage from before MCP moved out of Studio. Current MCP regression coverage belongs to API Circle's paid Lens features, outside this repository. Studio should keep inverse tests that prove no Studio MCP commands, views, settings, or server definition providers are exposed.
 
-# QA — API Circle Studio
+# QA — API Circle Studio (the free workspace's repository)
 
 How quality is verified in this repo, what is covered today, and what is
 still pending. This single doc replaces the former `CI.md` plus the three
@@ -10,7 +10,9 @@ QA has three layers:
 
 1. **Automated E2E** — Playwright specs in the `e2e/web/` and
    `e2e/desktop/` packages, plus Mocha + `@vscode/test-electron` specs in
-   `e2e/vscode/`. Run on every PR.
+   `e2e/vscode/`. Only the web chromium suite runs on every PR; the
+   desktop Electron suite and the VS Code E2E suite run on pushes to
+   `main`.
 2. **Cross-package integration tier** — Vitest suites in
    `apps/vscode/test/integration/` exercise real `executeRequest` against
    real HTTP servers, concurrent `proper-lockfile`-serialized writes, and
@@ -68,12 +70,13 @@ The numbers below come from the last `scripts/e2e_coverage_report.py
   baselines, the `FULL_MM_SWEEP=1` run, cross-browser smoke validation,
   and a multi-run flake hunt. These can't run in a headless CI-only
   environment.
-- **Feature-blocked residue.** Some residue rows become testable only
-  when the underlying product surface ships: code-generation web UI,
-  pre-request script sandbox, telemetry/privacy panel, HAR/OpenAPI
-  import in the web UI, vendor-shape OAuth2 IdP mocks, linked-workspace
-  fixtures. Lift them out of `e2e/web/manual-residue.ts` when the
-  feature lands.
+- **Residue for surfaces Studio does not ship.** Code generation and HAR
+  import exist only as MCP tools of API Circle's paid Lens features. A
+  pre-request script sandbox, a telemetry/privacy panel and vendor-shape
+  OAuth2 IdP mocks are not built. Linked-workspace rows wait on workspace
+  sharing, which is off (`WORKSPACE_SHARING_ENABLED`). OpenAPI import does
+  ship in the web UI's Import dialog; its residue rows are OpenAPI
+  _round-trips_, and the workspace exports JSON only.
 
 ---
 
@@ -94,11 +97,11 @@ runs the Mocha specs inside the actual extension host.
 | **Unit**                                  | Studio unit coverage for workspace, editor, environment/vault, execution plans, history, snapshots, mocks, linked workspaces, language services, diagnostics, commands, and manifest regression. MCP command/view/config coverage is inverse-only: Studio must not expose MCP surfaces.                                                                                                                                                                                                                         | `apps/vscode/src/**/*.test.ts`                                                                                                                                                                                                                           |
 | **Integration (cross-package)**           | Cross-package checks cover activation, three-surface compatibility, request/send, workspace mutation, environment/history/snapshot/plan/mock round-trips, external-write refresh, vault unlock, and secret-crypto compatibility. MCP round-trip coverage moved to Lens.                                                                                                                                                                                                                                         | `apps/vscode/test/integration/`                                                                                                                                                                                                                          |
 | **E2E (Mocha + `@vscode/test-electron`)** | VS Code E2E specs cover Studio workspace/editor/mock/vault/runs/notebook flows and inverse MCP guards. Active MCP client/server validation belongs to Lens.                                                                                                                                                                                                                                                                                                                                                     | `e2e/vscode/src/test/*.test.ts`                                                                                                                                                                                                                          |
-| **Live-GitHub (opt-in)**                  | Real-PAT integration. Gated by `APICIRCLE_E2E_LIVE_GITHUB=1` env. Nightly cron against a dedicated test org.                                                                                                                                                                                                                                                                                                                                                                                                    | `e2e/vscode/src/test/live-github.test.ts`                                                                                                                                                                                                                |
+| **Live-GitHub (opt-in)**                  | Real-PAT integration. Gated by `APICIRCLE_E2E_LIVE_GITHUB=1` env. Opt-in and run by hand; no workflow runs it.                                                                                                                                                                                                                                                                                                                                                                                                  | `e2e/vscode/src/test/live-github.test.ts`                                                                                                                                                                                                                |
 | **Three-surface compat (invariant gate)** | `request.create`, `folder.create`, `environment.upsert`, `mock.upsert`, `mock.delete`, `plan.upsert`, `snapshot.capture`, `snapshot.delete`, `snapshot.restore`, `snapshot.set_max_bytes`, **`secret.crypto.set` (P4)**, **`secret.crypto.clear` (P4)** — byte-identical state from Desktop's `FileBackedWorkspaceProvider` and VS Code's `GitWorkspaceProvider` modulo apply-time timestamps. The applyMutation-determinism smoke check canonicalizes before comparing (was flaky against `Date.now()` drift). | `apps/vscode/test/integration/threeSurfaceCompat.test.ts` + **`secretCryptoCompat.test.ts`**                                                                                                                                                             |
 | **Wired-settings tests**                  | `apicircle.execution.timeoutMs` (propagates to `executeRequest`), `apicircle.execution.host` (Remote-SSH warning gate), `apicircle.history.retentionDays` (prunes request + plan run buckets before max-entries cap), **`apicircle.secrets.autoLockMinutes`** (timer arms/cancels/re-arms), **`apicircle.secrets.clipboardClearSeconds`** (clipboard wipes only if value still matches)                                                                                                                         | `apps/vscode/src/execute/sendRequest.test.ts`, `apps/vscode/src/commands/planActions.test.ts`, `apps/vscode/src/execute/persistHistory.test.ts`, **`apps/vscode/src/host/vaultManager.test.ts`**, **`apps/vscode/test/integration/vaultUnlock.test.ts`** |
 
-**Cross-package monorepo gate** (`pnpm -w test`): Studio runs active package tests for `shared`, `git`, `core`, `mock-server-core`, `ui-components`, `web`, `desktop`, `vscode`, `examples/mock-server`, and `e2e/mock`. The old `mcp-server` and `cli` package tests moved to Lens with their deployment pipeline.
+**Cross-package monorepo gate** (`pnpm -w test`): Studio runs active package tests for `shared`, `git`, `core`, `mock-server-core`, `ui-components`, `desktop-shell`, `web`, `desktop`, `vscode`, `examples/mock-server`, and `e2e/mock`. The old `mcp-server` and `cli` package tests moved to Lens with their deployment pipeline.
 
 **VS Code E2E specs** (`e2e/vscode/src/test/`): run via `@vscode/test-electron` against real VS Code stable + insiders in CI (`.github/workflows/vscode.yml` `cross-host-smoke` job, main pushes only). Studio specs now include inverse MCP guards instead of active MCP onboarding.
 
@@ -112,9 +115,9 @@ packages the extension depends on (`@apicircle/core`, `@apicircle/shared`). The 
 
 1. Typecheck both packages.
 2. Lint `apps/vscode`.
-3. Run the unit + integration suite (`pnpm --filter @apicircle/vscode test`).
+3. Run the unit + integration suite (`pnpm --filter apicircle-vscode test`).
 4. Build the bundle (`tsup`).
-5. Bundle-size gate: extension.js < 2 MB.
+5. Bundle-size gate on `apps/vscode/dist/extension.mjs`: warn at 3.0 MB, fail at 5.0 MB.
 6. Knip dead-code scan scoped to `apps/vscode` and `e2e/vscode`.
 
 The `cross-host-smoke` job (push-to-main only) runs the
@@ -124,11 +127,11 @@ under `xvfb`.
 ### Running locally
 
 ```bash
-pnpm --filter @apicircle/vscode test         # unit + integration
-pnpm --filter @apicircle/vscode check        # typecheck
-pnpm --filter @apicircle/vscode lint         # lint
-pnpm --filter @apicircle/vscode build        # bundle via tsup
-pnpm --filter @apicircle/vscode package      # produce .vsix
+pnpm --filter apicircle-vscode test          # unit + integration
+pnpm --filter apicircle-vscode check         # typecheck
+pnpm --filter apicircle-vscode lint          # lint
+pnpm --filter apicircle-vscode build         # bundle via tsup
+pnpm --filter apicircle-vscode package       # produce .vsix
 pnpm --filter @apicircle/e2e-vscode test:e2e # full E2E (downloads VS Code)
 APICIRCLE_E2E_LIVE_GITHUB=1 \
   APICIRCLE_E2E_GITHUB_PAT=<repo-scoped PAT> \
@@ -139,12 +142,10 @@ APICIRCLE_E2E_LIVE_GITHUB=1 \
 The first E2E run downloads ~100 MB of VS Code into `.vscode-test/`;
 subsequent runs reuse the cache.
 
-### Cross-host matrix (deferred to Phase 10)
+### Cross-host matrix
 
-Quarterly cron against `{Cursor, VSCodium, Windsurf}` via Open VSX builds
-lands when the marketplace publication step does (Phase 10). Phase 1
-ships VS Code stable + Insiders coverage; the broader fork coverage is a
-Phase 10 release-gate item.
+Not built: no workflow runs the E2E suite against Cursor, VSCodium or
+Windsurf. CI covers VS Code stable + Insiders on Ubuntu.
 
 ---
 
@@ -393,24 +394,26 @@ specs stay deterministic — reach for one of these before adding a bare sleep:
 > workbook rows sit in `e2e/web/manual-residue.ts` so they read as deliberately
 > withheld rather than as a coverage gap.
 
-| Spec                                      | Covers                                                                                                                                                                                   |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `00-preflight.spec.ts`                    | PAT validity, bot owner guard, private/public repo create/delete, dedicated PAT private-read access.                                                                                     |
-| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/` workspace data, assert branch/commit exist.                                                |
-| `02-private-link-workspace.spec.ts`       | Two-repo private linking: source workspace provides requests/env/release notes, host links and materializes them. **(skipped in v1 — workspace sharing off)**                            |
-| `03-private-dedicated-pat.spec.ts`        | Private source link bound to a dedicated PAT still refreshes after workspace GitHub session disconnect. **(skipped in v1 — workspace sharing off)**                                      |
-| `04-public-link-workspace.spec.ts`        | Public source link materializes without an active workspace GitHub session. **(skipped in v1 — workspace sharing off)**                                                                  |
-| `05-public-marketplace.spec.ts`           | Public repo with `apicircle` topic appears in marketplace search and links from discovery. **(skipped in v1 — workspace sharing off)**                                                   |
-| `06-release-update-flow.spec.ts`          | Latest/pinned release links, markdown notes, v1.1/v1.2 on-demand adopt/decline, deprecated/yanked visibility. **(skipped in v1 — workspace sharing off)**                                |
-| `07-core-surfaces-under-link.spec.ts`     | Editor, Environments, Execution Plans, and Mock Servers mutate under a linked source, diff, push, refresh, and remain secret-safe. **(skipped in v1 — workspace sharing off)**           |
-| `08-dependency-diff.spec.ts`              | `linkedWorkspace`, request/env overrides, and `releasePerLink` added/modified/removed diffs clear after push. **(skipped in v1 — workspace sharing off)**                                |
-| `09-refresh-conflict-resolution.spec.ts`  | Remote-only dependency changes, unrelated remote core changes, same-key conflicts, cancel, mine, and theirs resolution. **(skipped in v1 — workspace sharing off)**                      |
-| `10-snapshot-data-loss.spec.ts`           | Pre-push/pre-merge snapshots restore core/link/override/release state; failure paths keep synced byte-identical. **(skipped in v1 — workspace sharing off)**                             |
-| `11-core-field-matrix.spec.ts`            | Broad field-level diff/push coverage across Editor, Environment, Execution, and Mock definitions.                                                                                        |
-| `12-branch-workspace-transitions.spec.ts` | Multiple working branches, merge-to-main transitions, multi-workspace switching, and restore without data loss.                                                                          |
-| `13-global-assets-live.spec.ts`           | JSON Schema, GraphQL, reusable file assets, request mappings, deletion tracking, and mock binary response reuse through GitHub sync/linking. **(skipped in v1 — workspace sharing off)** |
-| `14-attachments-live.spec.ts`             | Current-workspace and linked private/public attachment blob transmission, on-demand download metadata, and checksum fail-closed behavior. **(skipped in v1 — workspace sharing off)**    |
-| `15-execution-with-linked-assets.spec.ts` | Send/plan execution downloads required linked/global file assets before execution, including public-link and local-global-file flows. **(skipped in v1 — workspace sharing off)**        |
+| Spec                                            | Covers                                                                                                                                                                                   |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-preflight.spec.ts`                          | PAT validity, bot owner guard, private/public repo create/delete, dedicated PAT private-read access.                                                                                     |
+| `01-connect-branch-push.spec.ts`                | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/` workspace data, assert branch/commit exist.                                                |
+| `02-private-link-workspace.spec.ts`             | Two-repo private linking: source workspace provides requests/env/release notes, host links and materializes them. **(skipped in v1 — workspace sharing off)**                            |
+| `03-private-dedicated-pat.spec.ts`              | Private source link bound to a dedicated PAT still refreshes after workspace GitHub session disconnect. **(skipped in v1 — workspace sharing off)**                                      |
+| `04-public-link-workspace.spec.ts`              | Public source link materializes without an active workspace GitHub session. **(skipped in v1 — workspace sharing off)**                                                                  |
+| `05-public-marketplace.spec.ts`                 | Public repo with `apicircle` topic appears in marketplace search and links from discovery. **(skipped in v1 — workspace sharing off)**                                                   |
+| `06-release-update-flow.spec.ts`                | Latest/pinned release links, markdown notes, v1.1/v1.2 on-demand adopt/decline, deprecated/yanked visibility. **(skipped in v1 — workspace sharing off)**                                |
+| `07-core-surfaces-under-link.spec.ts`           | Editor, Environments, Execution Plans, and Mock Servers mutate under a linked source, diff, push, refresh, and remain secret-safe. **(skipped in v1 — workspace sharing off)**           |
+| `08-dependency-diff.spec.ts`                    | `linkedWorkspace`, request/env overrides, and `releasePerLink` added/modified/removed diffs clear after push. **(skipped in v1 — workspace sharing off)**                                |
+| `09-refresh-conflict-resolution.spec.ts`        | Remote-only dependency changes, unrelated remote core changes, same-key conflicts, cancel, mine, and theirs resolution. **(skipped in v1 — workspace sharing off)**                      |
+| `10-snapshot-data-loss.spec.ts`                 | Pre-push/pre-merge snapshots restore core/link/override/release state; failure paths keep synced byte-identical. **(skipped in v1 — workspace sharing off)**                             |
+| `11-core-field-matrix.spec.ts`                  | Broad field-level diff/push coverage across Editor, Environment, Execution, and Mock definitions.                                                                                        |
+| `12-branch-workspace-transitions.spec.ts`       | Multiple working branches, merge-to-main transitions, multi-workspace switching, and restore without data loss.                                                                          |
+| `13-global-assets-live.spec.ts`                 | JSON Schema, GraphQL, reusable file assets, request mappings, deletion tracking, and mock binary response reuse through GitHub sync/linking. **(skipped in v1 — workspace sharing off)** |
+| `14-attachments-live.spec.ts`                   | Current-workspace and linked private/public attachment blob transmission, on-demand download metadata, and checksum fail-closed behavior. **(skipped in v1 — workspace sharing off)**    |
+| `15-execution-with-linked-assets.spec.ts`       | Send/plan execution downloads required linked/global file assets before execution, including public-link and local-global-file flows. **(skipped in v1 — workspace sharing off)**        |
+| `16-form-data-file-uploads-live.spec.ts`        | Global Assets file upload bound to a form-data row, and a direct form-data file upload, round-tripped through a real push.                                                               |
+| `17-multi-workspace-cross-surface-sync.spec.ts` | Two workspaces in one repo: an edit on one surface (VS Code, web, desktop, simulated over the Contents API) is visible on the others and leaves the sibling workspace untouched.         |
 
 ---
 

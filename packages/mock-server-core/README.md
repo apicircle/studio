@@ -1,19 +1,18 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/apicircle/studio/main/assets/logo.png" alt="API Circle Studio" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/apicircle/studio/main/assets/logo.png" alt="API Circle" width="120" height="120" />
 </p>
 
 <h1 align="center">@apicircle/mock-server-core</h1>
 
 <p align="center">
-  <strong>Turn any OpenAPI, Postman, Insomnia, or Swagger file into a real, running HTTP server — in three lines of code.</strong><br />
-  Built on Hono. Runs on Node, Bun, Deno, and every edge runtime Hono supports.
+  <strong>Turn any OpenAPI, Postman, Insomnia, or Swagger file into a real, running HTTP server — in a few lines of code.</strong><br />
+  Built on Hono. Runs on Node; the router is a plain Hono app.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/mock-server-core"><img src="https://img.shields.io/npm/v/@apicircle/mock-server-core?color=cb3837&logo=npm" alt="npm version" /></a>
   <img src="https://img.shields.io/badge/parses-OpenAPI%203%20%C2%B7%20Swagger%202%20%C2%B7%20Postman%20v2.x%20%C2%B7%20Insomnia%20v4-blue" alt="Parsers" />
   <img src="https://img.shields.io/badge/runtime-Hono-orange" alt="Hono" />
-  <img src="https://img.shields.io/badge/runtimes-Node%20%C2%B7%20Bun%20%C2%B7%20Edge-success" alt="Runtimes" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
 </p>
 
@@ -25,21 +24,29 @@ You have a spec, and you need a server that responds **right now** — before
 the backend team merges anything, before staging is provisioned, before a
 mobile build can hit it on a flight.
 
-`@apicircle/mock-server-core` is the engine that ships with API Circle Studio,
-extracted as a standalone npm package. Point it at your spec; get a real HTTP
-server. No config DSL, no YAML rules file, no Docker image.
+`@apicircle/mock-server-core` is the engine that ships with API Circle's free
+API workspace, extracted as a standalone npm package. Point it at your spec;
+get a real HTTP server. No config DSL, no YAML rules file, no Docker image.
 
 ```ts
 import { startMockServer, parseSourceToEndpoints } from '@apicircle/mock-server-core';
+import type { MockServerSource } from '@apicircle/shared';
 
-const { endpoints } = await parseSourceToEndpoints({
-  kind: 'openapi',
-  spec: rawYamlOrJson,
-  format: 'yaml',
+const source: MockServerSource = { kind: 'openapi', spec: rawYamlOrJson, format: 'yaml' };
+const { endpoints } = await parseSourceToEndpoints(source);
+
+const now = new Date().toISOString();
+const mock = await startMockServer({
+  id: 'petstore',
+  name: 'Petstore',
+  source,
+  endpoints,
+  defaultPort: 4040,
+  cors: { enabled: false, origins: [] },
+  createdAt: now,
+  updatedAt: now,
 });
-
-const mock = await startMockServer({ name: 'Petstore', endpoints, defaultPort: 4040 });
-// → POST http://localhost:4040/pets, GET http://localhost:4040/pets/{id}, ...
+// → POST http://127.0.0.1:4040/pets, GET http://127.0.0.1:4040/pets/{id}, ...
 ```
 
 That's the whole API surface for the simple case. Everything below is what
@@ -50,32 +57,35 @@ makes the simple case scale.
 - **Four importers, one output shape.** OpenAPI 3.x, Swagger 2.0, Postman
   v2/v2.1, and Insomnia v4 all reduce to the same typed `MockEndpoint[]`.
   Swap your team's spec format and nothing downstream changes.
-- **Built on Hono.** A 14 kB router with native support for Node, Bun, Deno,
-  Cloudflare Workers, Vercel Edge, Lambda, and more. Run mocks in CI, in a
-  desktop app, on a developer's laptop, or behind a tunnel — same code.
-- **Per-endpoint overrides.** Inject error responses, custom headers, delays,
-  or bespoke bodies on a single endpoint without touching the source spec.
-  Perfect for testing error paths and slow networks.
+- **Built on Hono.** `startMockServer` serves on Node; `createMockApp(server)`
+  returns the plain Hono app for a host that brings its own server.
+- **Per-endpoint responses, rules and validation.** Each endpoint carries a
+  default response (status, headers, body, delay), conditional response rules,
+  request-validation rules and response multipliers — change one without
+  touching the source spec. Perfect for testing error paths and slow networks.
 - **Real example bodies.** Postman? Picks the first saved response. OpenAPI?
-  Uses the `example` / `examples` / `default` from the spec. No `"string"`
-  / `0` placeholder data — what's in the spec is what you get.
-- **CORS, on by default.** Browser-friendly out of the box, configurable when
-  you need to lock it down.
+  Uses `example` / the first `examples` entry, else builds one from the schema
+  (format-aware defaults; `"string"` / `0` only where the schema gives nothing
+  better).
+- **CORS when you ask for it.** Off unless `cors.enabled` is set and at least
+  one origin is listed; the engine never wildcards silently.
 - **Strict in-document $ref resolution.** OpenAPI parsing flows through
   [`@apidevtools/swagger-parser`](https://www.npmjs.com/package/@apidevtools/swagger-parser)
   for compliant dereferencing — `$ref` chains and recursive schemas. A ref into
   another file or a URL is never followed: a spec reaches the parser as a string
-  with no base directory to trust, so external refs are reported as warnings and
-  left in place.
+  with no base directory to trust, so external refs are reported as warnings.
+  A spec split across files can be bundled first with the files you supply
+  (`bundleSpec`, below).
 
 ## Install
 
 ```bash
-npm install @apicircle/mock-server-core
-# pnpm add @apicircle/mock-server-core
+npm install @apicircle/mock-server-core @apicircle/shared
+# pnpm add @apicircle/mock-server-core @apicircle/shared
 ```
 
-Pulls in Hono and the swagger parser; no native modules.
+Pulls in Hono, `@hono/node-server`, js-yaml and the swagger parser; no native
+modules. `@apicircle/shared` holds the `MockServer` / `MockEndpoint` types.
 
 ## Quickstart
 
@@ -83,12 +93,12 @@ Pulls in Hono and the swagger parser; no native modules.
 
 ```ts
 import { parseSourceToEndpoints } from '@apicircle/mock-server-core';
+import type { MockServerSource } from '@apicircle/shared';
 
-const { endpoints, warnings } = await parseSourceToEndpoints({
-  kind: 'openapi', // 'openapi' | 'postman' | 'insomnia' | 'manual'
-  spec: rawYamlOrJson,
-  format: 'yaml', // 'yaml' | 'json'
-});
+const source: MockServerSource = { kind: 'openapi', spec: rawYamlOrJson, format: 'yaml' };
+// Other kinds: { kind: 'postman', collection }, { kind: 'insomnia', export },
+// { kind: 'manual', endpoints }.
+const { endpoints, warnings } = await parseSourceToEndpoints(source);
 
 warnings.forEach((w) => console.warn(w));
 ```
@@ -103,45 +113,91 @@ warnings.forEach((w) => console.warn(w));
 
 ```ts
 import { startMockServer } from '@apicircle/mock-server-core';
+import type { MockServer } from '@apicircle/shared';
 
-const handle = await startMockServer({
+const now = new Date().toISOString();
+const server: MockServer = {
   id: 'm1',
   name: 'Petstore',
-  source: { kind: 'openapi', spec: rawYamlOrJson, format: 'yaml' },
+  source,
   endpoints,
-  overrides: {},
   defaultPort: 4040,
-  cors: { enabled: true, origins: ['*'] },
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
+  cors: { enabled: true, origins: ['http://localhost:5173'] },
+  createdAt: now,
+  updatedAt: now,
+};
 
-console.log(handle.url); // http://localhost:4040
+const handle = await startMockServer(server);
+console.log(`http://127.0.0.1:${handle.port}`);
 ```
 
-### 3. Override one endpoint
+It binds to `127.0.0.1` unless you pass `{ host }`, and picks a free port when
+`defaultPort` is `null`.
+
+### 3. Change one endpoint's response
 
 ```ts
-await startMockServer({
-  // ...
-  overrides: {
-    [endpoints[0].id]: {
-      status: 503,
-      headers: { 'Retry-After': '30' },
-      delayMs: 1200,
-    },
+const [first, ...rest] = endpoints;
+if (!first) throw new Error('The spec has no operations.');
+
+const flaky = {
+  ...first,
+  defaultResponse: {
+    ...first.defaultResponse,
+    status: 503,
+    headers: [{ key: 'Retry-After', value: '30', enabled: true }],
+    delayMs: 1200,
   },
+};
+
+// A second server needs its own port while the first one runs.
+const flakyHandle = await startMockServer({
+  ...server,
+  endpoints: [flaky, ...rest],
+  defaultPort: 4041,
 });
 ```
 
-Per-endpoint overrides are how you simulate flaky backends, rate-limiters,
-slow regions, and "what does the app do when this call returns 500?".
+Per-endpoint responses are how you simulate flaky backends, rate-limiters,
+slow regions, and "what does the app do when this call returns 500?". For a
+response that depends on the request, add `responseRules` to the endpoint.
 
 ### 4. Stop it
 
 ```ts
 await handle.close();
 ```
+
+## Specs split across files
+
+A spec whose `$ref`s point at other documents (`./schemas/user.yaml#/User`)
+can be bundled into one self-contained document before parsing. `bundleSpec`
+never reads a file or fetches a URL: you pass the documents' text, keyed by
+the target as the spec names it (relative to the root spec's folder).
+
+```ts
+import { bundleSpec, parseSourceToEndpoints } from '@apicircle/mock-server-core';
+
+const bundled = bundleSpec(
+  { text: rootSpecText, filename: 'openapi.yaml' },
+  new Map([['schemas/user.yaml', userSchemaText]]),
+);
+// bundled.references → every document reached: [{ target: 'schemas/user.yaml', supplied: true }, …]
+
+const { endpoints } = await parseSourceToEndpoints({
+  kind: 'openapi',
+  spec: bundled.text,
+  format: bundled.format,
+});
+```
+
+Supplied documents are embedded under `x-apicircle-documents` and every
+reference into them is rewritten to point inside the same document; a target
+you did not supply stays an external reference and is reported unsupplied.
+`summarizeSpec` counts a spec's operations and lists the documents it names;
+`resolvedSpecMeta` and `mergeExternalRefs` compute what a spec asset's record
+becomes once it is read again with its files. All are also exported from
+`/parsing`.
 
 ## Extracting request-body schemas
 
@@ -164,27 +220,28 @@ media type preferred) and Swagger 2.0 `in: 'body'` parameters both reduce to the
 same `{ method, path, contentType, schema, required }` shape. Join it back to
 `parseSourceToEndpoints` by `(method, path)` for an operation's full contract.
 Same `$ref` contract as the endpoint parser — in-document refs only on both
-entry points, with external refs reported as warnings.
+entry points, with external refs reported as warnings. A schema the resolver
+could not produce reads `{ "x-apicircle-unresolved": "cycle" | "missing" | "external-ref" }`
+(`UNRESOLVED_KEY`) — an empty schema to every validator, but one a contract
+reader can tell apart from a schema that really is `{}`.
 
 ## Format support matrix
 
-| Format   | Versions   | What we pull out                                             |
-| -------- | ---------- | ------------------------------------------------------------ |
-| OpenAPI  | 3.0, 3.1   | Path + method, parameters, request bodies, example responses |
-| Swagger  | 2.0        | Same, dereferenced via `@apidevtools/swagger-parser`         |
-| Postman  | v2.0, v2.1 | Recursive item walks; first saved response → fallback 200    |
-| Insomnia | v4 export  | Filters `_type: 'request'`                                   |
-| Manual   | n/a        | Hand-rolled `MockEndpoint[]` you build yourself              |
+| Format   | Versions   | What we pull out                                                                           |
+| -------- | ---------- | ------------------------------------------------------------------------------------------ |
+| OpenAPI  | 3.0, 3.1   | Path + method, parameters, example responses (request bodies: `parseOpenApiRequestBodies`) |
+| Swagger  | 2.0        | Same, dereferenced via `@apidevtools/swagger-parser`                                       |
+| Postman  | v2.0, v2.1 | Recursive item walks; first saved response → fallback 200                                  |
+| Insomnia | v4 export  | Filters `_type: 'request'`                                                                 |
+| Manual   | n/a        | Hand-rolled `MockEndpoint[]` you build yourself                                            |
 
 ## Where it runs
 
-Because the engine is just a Hono app builder, anywhere Hono runs, this runs:
-
-- **Node** ≥ 20 — the common case, used by the API Circle Studio desktop app.
-- **Bun** — single-binary mocks in CI.
-- **Cloudflare Workers / Vercel Edge / Deno Deploy** — public, always-on mocks
-  served from the edge.
-- **Lambda** — pay-per-request mock servers for short-lived environments.
+- **Node** ≥ 20 — `startMockServer` serves the app with `@hono/node-server`;
+  this is what API Circle's desktop app and VS Code extension run.
+- **Anywhere else Hono runs** — `createMockApp(server)` returns the Hono app
+  without binding a port, for a host that brings its own server. It is exported
+  from the package root, which also loads the Node adapter and swagger-parser.
 
 ## Use cases
 
@@ -200,11 +257,11 @@ Because the engine is just a Hono app builder, anywhere Hono runs, this runs:
 ```
 @apicircle/shared              (types + utilities)
 └── @apicircle/mock-server-core ◀── you are here
-    └── API Circle Lens CLI/MCP  (current headless automation, outside Studio)
+    └── the apicircle-lens CLI and MCP server (paid Lens features of API Circle)
 ```
 
-The exact same factory powers the desktop `MockManager`, the
-Studio surfaces and Lens-owned headless automation. One engine,
+The exact same factory powers the desktop `MockManager`, the VS Code
+extension, and the paid `apicircle-lens` CLI and MCP server. One engine,
 three runtimes.
 
 ## Learn more
