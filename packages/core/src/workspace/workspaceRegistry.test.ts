@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -75,6 +75,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -224,6 +225,43 @@ describe('loadRegistry / saveRegistry', () => {
     const loaded = await loadRegistry(root);
     expect(loaded).not.toBeNull();
     expect(loaded!.workspaces).toEqual([]);
+  });
+
+  it('never blanks a registry another save wrote just before this one made its placeholder', async () => {
+    // A first save makes an empty placeholder so the lock has a file to hold. Another save
+    // lands its registry just before that placeholder is written. Until this save renames
+    // its own registry in, readers must still see the other save's registry, not `{}`.
+    const realWriteFile = fs.writeFile.bind(fs);
+    const realRename = fs.rename.bind(fs);
+    const registryFile = path.join(root, REGISTRY_FILE);
+    const landedFirst: WorkspaceRegistry = {
+      schemaVersion: 1,
+      activeWorkspaceId: 'ws-a',
+      workspaces: [{ id: 'ws-a', name: 'A', createdAt: T0, lastOpenedAt: T0 }],
+    };
+    vi.spyOn(fs, 'writeFile').mockImplementation(async (file, data, options) => {
+      if (file === registryFile && data === '{}') {
+        await realWriteFile(registryFile, JSON.stringify(landedFirst), 'utf-8');
+      }
+      await realWriteFile(file, data, options);
+    });
+    const seenBeforeRename: string[] = [];
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      seenBeforeRename.push(await fs.readFile(to, 'utf-8'));
+      await realRename(from, to);
+    });
+
+    await saveRegistry(root, emptyRegistry());
+
+    expect(seenBeforeRename.map((raw) => JSON.parse(raw))).toEqual([landedFirst]);
+  });
+
+  it('fails a first save with the error that kept it from creating the file', async () => {
+    const denied = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(denied);
+
+    await expect(saveRegistry(root, emptyRegistry())).rejects.toBe(denied);
+    expect(await loadRegistry(root)).toBeNull();
   });
 });
 

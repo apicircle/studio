@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -64,6 +64,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -165,6 +166,58 @@ describe('fileBackedWorkspace', () => {
       '{"endpoints":[]}',
     );
     expect(await fs.readFile(path.join(tmpDir, 'NOTES.md'), 'utf-8')).toBe('hand-written');
+  });
+
+  it('keeps a first save that a slower writer found missing a moment before', async () => {
+    // Two writers start on a folder with no workspace.json yet. Both look for it, and both
+    // find it missing; the second one's answer reaches it only after the first writer has
+    // created the file, taken the lock and saved (on a busy machine, or under an antivirus
+    // scan, that takes long enough). The second writer must make its change on top of the
+    // first one's save, never over an empty placeholder written on a stale answer.
+    const realAccess = fs.access.bind(fs);
+    let checks = 0;
+    let bothChecked!: () => void;
+    const checked = new Promise<void>((resolve) => (bothChecked = resolve));
+    let firstSaved!: () => void;
+    const saved = new Promise<void>((resolve) => (firstSaved = resolve));
+    vi.spyOn(fs, 'access').mockImplementation(async (file, mode) => {
+      const mine = ++checks;
+      // The check runs now; its answer is handed back later.
+      const answer = realAccess(file, mode);
+      await answer.catch(() => undefined);
+      if (mine === 2) bothChecked();
+      await checked;
+      if (mine === 2) await saved;
+      return answer;
+    });
+    const addEnvironment = (name: string) =>
+      withWorkspace(tmpDir, async (state) => {
+        const base = state.synced.workspaceId
+          ? state
+          : { synced: makeSynced(), local: makeLocal() };
+        const out = applyMutation(base, {
+          kind: 'environment.upsert',
+          environment: { name, variables: [] },
+        });
+        return { next: out.next };
+      });
+
+    const writers = [addEnvironment('dev'), addEnvironment('prod')];
+    void Promise.race(writers).then(firstSaved, firstSaved);
+    await Promise.all(writers);
+
+    const loaded = await loadFromFile(tmpDir);
+    expect(Object.keys(loaded!.synced.environments.items).sort()).toEqual(['dev', 'prod']);
+  });
+
+  it('fails a first save with the error that kept it from creating the file', async () => {
+    const denied = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(denied);
+
+    await expect(saveToFile(tmpDir, { synced: makeSynced(), local: makeLocal() })).rejects.toBe(
+      denied,
+    );
+    expect(await fs.readdir(tmpDir)).toEqual([]);
   });
 });
 

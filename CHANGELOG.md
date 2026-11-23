@@ -129,6 +129,25 @@
 
 ### Fixed
 
+- **Two writers saving a workspace folder for the first time keep both
+  changes.** The save lock needs `workspace.json` to exist, so a first save
+  checked for the file and, finding none, wrote an empty `{}` placeholder —
+  outside the lock. When two writers started together (an AI client calling two
+  MCP write tools at once, say) and one of them got its "missing" answer late,
+  as happens on a busy machine or under an antivirus scan, it wrote that
+  placeholder after the other had created the file. It could truncate the file
+  while the other writer was reading it under the lock ("Unexpected end of JSON
+  input"), make the other writer's rename fail (`EPERM` on Windows), or replace
+  a save that had already succeeded, so a change both callers were told had
+  landed was gone. The placeholder is now created exclusively (`wx`): a writer
+  that finds the file already there leaves it untouched and makes its change
+  under the lock, on top of the other's. `saveToFile` and `withWorkspace` in
+  `@apicircle/core`; only the first save into a folder was exposed. The same
+  check sat in `saveRegistry`, where a late save could blank the registry
+  another had just written (a reader then saw no workspaces until it landed its
+  own), and in the VS Code extension's workspace provider, where `apply` could
+  write `{}` over a workspace the CLI or the desktop app had just created and
+  then fail on it. Both create the placeholder the same way now.
 - **The header reads on every theme.** Measured on all 60 themes, the header's
   accent-coloured parts fell short on many of them: the active tab's label
   (the bare accent on its 15% tint) was under 4.5:1 on 34 themes, 1.9:1 on Ayu

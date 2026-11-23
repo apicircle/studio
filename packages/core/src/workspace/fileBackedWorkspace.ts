@@ -189,12 +189,20 @@ export async function withWorkspace<T>(
 // per-user ACL under %USERPROFILE% is what protects it there.
 const WORKSPACE_FILE_MODE = 0o600;
 
+// The lock needs its file to exist, so a first save creates an empty placeholder before
+// taking it. The file is created exclusively: a writer that finds one already there (another
+// writer's placeholder, or a save that landed first) leaves it as it is. Checking first and
+// writing after let a writer whose "missing" answer came late truncate the file another
+// writer was reading under the lock, or replace that writer's finished save.
 async function ensureFile(filePath: string): Promise<void> {
   try {
-    await fs.access(filePath);
+    await fs.writeFile(filePath, '{}', {
+      encoding: 'utf-8',
+      mode: WORKSPACE_FILE_MODE,
+      flag: 'wx',
+    });
   } catch (err) {
-    if (!isENOENT(err)) throw err;
-    await fs.writeFile(filePath, '{}', { encoding: 'utf-8', mode: WORKSPACE_FILE_MODE });
+    if (!isEEXIST(err)) throw err;
   }
 }
 
@@ -209,6 +217,10 @@ async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> 
 
 function isENOENT(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
+}
+
+function isEEXIST(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'EEXIST';
 }
 
 function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {

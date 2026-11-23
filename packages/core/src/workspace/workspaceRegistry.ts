@@ -265,17 +265,24 @@ function normalizeRegistry(raw: WorkspaceRegistry): WorkspaceRegistry {
   };
 }
 
+// The lock needs its file to exist, so a first save creates an empty placeholder before
+// taking it — exclusively, so a save that finds the file already there (another save landed
+// first) leaves it as it is. Checking first and writing after let a save whose "missing"
+// answer came late blank out the registry another save had just written.
 async function ensureFile(filePath: string): Promise<void> {
   try {
-    await fs.access(filePath);
+    await fs.writeFile(filePath, '{}', { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
   } catch (err) {
-    if (!isENOENT(err)) throw err;
-    await fs.writeFile(filePath, '{}', { encoding: 'utf-8', mode: 0o600 });
+    if (!isEEXIST(err)) throw err;
   }
 }
 
 function isENOENT(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
+}
+
+function isEEXIST(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'EEXIST';
 }
 
 // Re-export commonly-used helpers so consumers can import from one place.

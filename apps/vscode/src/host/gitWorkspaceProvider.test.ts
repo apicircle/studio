@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -222,6 +222,90 @@ describe('GitWorkspaceProvider', () => {
         expect(fs.existsSync(freshLocal)).toBe(true);
         expect(fs.existsSync(path.join(freshLocal, 'workspace.local.json'))).toBe(true);
       } finally {
+        fs.rmSync(freshTmp, { recursive: true, force: true });
+      }
+    });
+
+    it('changes a workspace another writer created just before apply made its placeholder', async () => {
+      // apply() makes an empty placeholder so the lock has a file to hold. Another writer (the
+      // CLI, the desktop app) creates the workspace just before that placeholder is written.
+      // apply must make its change to that workspace, never write `{}` over it.
+      const freshTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gwp-late-'));
+      const freshSynced = path.join(freshTmp, 'sync');
+      const syncedFile = path.join(freshSynced, 'workspace.json');
+      const realWriteFile = fs.promises.writeFile.bind(fs.promises);
+      vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
+        if (file === syncedFile && data === '{}') {
+          await realWriteFile(syncedFile, JSON.stringify(makeEmptySynced('created-meanwhile')));
+        }
+        await realWriteFile(file, data, options);
+      });
+      const p = new GitWorkspaceProvider({
+        syncedDir: freshSynced,
+        localDir: path.join(freshTmp, 'local'),
+      });
+      try {
+        await p.apply({
+          kind: 'environment.upsert',
+          environment: { name: 'staging', variables: [] },
+        });
+
+        const written = JSON.parse(fs.readFileSync(syncedFile, 'utf8'));
+        expect(written.workspaceId).toBe('created-meanwhile');
+        expect(written.environments.items.staging).toBeDefined();
+      } finally {
+        vi.restoreAllMocks();
+        fs.rmSync(freshTmp, { recursive: true, force: true });
+      }
+    });
+
+    it('applies on top of a workspace another writer saved into the placeholder apply made', async () => {
+      // The other order: apply creates the placeholder first, and another writer saves the
+      // workspace into it before apply takes the lock. apply then changes that workspace.
+      const freshTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gwp-first-'));
+      const freshSynced = path.join(freshTmp, 'sync');
+      const syncedFile = path.join(freshSynced, 'workspace.json');
+      const realWriteFile = fs.promises.writeFile.bind(fs.promises);
+      vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
+        await realWriteFile(file, data, options);
+        if (file === syncedFile && data === '{}') {
+          await realWriteFile(syncedFile, JSON.stringify(makeEmptySynced('saved-into-it')));
+        }
+      });
+      const p = new GitWorkspaceProvider({
+        syncedDir: freshSynced,
+        localDir: path.join(freshTmp, 'local'),
+      });
+      try {
+        await p.apply({
+          kind: 'environment.upsert',
+          environment: { name: 'staging', variables: [] },
+        });
+
+        const written = JSON.parse(fs.readFileSync(syncedFile, 'utf8'));
+        expect(written.workspaceId).toBe('saved-into-it');
+        expect(written.environments.items.staging).toBeDefined();
+      } finally {
+        vi.restoreAllMocks();
+        fs.rmSync(freshTmp, { recursive: true, force: true });
+      }
+    });
+
+    it('fails apply with the error that kept it from creating the workspace file', async () => {
+      const freshTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gwp-denied-'));
+      const denied = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      vi.spyOn(fs.promises, 'writeFile').mockRejectedValueOnce(denied);
+      const p = new GitWorkspaceProvider({
+        syncedDir: path.join(freshTmp, 'sync'),
+        localDir: path.join(freshTmp, 'local'),
+      });
+      try {
+        await expect(
+          p.apply({ kind: 'environment.upsert', environment: { name: 'staging', variables: [] } }),
+        ).rejects.toBe(denied);
+        expect(fs.existsSync(path.join(freshTmp, 'sync', 'workspace.json'))).toBe(false);
+      } finally {
+        vi.restoreAllMocks();
         fs.rmSync(freshTmp, { recursive: true, force: true });
       }
     });
