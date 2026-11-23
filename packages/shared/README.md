@@ -49,16 +49,17 @@ Ships dual ESM + CJS builds and full `.d.ts` types. Zero runtime dependencies.
 
 ## What's in the box
 
-| Surface              | What you get                                                                                                                                                                                                                     |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace schema** | `WorkspaceSynced` (the git-tracked document) and `WorkspaceLocal` (per-device state) — every entity type the workspace knows about, fully typed.                                                                                 |
-| **Entity types**     | Requests, folders, environments, mock-server definitions, plans, assertions, releases, linked workspaces, global assets (schemas, GraphQL, files, spec assets and their referenced files), history runs, secret-crypto metadata. |
-| **`generateId()`**   | The only sanctioned way to mint entity IDs — a UUID v4 (`crypto.randomUUID()` where available).                                                                                                                                  |
-| **Validators**       | Field validators (URLs, AWS regions, mock paths, env-var names, header names, JSON, JSON paths, regexes, durations) returning a `ValidationResult`.                                                                              |
-| **Auth defaults**    | `REQUEST_AUTH_TYPES`, `defaultAuthFor(type)` and `normalizeAuth(input)` for the 15 auth schemes plus `none` and `inherit`.                                                                                                       |
-| **Mock helpers**     | Mock-server types, default responses and request schemas, and `requestShapeFromMockEndpoint` (a mock endpoint as a request's method, URL, query, headers and path params).                                                       |
-| **Constants**        | `RUN_HIDDEN_VALUE` (`[hidden]`, what History shows for a secret), `WORKSPACE_SHARING_ENABLED` (`false` in shipped builds), `GIT_HOST_KINDS` / `GIT_HOST_LABELS`.                                                                 |
-| **Legacy MCP names** | `MCP_TOOL_NAMES`, `McpToolName` and `McpError` (the `{ code, message, details }` error shape) remain for backward-compatible shared API.                                                                                         |
+| Surface              | What you get                                                                                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace schema** | `WorkspaceSynced` (the git-tracked document) and `WorkspaceLocal` (per-device state) — every entity type the workspace knows about, fully typed.                                                                                                  |
+| **Entity types**     | Requests, folders, environments, mock-server definitions, plans, assertions, releases, linked workspaces, global assets (schemas, GraphQL, files, spec assets, and their referenced files after npm 2.0.0), history runs, secret-crypto metadata. |
+| **`generateId()`**   | The only sanctioned way to mint entity IDs — a UUID v4 (`crypto.randomUUID()` where available).                                                                                                                                                   |
+| **Validators**       | Field validators (URLs, AWS regions, mock paths, env-var names, header names, JSON, JSON paths, regexes, durations) returning a `ValidationResult`.                                                                                               |
+| **Auth defaults**    | `REQUEST_AUTH_TYPES`, `defaultAuthFor(type)` and `normalizeAuth(input)` for the 15 auth schemes plus `none` and `inherit`.                                                                                                                        |
+| **Mock helpers**     | Mock-server types, default responses and request schemas, and `requestShapeFromMockEndpoint` (a mock endpoint as a request's method, URL, query, headers and path params).                                                                        |
+| **Spec references**  | `specRefTargetKind(target)` (after npm 2.0.0) — whether a split spec's `$ref` target is a JSON/YAML `'document'`, a `'text'` document (Markdown, plain text, HTML, a code sample's source) or `'unknown'`, by its extension.                      |
+| **Constants**        | `RUN_HIDDEN_VALUE` (`[hidden]`, what History shows for a secret; after npm 2.0.0), `WORKSPACE_SHARING_ENABLED` (`false` in shipped builds), `GIT_HOST_KINDS` / `GIT_HOST_LABELS`.                                                                 |
+| **Legacy MCP names** | `MCP_TOOL_NAMES`, `McpToolName` and `McpError` (the `{ code, message, details }` error shape) remain for backward-compatible shared API.                                                                                                          |
 
 ## A taste of it
 
@@ -100,7 +101,7 @@ for (const name of MCP_TOOL_NAMES) {
 }
 
 function dispatch(name: McpToolName) {
-  // McpToolName is a string literal union, so the switch is exhaustive.
+  // McpToolName is a string literal union, so a `switch (name)` over it can be checked for exhaustiveness.
 }
 ```
 

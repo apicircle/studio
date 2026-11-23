@@ -46,11 +46,11 @@ your repo.
   extractor captures from a response is held in memory only, never written to
   disk. A Secret Vault slot that encrypts variables is never sent as
   `{{LABEL}}`, and deleting it asks first.
-- **Collaborate through pull requests.** Auto-create a working branch from the
-  repo's default branch — starting from your own workspace, or importing one
-  that already lives on the base branch — push to save, and open a PR from
-  inside the app. API collections get the same review workflow as the code
-  that calls them.
+- **Collaborate through pull requests.** **Create working branch** names a
+  branch for you off a base branch (the repo's default unless you pick another)
+  — starting from your own workspace, or importing one that already lives on the
+  base branch — then push to save, and open a PR from inside the app. API
+  collections get the same review workflow as the code that calls them.
 - **Automation-ready.** The workspace format is clean, Git-backed JSON. MCP and
   headless CLI automation over the same files are paid Lens features of API
   Circle.
@@ -77,10 +77,10 @@ collection tree, environments, mocks) and `workspace.local.json`
 GitHub repo on a working branch; teammates pull, branch, and merge it like any
 other file. Connect with a classic (`repo` scope) or fine-grained (Contents and
 Pull requests, read and write) GitHub token; **Test connection** checks the
-token, its scopes, and whether it can reach the repo, push, list branches and
-open pull requests. Disconnecting a repository asks first. Individual folders +
-environments can also be exchanged out-of-band as portable `.apicircle.json`
-exports — see **Import what you already have** below.
+token, its scopes, and whether it can reach the repo and push, and read its
+branches and pull requests. Disconnecting a repository asks first. Individual
+folders + environments can also be exchanged out-of-band as portable
+`.apicircle.json` exports — see **Import what you already have** below.
 
 The web and desktop apps keep one workspace open; any others are locked, never
 deleted ([plans with more workspaces](https://apicircle.dev/pricing)).
@@ -98,12 +98,12 @@ Point API Circle at an OpenAPI, Swagger, Postman, or Insomnia file and get a
 running HTTP mock on `localhost` in seconds — in the desktop app or the VS Code
 extension (the web app edits mock definitions but cannot run them: a browser
 tab can't listen on a port). The Hono-based engine resolves in-document
-`$ref`s; a spec split across files is read in full from the files you supply,
-and nothing is fetched or read from disk on its own. It also handles
-per-endpoint responses (flip a `200` to a `503` to exercise error paths),
-conditional response rules, request validation, and response multipliers. Mock
-_definitions_ live in the synced workspace so teammates share them; _runtime_
-state stays on the local machine.
+`$ref`s; a spec split across files is read in full from the files you supply in
+Assets (desktop and web apps), and nothing is fetched or read from disk on its
+own. It also handles per-endpoint responses (flip a `200` to a `503` to exercise
+error paths), conditional response rules, request validation, and response
+multipliers. Mock _definitions_ live in the synced workspace so teammates share
+them; _runtime_ state stays on the local machine.
 
 ### A complete request toolkit
 
@@ -132,7 +132,8 @@ state stays on the local machine.
   `.apicircle/` in the repo (`.apicircle/workspace-<id>/workspace.json` plus
   `.apicircle/workspace-<id>/attachments/<slotId>`).
 - **Split OpenAPI specs** — a spec whose `$ref`s point at other files lists
-  them in Assets → Files. Supply them one at a time, several by name, or a
+  the schema files it names in Assets → Files (its prose and code-sample files
+  are not asked for). Supply them one at a time, several by name, or a
   whole folder, and every reader (mocks, **Import to collection**) uses the
   whole spec. **Download one file** / **Save as new spec** produce one
   self-contained spec.
@@ -159,8 +160,8 @@ state stays on the local machine.
 search **API Circle Studio** in the Extensions view (`Ctrl`/`Cmd`+`Shift`+`X`).
 
 The same workspace document the desktop and web apps drive can be edited
-in place from VS Code — no embedded webview, no separate sync. The
-extension contributes:
+in place from VS Code as YAML documents — not an embedded copy of the app, and
+no separate sync. The extension contributes:
 
 - **Seven sidebar TreeViews**: Workspace, Editor, Environment, Execution, Mock, History, and Snapshots.
 - **YAML virtual documents** under the `apicircle:` URI scheme (each request,
@@ -227,9 +228,10 @@ git repo.
 
 When you want to collaborate via PRs, connect the workspace to a GitHub repo
 from the **Workspace** panel: add a token under **Git source**, then
-**Connect repo**. The app pushes to a working branch it creates from the repo's
-default branch, and opens PRs from the app. Teammates connect the same repo and
-import the workspace from its base branch.
+**Connect repo**. **Create working branch** starts a branch from the repo's
+default branch (or another base you pick); the app pushes to it and opens PRs
+from the app. Teammates connect the same repo and import the workspace from its
+base branch.
 
 In the repo the workspace lives under `.apicircle/` (see
 [Workspace storage layout](#workspace-storage-layout)):
@@ -353,7 +355,7 @@ export → re-import workflow, see [`docs/migration.md`](docs/migration.md).
 - [Installing the standalone desktop build](docs/installing.md)
 - [Migration guide — workspace storage relocation](docs/migration.md)
 - [QA — coverage status and E2E CI](docs/qa/README.md)
-- MCP (a paid Lens feature): [connect your AI client](docs/connect-your-ai-client.md) · [tool catalog](docs/mcp-tools-reference.md)
+- MCP is one of the paid [Lens features of API Circle](https://apicircle.dev/lens); the old [connect your AI client](docs/connect-your-ai-client.md) and [tool catalog](docs/mcp-tools-reference.md) pages only point there.
 
 ## Repository layout
 

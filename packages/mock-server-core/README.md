@@ -75,7 +75,7 @@ makes the simple case scale.
   another file or a URL is never followed: a spec reaches the parser as a string
   with no base directory to trust, so external refs are reported as warnings.
   A spec split across files can be bundled first with the files you supply
-  (`bundleSpec`, below).
+  (`bundleSpec`, below; added after 2.0.0, the current npm release).
 
 ## Install
 
@@ -170,6 +170,10 @@ await handle.close();
 
 ## Specs split across files
 
+> Added after 2.0.0, the current npm release: `bundleSpec`, `bundleSpecAsync`,
+> `parseSpecText`, `BUNDLED_DOCUMENTS_KEY`, `resolvedSpecMeta` and
+> `mergeExternalRefs`. In 2.0.0, `summarizeSpec` lists no documents.
+
 A spec whose `$ref`s point at other documents (`./schemas/user.yaml#/User`)
 can be bundled into one self-contained document before parsing. `bundleSpec`
 never reads a file or fetches a URL: you pass the documents' text, keyed by
@@ -194,7 +198,17 @@ const { endpoints } = await parseSourceToEndpoints({
 Supplied documents are embedded under `x-apicircle-documents` and every
 reference into them is rewritten to point inside the same document; a target
 you did not supply stays an external reference and is reported unsupplied.
-`summarizeSpec` counts a spec's operations and lists the documents it names;
+
+A `$ref` to a text document — Markdown or other prose, plain text, HTML, or a
+code sample's `source` — holds no schema: when you supply it, its text is
+inlined as a string where it is referenced, and either way it is reported
+apart, in `bundled.textReferences`, never among `references`.
+`bundleSpecAsync(root, read)` does the same walk for a caller that reads
+documents on demand: `read(target)` is asked once for each document the spec
+reaches and returns its text, or `null` when it is not available.
+
+`summarizeSpec` counts a spec's operations and lists the JSON/YAML documents it
+names (not its text documents);
 `resolvedSpecMeta` and `mergeExternalRefs` compute what a spec asset's record
 becomes once it is read again with its files. All are also exported from
 `/parsing`.
@@ -223,7 +237,8 @@ Same `$ref` contract as the endpoint parser — in-document refs only on both
 entry points, with external refs reported as warnings. A schema the resolver
 could not produce reads `{ "x-apicircle-unresolved": "cycle" | "missing" | "external-ref" }`
 (`UNRESOLVED_KEY`) — an empty schema to every validator, but one a contract
-reader can tell apart from a schema that really is `{}`.
+reader can tell apart from a schema that really is `{}`. (npm 2.0.0 writes a
+plain `{}` there.)
 
 ## Format support matrix
 

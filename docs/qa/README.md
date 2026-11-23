@@ -1,6 +1,6 @@
 > **MCP status:** This QA snapshot contains historical MCP coverage from before MCP moved out of Studio. Current MCP regression coverage belongs to API Circle's paid Lens features, outside this repository. Studio should keep inverse tests that prove no Studio MCP commands, views, settings, or server definition providers are exposed.
 
-# QA — API Circle Studio (the free workspace's repository)
+# QA — the free API workspace (`studio` repository)
 
 How quality is verified in this repo, what is covered today, and what is
 still pending. This single doc replaces the former `CI.md` plus the three
@@ -154,10 +154,11 @@ Windsurf. CI covers VS Code stable + Insiders on Ubuntu.
 The web E2E suite runs on every PR and every push to `main`
 ([`.github/workflows/e2e.yml`](../../.github/workflows/e2e.yml)):
 
-1. **`playwright`** — full chromium run + strict coverage report. Gates
-   the build on a coverage floor and a regression delta vs main.
-2. **`cross-browser-smoke`** — `@smoke`-tagged subset run against Firefox
-   - WebKit. Informational; does not gate the build.
+1. **`playwright`** (8 shards) → **`playwright-merge`** — full chromium run,
+   merged report and strict coverage report. Gates the build on a coverage
+   floor; on PRs, **`coverage-delta`** also gates on a regression delta vs main.
+2. **`cross-browser-smoke`** — `@smoke`-tagged subset run against Firefox and
+   WebKit, on pushes to `main` only. Informational; does not gate the build.
 3. **`visual-baseline`** _(manual dispatch only)_ — pixel-diff baseline of
    every primary panel. Off by default because the Linux baselines aren't
    committed yet. Trigger from the Actions tab → "Run workflow" when you
@@ -202,8 +203,8 @@ within 3 days of the run. Every repository in the apicircle org shares one
 
 ### PR coverage delta
 
-`scripts/e2e_coverage_delta.mjs` runs as the last step of the
-`playwright` job on every PR. It reads the PR build's strict coverage
+`scripts/e2e_coverage_delta.mjs` runs in the `coverage-delta` job, after
+`playwright-merge`, on every PR. It reads the PR build's strict coverage
 JSON, fetches the most-recent successful main run's coverage artifact via
 the GitHub Actions API, posts (or updates) a sticky PR comment with a
 delta table, and fails the build (exit 2) if live coverage regressed by

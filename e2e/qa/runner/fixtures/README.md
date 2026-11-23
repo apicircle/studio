@@ -14,9 +14,9 @@ multi-device git scenarios.
 | `bodies/`     | Request body samples — JSON / XML / HTML / text / unicode / encodings / large / huge / invalid.                |
 | `binary/`     | Real binary fixtures — PNG, PDF, fixed-size .bin, empty, unicode-named.                                        |
 | `schemas/`    | JSON Schemas for body-validation tests, including circular and external `$ref` patterns.                       |
-| `workspaces/` | Seeded workspace documents (`empty-ws.json`, `seeded-ws.json`) consumed by `FileBackedWorkspaceProvider` for workspace restore and disk-mirror tests. |
+| `workspaces/` | Seeded workspace documents (`empty-ws.json`, `seeded-ws.json`) in the file-backed shape, starting points for manual rows (`../cowork-runner-prompt.md`). |
 | `curl/`       | cURL command strings for the cURL-import tests.                                                                |
-| `oauth/`      | Mock IdP config (consumed by the in-repo mock IdP harness).                                                    |
+| `oauth/`      | Mock IdP settings for manual OAuth rows; no automated test reads them.                                                    |
 | `git/`        | Helper scripts for two-device git-conflict simulations.                                                        |
 
 ## Generated vs hand-crafted

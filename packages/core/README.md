@@ -44,8 +44,9 @@ npm install @apicircle/core @apicircle/shared
 # pnpm add @apicircle/core @apicircle/shared
 ```
 
-Dual ESM + CJS, full `.d.ts`, no native deps. Browser-safe — all crypto and
-signing primitives run on WebCrypto. Depends on `@apicircle/shared` and
+Dual ESM + CJS, full `.d.ts`, no native deps. Browser-safe — no Node `crypto`:
+signing uses WebCrypto, and MD4/MD5 and SHA-512/256 (which WebCrypto lacks) are
+plain TypeScript. Depends on `@apicircle/shared` and
 `@apicircle/mock-server-core`.
 
 ## What you can do with it
@@ -115,10 +116,12 @@ MIC), Hawk, JWT — works the same way: declarative config in, signed request ou
 | OAuth2      | Client Credentials, Authorization Code (+ PKCE), Password, Implicit, Device Code, Refresh, `private_key_jwt` |
 | None        | …because sometimes the API just lets you in                                                                  |
 
-Every implementation is verified against the original RFCs (1320, 1321, 2202,
-2617, 7616, 7636, [MS-NLMP]) plus NIST CAVS vectors and Mozilla's Hawk
-fixtures. See [`docs/auth.md`](https://github.com/apicircle/studio/blob/main/docs/auth.md)
-for the full matrix.
+Primitives are tested against published vectors where one exists (RFCs 1320,
+1321, 2202, 2617, 7616, 7636 and 7519, NIST CAVS vectors, AWS's SigV4 example
+and Mozilla's Hawk fixtures); NTLM and RS/ES/PS JWT signing are tested
+structurally and by round-trip. See
+[`docs/auth.md`](https://github.com/apicircle/studio/blob/main/docs/auth.md) for
+the full matrix.
 
 ### Parse a collection
 
@@ -173,6 +176,10 @@ audit log seam.
 
 ### Keep secrets out of Git and history
 
+> Added after 2.0.0, the current npm release: `scanWorkspaceForSecrets`,
+> `hideRunSecrets`, and `extractContext`'s `{ saved, held }` result (2.0.0
+> returns `{ extracted, warnings }`).
+
 - `scanWorkspaceForSecrets(synced)` lists credential-shaped values a push would
   write (where each sits and why — never the value); `redactForGit(synced)`
   blanks the credential fields it knows about.
@@ -218,11 +225,12 @@ import {
 - **`/workspace/file-backed`** — one workspace, one folder. `proper-lockfile`
   advisory locking, so concurrent CLI runs don't corrupt each other.
 - **`/workspace/registry`** — many workspaces, one root. `registry.json` at
-  the top, `workspace-<id>/` subdirectories underneath. All surfaces
-  (desktop, web, VS Code, and the `apicircle-lens` CLI and MCP server) default
-  to `~/.apicircle/`. Use `resolveApicircleRoot()` to honor the
-  `APICIRCLE_WORKSPACES_ROOT` override (CI / tests / relocated stores);
-  `defaultApicircleRoot()` is the raw `~/.apicircle/` fallback it builds on.
+  the top, `workspace-<id>/` subdirectories underneath. The desktop app, the VS
+  Code extension and the `apicircle-lens` CLI and MCP server default to
+  `~/.apicircle/` (the web app keeps workspaces in browser storage). Use
+  `resolveApicircleRoot()` to honor the `APICIRCLE_WORKSPACES_ROOT` override (CI
+  / tests / relocated stores); `defaultApicircleRoot()` is the raw
+  `~/.apicircle/` fallback it builds on.
 - **`/providers`** — the `WorkspaceProvider` / `Workspaces` / `MockController`
   contracts and their implementations (`InMemoryWorkspaceProvider`,
   `FileBackedWorkspaceProvider`, `GitBackedWorkspaceProvider`,
@@ -252,7 +260,8 @@ import {
 
 - Every OAuth2 grant, refresh path and CSRF guard runs against a mock IdP
   (`@apicircle/core/test/mock-idp`).
-- Every auth primitive is **CAVS-verified** against the original spec vectors.
+- Auth primitives are tested against published reference vectors where one
+  exists (see the auth section above).
 - The engine is built ESM-first and ships dual CJS bundles for legacy consumers.
 
 ## License

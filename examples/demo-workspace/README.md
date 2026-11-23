@@ -31,7 +31,7 @@ environment is preselected so `{{BASE_URL}}` resolves to
 
 ## Notes on the BEARER_TOKEN
 
-The plan calls for an _encrypted_ `BEARER_TOKEN` variable. Encrypted
+A real setup would keep `BEARER_TOKEN` _encrypted_. Encrypted
 values use a master key generated locally on first boot, so we can't
 ship a pre-encrypted ciphertext that round-trips across machines. The
 fixture ships the bearer in plaintext — press **Encrypt** on the

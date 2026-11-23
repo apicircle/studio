@@ -26,8 +26,8 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 - **URL-as-source-of-truth** — query parameters and path placeholders sync from the URL into structured sections on save.
 - **Response viewer** as a YAML document opened side-by-side — appears instantly on ▶ Send, resolves in place.
 - **Cancel in-flight requests** via status bar, `Esc`, or the `✖ Cancel` CodeLens.
-- **Pre-send diagnostics** surfacing in the Problems panel — including a `{{…}}` that names a vault slot's encryption key, which is never sent.
-- **History keeps no secrets** — credential values are replaced with `[hidden]` before a run is saved.
+- **Pre-send diagnostics** surfacing in the Problems panel. After 2.0.0, the current Marketplace release, they also flag a `{{…}}` that names a vault slot's encryption key, which is never sent.
+- **History keeps no secrets** (after 2.0.0) — credential values are replaced with `[hidden]` before a run is saved.
 - **Execution plans** — chain requests and run them end-to-end. The plan YAML
   carries `▶ Run with assertions` / `▶ Run` (two modes, matching Desktop / Web;
   a running plan swaps to `⏳ Running… · ✖ Cancel`), `◆ Plan environments…`,
