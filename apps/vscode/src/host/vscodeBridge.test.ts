@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { Uri } from '../../test/mocks/vscode';
 import { VsCodeBridge } from './vscodeBridge';
+import { GitWorkspaceProvider } from './gitWorkspaceProvider';
 import type { DiscoveredWorkspace } from '../util/workspaceDiscovery';
 
 function makeMockContext(globalStoragePath: string) {
@@ -167,5 +168,93 @@ describe('VsCodeBridge', () => {
     bridge.dispose();
     expect(bridge.listWorkspaces()).toEqual([]);
     expect(bridge.activeWorkspace()).toBeNull();
+  });
+
+  // deactivate() awaits whenIdle() so the reads the status bars and views start
+  // without awaiting cannot outlive the extension (and a test's temp folder).
+  describe('whenIdle', () => {
+    const STATE = { synced: { workspaceId: 'w' }, local: {} } as never;
+    const spies: Array<{ mockRestore: () => void }> = [];
+
+    afterEach(() => {
+      for (const spy of spies.splice(0)) spy.mockRestore();
+    });
+
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    // True when `p` has settled after a full turn of the event loop.
+    async function settledYet(p: Promise<unknown>): Promise<boolean> {
+      let settled = false;
+      const mark = () => {
+        settled = true;
+      };
+      void p.then(mark, mark);
+      await new Promise((resolve) => setImmediate(resolve));
+      return settled;
+    }
+
+    it('resolves at once when no workspace operation is running', async () => {
+      bridge.registerWorkspace(makeWs(tmp));
+      expect(await settledYet(bridge.whenIdle())).toBe(true);
+    });
+
+    it('waits for every read, apply and write a surface started; a failed one still fails for its caller', async () => {
+      const read = deferred<unknown>();
+      const apply = deferred<unknown>();
+      const write = deferred<unknown>();
+      spies.push(
+        vi.spyOn(GitWorkspaceProvider.prototype, 'read').mockReturnValue(read.promise as never),
+        vi.spyOn(GitWorkspaceProvider.prototype, 'apply').mockReturnValue(apply.promise as never),
+        vi.spyOn(GitWorkspaceProvider.prototype, 'write').mockReturnValue(write.promise as never),
+      );
+      const surface = bridge.registerWorkspace(makeWs(tmp));
+      const reading = surface.read();
+      const applying = surface.apply({ kind: 'request.delete', id: 'r1' } as never);
+      const writing = surface.write({});
+      const writeOutcome = writing.then(
+        () => 'written',
+        (err: Error) => err.message,
+      );
+      const idle = bridge.whenIdle();
+
+      read.resolve(STATE);
+      expect(await settledYet(idle)).toBe(false);
+      apply.resolve({ state: STATE, changedIds: ['r1'] });
+      expect(await settledYet(idle)).toBe(false);
+      write.reject(new Error('disk full'));
+      expect(await settledYet(idle)).toBe(true);
+
+      await expect(reading).resolves.toBe(STATE);
+      await expect(applying).resolves.toEqual({ next: STATE, changedIds: ['r1'] });
+      await expect(writeOutcome).resolves.toBe('disk full');
+    });
+
+    it('also waits for an operation started by the continuation of one it was waiting on', async () => {
+      const first = deferred<unknown>();
+      const second = deferred<unknown>();
+      spies.push(
+        vi
+          .spyOn(GitWorkspaceProvider.prototype, 'read')
+          .mockReturnValueOnce(first.promise as never)
+          .mockReturnValueOnce(second.promise as never),
+      );
+      const surface = bridge.registerWorkspace(makeWs(tmp));
+      const chain = surface.read().then(() => surface.read());
+      const idle = bridge.whenIdle();
+
+      first.resolve(STATE);
+      expect(await settledYet(idle)).toBe(false);
+      second.resolve(STATE);
+      expect(await settledYet(idle)).toBe(true);
+      await expect(chain).resolves.toBe(STATE);
+    });
   });
 });

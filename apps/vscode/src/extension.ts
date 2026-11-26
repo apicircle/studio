@@ -1737,6 +1737,13 @@ export async function deactivate(): Promise<void> {
   }
   vaultManager?.lockAll();
   vaultManager = null;
+  // The status bars and views read the workspace without awaiting it: making
+  // a workspace active at activation, or the lock above, starts a status-bar
+  // refresh. Let every read and write already started finish while the bridge
+  // and the Runs channel they log to are still here, so none of them opens
+  // workspace.json after the extension has shut down, and a save under way at
+  // shutdown completes. After lockAll(), so the refresh it starts is included.
+  await bridge?.whenIdle();
   runsChannel?.dispose();
   runsChannel = null;
   bridge?.dispose();

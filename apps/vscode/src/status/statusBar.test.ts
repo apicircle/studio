@@ -137,6 +137,44 @@ describe('StatusBar', () => {
     bar.dispose();
   });
 
+  it('says workspace.json cannot be read, instead of keeping the last environment, when the read fails', async () => {
+    const dir = path.join(tmp, '.apicircle');
+    seedWorkspace(dir, 'production');
+    bridge.registerWorkspace({
+      id: dir,
+      apicircleDir: dir,
+      workspaceJsonPath: path.join(dir, 'workspace.json'),
+      workspaceFolder: { uri: Uri.file(tmp), name: 'test', index: 0 } as never,
+      label: 'test',
+      source: 'git-folder',
+    });
+    bridge.setActive(dir);
+    const fakeVault = {
+      isUnlockedAgainst: () => true,
+      onDidChange: () => ({ dispose: () => undefined }),
+    } as unknown as ConstructorParameters<typeof StatusBar>[2];
+    const bar = new StatusBar(bridge, registry, fakeVault);
+    await bridge.whenIdle();
+    expect(workspaceItem.text).toContain('production');
+
+    // A merge leaves conflict markers in the file: it no longer parses.
+    fs.writeFileSync(path.join(dir, 'workspace.json'), '<<<<<<< HEAD\n{}\n=======\n');
+    vaultItem.hide.mockClear();
+    bar.refresh();
+    await bridge.whenIdle();
+    expect(workspaceItem.text).toBe('$(warning) test');
+    expect(workspaceItem.tooltip).toContain('workspace.json could not be read: SyntaxError');
+    expect(vaultItem.hide).toHaveBeenCalled();
+
+    // The file is gone altogether (a branch switch took .apicircle/ away).
+    fs.rmSync(dir, { recursive: true, force: true });
+    bar.refresh();
+    await bridge.whenIdle();
+    expect(workspaceItem.text).toBe('$(warning) test');
+    expect(workspaceItem.tooltip).toContain('No workspace found');
+    bar.dispose();
+  });
+
   it('cancel item is hidden when no sends are in flight', () => {
     const bar = new StatusBar(bridge, registry);
     bar.refreshCancelItem();

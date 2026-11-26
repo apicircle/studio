@@ -129,6 +129,20 @@
 
 ### Fixed
 
+- **The VS Code extension finishes its workspace reads and saves before it
+  shuts down.** Making a workspace active starts a status-bar refresh that reads
+  `workspace.json`, and nothing waited for it: `deactivate()` could return, and
+  the workspace folder could go, while that read was still queued. It then
+  failed with `ENOENT` after the extension had shut down, which is what turned
+  the extension's activation test red now and then on a busy CI runner. Every
+  read, `apply` and write a workspace starts is now tracked, and `deactivate()`
+  waits for them, so a save under way when VS Code closes completes too. The
+  status bar's read also had no failure path. When `workspace.json` is gone (a
+  branch switch took `.apicircle/` away) or no longer parses (a merge left
+  conflict markers in it), the workspace item now shows a warning and says why
+  in its tooltip. Before, it kept the last environment it had shown, and the
+  failed read was an unhandled rejection in the extension host.
+
 - **Two writers saving a workspace folder for the first time keep both
   changes.** The save lock needs `workspace.json` to exist, so a first save
   checked for the file and, finding none, wrote an empty `{}` placeholder —

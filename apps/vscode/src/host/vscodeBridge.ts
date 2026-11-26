@@ -57,6 +57,14 @@ export class VsCodeBridge implements vscode.Disposable {
    * switches refresh instantly instead of waiting for the next watcher tick.
    */
   private readonly activeChangeListeners: Array<() => void> = [];
+  /**
+   * Every read, apply and write a surface has started and not yet finished.
+   * Most callers start them without awaiting: the status bars and views read
+   * the workspace the moment the active workspace changes. `whenIdle()` waits
+   * on this set so `deactivate()` can let them finish before the extension
+   * shuts down.
+   */
+  private readonly inFlight = new Set<Promise<unknown>>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -75,15 +83,38 @@ export class VsCodeBridge implements vscode.Disposable {
     });
     const surface: WorkspaceSurface = {
       workspace: ws,
-      read: () => provider.read(),
-      apply: async (patch) => {
-        const out = await provider.apply(patch);
-        return { next: out.state, changedIds: out.changedIds };
-      },
-      write: (next) => provider.write(next),
+      read: () => this.track(provider.read()),
+      apply: (patch) =>
+        this.track(
+          provider.apply(patch).then((out) => ({ next: out.state, changedIds: out.changedIds })),
+        ),
+      write: (next) => this.track(provider.write(next)),
     };
     this.workspaces.set(ws.id, surface);
     return surface;
+  }
+
+  /**
+   * Resolves once no read, apply or write started through a surface is still
+   * running, including any started while it waits. A failed operation counts
+   * as finished: its caller handles the error, not this.
+   */
+  async whenIdle(): Promise<void> {
+    while (this.inFlight.size > 0) {
+      await Promise.allSettled(this.inFlight);
+    }
+  }
+
+  // The caller gets the tracked promise itself, so a failure reaches it exactly
+  // as before: nothing here handles the rejection on its behalf. Its own
+  // continuation runs before `whenIdle()` looks again, so an operation that
+  // continuation starts is waited for too.
+  private track<T>(operation: Promise<T>): Promise<T> {
+    const tracked = operation.finally(() => {
+      this.inFlight.delete(tracked);
+    });
+    this.inFlight.add(tracked);
+    return tracked;
   }
 
   /** The currently-active workspace, if one is set. */

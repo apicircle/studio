@@ -82,14 +82,26 @@ export class StatusBar implements vscode.Disposable {
     // tier surfaces this regularly — the bridge has been torn down and
     // returns an empty state). Guard the `synced` access so the
     // deferred callback can't throw on a disposed bar.
-    void active.read().then((state) => {
-      if (!state?.synced?.environments) return;
-      const envName = state.synced.environments.activeName ?? '—';
-      this.workspaceItem.text = `$(circle-filled) ${active.workspace.label} · env: ${envName}`;
-      this.workspaceItem.tooltip = `API Circle workspace ${active.workspace.label}\nActive environment: ${envName}\nClick to open workspace.json`;
-      this.workspaceItem.show();
-      this.refreshVaultItem(active.workspace.id, state.synced.secretCrypto);
-    });
+    void active.read().then(
+      (state) => {
+        if (!state?.synced?.environments) return;
+        const envName = state.synced.environments.activeName ?? '—';
+        this.workspaceItem.text = `$(circle-filled) ${active.workspace.label} · env: ${envName}`;
+        this.workspaceItem.tooltip = `API Circle workspace ${active.workspace.label}\nActive environment: ${envName}\nClick to open workspace.json`;
+        this.workspaceItem.show();
+        this.refreshVaultItem(active.workspace.id, state.synced.secretCrypto);
+      },
+      (err: unknown) => {
+        // workspace.json is gone (deleted, or a branch switch took .apicircle/
+        // away) or no longer parses (a merge left conflict markers in it).
+        // Say so rather than keep the last environment the item showed, and
+        // hide the vault icon: its state comes from the file that failed.
+        this.workspaceItem.text = `$(warning) ${active.workspace.label}`;
+        this.workspaceItem.tooltip = `API Circle workspace ${active.workspace.label}\nworkspace.json could not be read: ${String(err)}\nClick to open workspace.json`;
+        this.workspaceItem.show();
+        this.vaultItem.hide();
+      },
+    );
   }
 
   /** Refresh the vault status-bar icon based on `secretCrypto` presence +

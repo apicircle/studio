@@ -11,7 +11,7 @@
 // (real VS Code) and validates the wiring.
 // =============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -293,6 +293,77 @@ describe('extension activation (integration)', () => {
     await deactivate();
     expect(__getInternalsForTests().bridge).toBeNull();
     expect(__getInternalsForTests().views).toBeNull();
+  });
+
+  it('deactivate() waits for the workspace reads activation started, so teardown cannot pull workspace.json out from under them', async () => {
+    // Activation makes the restored workspace active, and every listener on
+    // that change (the status bar, the mock status bar) starts reading
+    // workspace.json without anyone awaiting it. On a busy runner the read
+    // can still be queued when the caller tears the folder down, and it then
+    // fails with ENOENT long after the test that started it has ended. Hold
+    // those reads open here so the ordering is certain rather than a race.
+    const folder = path.join(tmp, 'repo-a');
+    const apicircleRoot = path.join(folder, '.apicircle');
+    const wsDir = path.join(apicircleRoot, 'workspace-ws-a');
+    const workspaceJson = path.join(wsDir, 'workspace.json');
+    fs.mkdirSync(wsDir, { recursive: true });
+    fs.writeFileSync(workspaceJson, '{}');
+    fs.writeFileSync(
+      path.join(apicircleRoot, 'registry.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        activeWorkspaceId: 'ws-a',
+        workspaces: [{ id: 'ws-a', name: 'repo-a', createdAt: 't', lastOpenedAt: 't' }],
+      }),
+    );
+    (workspace as { workspaceFolders: unknown }).workspaceFolders = [
+      { uri: Uri.file(folder), name: 'repo-a', index: 0 },
+    ];
+
+    const realReadFile = fs.promises.readFile.bind(fs.promises);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const heldReads: Promise<unknown>[] = [];
+    const readSpy = vi
+      .spyOn(fs.promises, 'readFile')
+      .mockImplementation((...args: Parameters<typeof fs.promises.readFile>) => {
+        const target = args[0];
+        if (typeof target !== 'string' || path.resolve(target) !== path.resolve(workspaceJson)) {
+          return realReadFile(...args);
+        }
+        const held = gate.then(() => realReadFile(...args));
+        heldReads.push(held);
+        return held;
+      });
+
+    try {
+      const { ctx } = makeMockContext(path.join(tmp, 'globalStorage'));
+      activate(ctx);
+      expect(heldReads.length).toBeGreaterThan(0);
+
+      // The teardown every test in this file runs: deactivate, then remove the
+      // folder. Give deactivate a full turn of the event loop to finish
+      // without the held reads.
+      let deactivated = false;
+      const teardown = deactivate().then(() => {
+        deactivated = true;
+        fs.rmSync(folder, { recursive: true, force: true });
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      const finishedWithReadsInFlight = deactivated;
+
+      release();
+      await teardown;
+      const outcomes = await Promise.allSettled(heldReads);
+
+      expect(finishedWithReadsInFlight).toBe(false);
+      expect(outcomes.every((o) => o.status === 'fulfilled')).toBe(true);
+    } finally {
+      release();
+      readSpy.mockRestore();
+    }
   });
 
   it('returns the public extension API (0e seam) exposing the bridge + fs provider', () => {
